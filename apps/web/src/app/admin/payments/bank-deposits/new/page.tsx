@@ -227,17 +227,25 @@ export default function NewBankDepositPage() {
       a.download = `bordereau-${depositDate}.pdf`;
       a.click();
 
-      // Upload Firebase Storage via API route serveur
-      setGenerateStep('Archivage du PDF…');
-      const depositId = doc(collection(db, 'bankDeposits')).id;
-      const formData = new FormData();
-      formData.append('pdf', new File([pdfBytes.buffer as ArrayBuffer], `bordereau-${depositDate}.pdf`, { type: 'application/pdf' }));
-      formData.append('depositId', depositId);
-      const uploadRes = await fetch('/api/bank-deposits/upload-pdf', { method: 'POST', body: formData });
-      if (!uploadRes.ok) throw new Error(await uploadRes.text());
-      const { url: pdfStorageUrl } = await uploadRes.json() as { url: string };
-
+      // Upload Firebase Storage via API route serveur (non-bloquant)
       setGenerateStep('Enregistrement en base…');
+      const depositId = doc(collection(db, 'bankDeposits')).id;
+      let pdfStorageUrl: string | null = null;
+      try {
+        const formData = new FormData();
+        formData.append('pdf', new File([pdfBytes.buffer as ArrayBuffer], `bordereau-${depositDate}.pdf`, { type: 'application/pdf' }));
+        formData.append('depositId', depositId);
+        const uploadRes = await fetch('/api/bank-deposits/upload-pdf', { method: 'POST', body: formData });
+        if (uploadRes.ok) {
+          const json = await uploadRes.json() as { url: string };
+          pdfStorageUrl = json.url;
+        } else {
+          console.warn('Archivage PDF échoué (non bloquant):', await uploadRes.text());
+        }
+      } catch (uploadErr) {
+        console.warn('Archivage PDF échoué (non bloquant):', uploadErr);
+      }
+
       const seasonsSnap = await getDocs(query(collection(db, 'seasons'), where('isActive', '==', true)));
       const seasonId = seasonsSnap.docs[0]?.id ?? null;
 
@@ -253,7 +261,7 @@ export default function NewBankDepositPage() {
         installmentIds: selectedRows.map(r => r.id),
         totalAmount: totalCents,
         chequeCount: selectedRows.length,
-        pdfUrl: pdfStorageUrl,
+        ...(pdfStorageUrl ? { pdfUrl: pdfStorageUrl } : {}),
         generatedBy: user.uid,
         createdAt: serverTimestamp(),
         ...(seasonId ? { seasonId } : {}),
