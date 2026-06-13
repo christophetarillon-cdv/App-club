@@ -10,7 +10,7 @@ import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 
-interface Account { id: string; displayName: string; email: string; }
+interface Account { id: string; displayName: string; email: string; dancerIds: string[]; dancerName: string; }
 interface Membership {
   id: string;
   pricingPlanId: string;
@@ -51,19 +51,30 @@ export default function AdminNewPaymentPage() {
     Promise.all([
       getDocs(collection(db, 'accounts')),
       getDocs(query(collection(db, 'seasons'), where('isActive', '==', true))),
-    ]).then(([accSnap, seasonSnap]) => {
-      setAccounts(accSnap.docs.map(d => ({ id: d.id, displayName: d.data().displayName, email: d.data().email })));
+      getDocs(collection(db, 'dancers')),
+    ]).then(([accSnap, seasonSnap, dancerSnap]) => {
+      const dancerMap = new Map<string, { firstName: string; lastName: string }>();
+      dancerSnap.docs.forEach(d => {
+        dancerMap.set(d.id, { firstName: d.data().firstName ?? '', lastName: d.data().lastName ?? '' });
+      });
+      setAccounts(accSnap.docs.map(d => {
+        const data = d.data();
+        const dancerIds: string[] = data.dancerIds ?? [];
+        const firstDancer = dancerIds.length > 0 ? dancerMap.get(dancerIds[0]!) : undefined;
+        const dancerName = firstDancer ? `${firstDancer.firstName} ${firstDancer.lastName}`.trim() : (data.displayName ?? '');
+        return { id: d.id, displayName: data.displayName, email: data.email, dancerIds, dancerName };
+      }));
       setSeasons(seasonSnap.docs.map(d => ({ id: d.id, label: d.data().label })));
     });
   }, []);
 
   const filteredAccounts = search.length >= 2
-    ? accounts.filter(a => a.displayName?.toLowerCase().includes(search.toLowerCase()) || a.email?.toLowerCase().includes(search.toLowerCase()))
+    ? accounts.filter(a => a.dancerName?.toLowerCase().includes(search.toLowerCase()) || a.email?.toLowerCase().includes(search.toLowerCase()))
     : [];
 
   const handleSelectUser = async (acc: Account) => {
     setSelectedUserId(acc.id);
-    setSearch(acc.displayName ?? acc.email);
+    setSearch(acc.dancerName || acc.displayName || acc.email);
     setSelectedMembershipId('');
     setSelectedMembership(null);
     setInstallments([]);
@@ -208,7 +219,7 @@ export default function AdminNewPaymentPage() {
               {filteredAccounts.slice(0, 6).map(a => (
                 <button key={a.id} type="button" onClick={() => handleSelectUser(a)}
                   className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50">
-                  <span className="font-medium text-gray-900">{a.displayName}</span>
+                  <span className="font-medium text-gray-900">{a.dancerName || a.displayName}</span>
                   <span className="text-gray-400 ml-2">{a.email}</span>
                 </button>
               ))}
