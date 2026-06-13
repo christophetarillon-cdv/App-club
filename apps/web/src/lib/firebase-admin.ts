@@ -10,7 +10,6 @@ function initAdmin() {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getAdminBucket(): any {
   initAdmin();
   return getStorage().bucket();
