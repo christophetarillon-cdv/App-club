@@ -1,0 +1,39 @@
+{
+  "name": "@cdv/web",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cdv/config": "workspace:*",
+    "@cdv/core": "workspace:*",
+    "@cdv/firebase": "workspace:*",
+    "@cdv/types": "workspace:*",
+    "@cdv/ui": "workspace:*",
+    "firebase": "^10.14.1",
+    "firebase-admin": "^12.7.0",
+    "next": "14.2.5",
+    "pdf-lib": "^1.17.1",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-qr-code": "^2.0.21"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.0",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.5",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "date", "order": "ASCENDING" },
+        { "fieldPath": "startTime", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "chequeImages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "validatedAt", "order": "ASCENDING" },
+        { "fieldPath": "ocrProcessedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "chequeImages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ocrProcessedAt", "order": "ASCENDING" },
+        { "fieldPath": "validatedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "memberships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "seasonId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "paymentInstallments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "method", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

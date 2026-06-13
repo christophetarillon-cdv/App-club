@@ -1,0 +1,26 @@
+{
+  "name": "cdv-app",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "type-check": "turbo type-check",
+    "clean": "turbo clean && rm -rf node_modules",
+    "deploy:functions": "cd functions && npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --external:firebase-admin --external:firebase-functions --external:nodemailer --outfile=lib/index.js && cd .. && FUNCTIONS_DISCOVERY_TIMEOUT=600 firebase deploy --only functions --project clubvoiron-dev"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0",
+    "prettier": "^3.3.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}

@@ -1,0 +1,169 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuth() &&
+        get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.roles.hasAny(['admin']);
+    }
+
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    function cannotChangeProtectedFields() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['roles', 'isActive']);
+    }
+
+    // ── clubProfile ────────────────────────────────────────────────────────────
+    match /clubProfile/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ── accounts ──────────────────────────────────────────────────────────────
+    match /accounts/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      // Le titulaire crée son propre doc ; roles doit être vide (pas d'auto-attribution)
+      allow create: if isOwner(uid) &&
+        request.resource.data.roles.size() == 0;
+      // Le titulaire peut modifier son doc mais pas roles ni isActive
+      allow update: if (isOwner(uid) && cannotChangeProtectedFields()) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── dancers ───────────────────────────────────────────────────────────────
+    match /dancers/{dancerId} {
+      allow read: if isAuth() && (
+        resource.data.accountId == request.auth.uid || isAdmin()
+      );
+      // Le titulaire crée un danseur pour son compte ; roles limités à member/trial
+      allow create: if isAuth() &&
+        request.resource.data.accountId == request.auth.uid &&
+        request.resource.data.roles.hasOnly(['member', 'trial']);
+      // Le titulaire peut modifier ses danseurs mais pas roles ni isActive
+      allow update: if (
+        isAuth() &&
+        resource.data.accountId == request.auth.uid &&
+        cannotChangeProtectedFields()
+      ) || isAdmin();
+      allow delete: if (
+        isAuth() && resource.data.accountId == request.auth.uid
+      ) || isAdmin();
+    }
+
+    // ── seasons ────────────────────────────────────────────────────────────────
+    match /seasons/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ── appSettings ────────────────────────────────────────────────────────────
+    match /appSettings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ── config (SMTP, etc.) ────────────────────────────────────────────────────
+    match /config/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // ── catalogue ─────────────────────────────────────────────────────────────
+    match /danceStyles/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /levels/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /rooms/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /courses/{id} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isAuth() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeRegistrationCount'])
+      );
+    }
+
+    match /sessions/{id} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin();
+    }
+
+    match /interruptions/{id} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    match /publicHolidays/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /notifications/{id} {
+      allow read: if isAuth();
+      allow write: if false;
+    }
+
+    match /registrations/{id} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isAuth() && request.auth.uid == request.resource.data.userId;
+      allow update: if (isAuth() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── paiements ─────────────────────────────────────────────────────────────
+    match /pricingPlans/{id} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    match /memberships/{id} {
+      allow read: if isAdmin() || isOwner(resource.data.userId);
+      allow create: if isAuth() && request.auth.uid == request.resource.data.userId;
+      allow update: if isAdmin() || (
+        isOwner(resource.data.userId) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['paymentMethod', 'installmentIds', 'updatedAt']) &&
+        resource.data.paymentPlanStatus == 'pending'
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /payments/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /paymentInstallments/{id} {
+      allow read: if isAdmin() || isOwner(resource.data.userId);
+      allow create: if isAuth() && request.auth.uid == request.resource.data.userId;
+      allow update, delete: if isAdmin();
+    }
+
+    match /chequeImages/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /bankDeposits/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /bankAccounts/{id} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

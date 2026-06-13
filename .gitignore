@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+.next/
+dist/
+build/
+lib/
+*.tsbuildinfo
+
+# Env files
+.env
+.env.dev
+.env.beta
+.env.prod
+.env.local
+.env.*.local
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Misc
+.DS_Store
+*.pem
+.turbo/
+coverage/
