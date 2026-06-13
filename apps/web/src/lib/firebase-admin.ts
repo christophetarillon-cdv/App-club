@@ -1,16 +1,17 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getStorage, type Storage } from 'firebase-admin/storage';
+import { getStorage } from 'firebase-admin/storage';
 
-function getAdminStorage(): Storage {
+function initAdmin() {
   if (!getApps().length) {
     initializeApp({
       credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY!)),
       storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
     });
   }
-  return getStorage();
 }
 
-export const adminStorage = {
-  bucket: () => getAdminStorage().bucket(),
-};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getAdminBucket(): any {
+  initAdmin();
+  return getStorage().bucket();
+}
