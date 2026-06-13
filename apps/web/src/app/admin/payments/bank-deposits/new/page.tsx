@@ -209,7 +209,7 @@ export default function NewBankDepositPage() {
       const pdfBytes = await pdfDoc.save();
 
       // Téléchargement immédiat
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
       const localUrl = URL.createObjectURL(blob);
       setBlobUrl(localUrl);
       const a = document.createElement('a');
@@ -221,7 +221,7 @@ export default function NewBankDepositPage() {
       setGenerateStep('Archivage du PDF…');
       const depositId = doc(collection(db, 'bankDeposits')).id;
       const formData = new FormData();
-      formData.append('pdf', new File([pdfBytes], `bordereau-${depositDate}.pdf`, { type: 'application/pdf' }));
+      formData.append('pdf', new File([pdfBytes.buffer as ArrayBuffer], `bordereau-${depositDate}.pdf`, { type: 'application/pdf' }));
       formData.append('depositId', depositId);
       const uploadRes = await fetch('/api/bank-deposits/upload-pdf', { method: 'POST', body: formData });
       if (!uploadRes.ok) throw new Error(await uploadRes.text());

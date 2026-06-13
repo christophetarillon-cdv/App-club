@@ -150,7 +150,7 @@ export default function BankDepositsPage() {
       page.drawText(`${deposit.chequeCount} chèque${deposit.chequeCount > 1 ? 's' : ''}`, { x: 50, y, size: 11, font: fontBold });
 
       const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

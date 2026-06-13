@@ -210,7 +210,7 @@ export default function CourseDetailPage() {
       }
 
       setRegisterSuccess(true);
-      if (finalStatus === 'waitlist') {
+      if ((finalStatus as 'active' | 'waitlist') === 'waitlist') {
         setRegisterWarning('Le cours est complet. Vous avez été ajouté à la liste d\'attente.');
       } else if (warning) {
         setRegisterWarning(warning);
