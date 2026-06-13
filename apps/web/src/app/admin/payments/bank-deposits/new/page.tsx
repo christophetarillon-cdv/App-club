@@ -78,7 +78,17 @@ export default function NewBankDepositPage() {
         let draweeCity: string | undefined = data.draweeCity ?? undefined;
 
         const accSnap = await getDoc(doc(db, 'accounts', data.userId));
-        if (accSnap.exists()) memberName = accSnap.data().displayName;
+        if (accSnap.exists()) {
+          const dancerIds: string[] = accSnap.data().dancerIds ?? [];
+          if (dancerIds.length > 0) {
+            const dancerSnap = await getDoc(doc(db, 'dancers', dancerIds[0]!));
+            if (dancerSnap.exists()) {
+              const dn = dancerSnap.data();
+              memberName = `${dn.firstName} ${dn.lastName}`;
+            }
+          }
+          if (!memberName) memberName = accSnap.data().displayName;
+        }
 
         if (data.chequeImageId && (!chequeNumber || !draweeBank || !draweeCity)) {
           const imgSnap = await getDoc(doc(db, 'chequeImages', data.chequeImageId));

@@ -102,7 +102,17 @@ export default function BankDepositsPage() {
           const data = instSnap.data();
           let memberName = data.userId as string;
           const accSnap = await getDoc(doc(db, 'accounts', data.userId));
-          if (accSnap.exists()) memberName = accSnap.data().displayName ?? memberName;
+          if (accSnap.exists()) {
+            const dancerIds: string[] = accSnap.data().dancerIds ?? [];
+            if (dancerIds.length > 0) {
+              const dancerSnap = await getDoc(doc(db, 'dancers', dancerIds[0]!));
+              if (dancerSnap.exists()) {
+                const dn = dancerSnap.data();
+                memberName = `${dn.firstName} ${dn.lastName}`;
+              }
+            }
+            if (memberName === data.userId) memberName = accSnap.data().displayName ?? memberName;
+          }
           let cmc7: string | undefined;
           if (data.chequeImageId) {
             const imgSnap = await getDoc(doc(db, 'chequeImages', data.chequeImageId));
