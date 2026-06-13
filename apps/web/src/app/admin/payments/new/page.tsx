@@ -211,7 +211,7 @@ export default function AdminNewPaymentPage() {
           <input
             type="text" value={search}
             onChange={e => { setSearch(e.target.value); setSelectedUserId(''); }}
-            placeholder="Rechercher par nom ou email…"
+            placeholder="Rechercher par prénom nom ou email…"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
           />
           {filteredAccounts.length > 0 && !selectedUserId && (
