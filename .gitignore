@@ -8,6 +8,8 @@ node_modules/
 dist/
 build/
 lib/
+!apps/web/src/lib/
+!apps/web/src/lib/**
 *.tsbuildinfo
 
 # Env files
