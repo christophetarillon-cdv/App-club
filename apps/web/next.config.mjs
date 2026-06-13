@@ -1,7 +1,15 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Ne transpiler que les packages sans dépendances natives lourdes
-  transpilePackages: ['@cdv/types', '@cdv/config', '@cdv/ui'],
+  transpilePackages: ['@cdv/types', '@cdv/config', '@cdv/ui', '@cdv/core', '@cdv/firebase'],
+  webpack: (config) => {
+    config.resolve.alias['@'] = path.join(__dirname, 'src');
+    return config;
+  },
 };
 
 export default nextConfig;
