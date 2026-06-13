@@ -44,10 +44,12 @@ export default function NewBankDepositPage() {
   const [generated, setGenerated] = useState(false);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
+      try {
       const [installSnap, bankSnap] = await Promise.all([
         getDocs(query(
           collection(db, 'paymentInstallments'),
@@ -114,8 +116,13 @@ export default function NewBankDepositPage() {
       }));
 
       setRows(rows);
+    } catch (err) {
+      console.error('Erreur chargement bordereau:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
+    } finally {
       setLoading(false);
-    };
+    }
+  };
     load();
   }, []);
 
@@ -297,6 +304,12 @@ export default function NewBankDepositPage() {
         <Link href="/admin/payments/bank-deposits" className="text-sm text-gray-400 hover:text-gray-700">← Bordereaux</Link>
         <h1 className="text-2xl font-bold text-gray-900">Nouveau bordereau</h1>
       </div>
+
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-6">
+          <p className="text-sm text-red-700 font-medium">Erreur de chargement : {loadError}</p>
+        </div>
+      )}
 
       {generateError && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-6">
