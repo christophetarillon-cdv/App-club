@@ -139,7 +139,7 @@ export default function BankDepositsPage() {
       page.drawText(`Compte bancaire : ${deposit.bankAccount}`, { x: 50, y, size: 11, font, color: rgb(0.3, 0.3, 0.3) });
       y -= 30;
 
-      page.drawText('Nom', { x: 50, y, size: 10, font: fontBold });
+      page.drawText('Prénom Nom', { x: 50, y, size: 10, font: fontBold });
       page.drawText('Montant', { x: 300, y, size: 10, font: fontBold });
       page.drawText('CMC7', { x: 400, y, size: 10, font: fontBold });
       y -= 5;

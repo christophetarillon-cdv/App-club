@@ -197,7 +197,7 @@ export default function NewBankDepositPage() {
       y -= 18;
 
       // En-tête tableau
-      page.drawText('Nom', { x: 50, y, size: 10, font: fontBold });
+      page.drawText('Prénom Nom', { x: 50, y, size: 10, font: fontBold });
       page.drawText('Banque / Ville', { x: 200, y, size: 10, font: fontBold });
       page.drawText('N° chèque', { x: 360, y, size: 10, font: fontBold });
       page.drawText('Montant', { x: 460, y, size: 10, font: fontBold });
