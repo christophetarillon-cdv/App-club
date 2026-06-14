@@ -28,7 +28,7 @@ interface Account {
   dancerIds: string[];
   phone?: string;
 }
-interface Installment { id: string; expectedDate: string; amount: number; status: string; }
+interface Installment { id: string; expectedDate: string; amount: number; status: string; method?: string; chequeNumber?: string; draweeBank?: string; draweeCity?: string; }
 interface Entry {
   id: string;
   kind: 'solo' | 'group';
@@ -222,7 +222,9 @@ export default function DancerDetailPage() {
           const insts = await Promise.all(
             entry.installmentIds.map(async id => {
               const snap = await getDoc(doc(db, 'paymentInstallments', id));
-              return snap.exists() ? { id, expectedDate: snap.data().expectedDate ?? '', amount: snap.data().amount ?? 0, status: snap.data().status ?? 'pending' } : null;
+              if (!snap.exists()) return null;
+              const sd = snap.data();
+              return { id, expectedDate: sd.expectedDate ?? '', amount: sd.amount ?? 0, status: sd.status ?? 'pending', method: sd.method ?? undefined, chequeNumber: sd.chequeNumber ?? undefined, draweeBank: sd.draweeBank ?? undefined, draweeCity: sd.draweeCity ?? undefined };
             })
           );
           entry.installments = insts.filter(Boolean) as Installment[];
@@ -440,19 +442,32 @@ export default function DancerDetailPage() {
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Versements</p>
                     <div className="space-y-2">
                       {entry.installments.map((inst, idx) => (
-                        <div key={inst.id} className="flex items-center justify-between py-1">
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs text-gray-400 w-5 text-right">{idx + 1}.</span>
-                            <span className="text-sm text-gray-700">{inst.expectedDate}</span>
+                        <div key={inst.id} className="py-1">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-gray-400 w-5 text-right">{idx + 1}.</span>
+                              <span className="text-sm text-gray-700">
+                                {inst.expectedDate ? new Date(inst.expectedDate + 'T12:00:00').toLocaleDateString('fr-FR') : inst.expectedDate}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${inst.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                {inst.status === 'paid' ? 'Encaissé' : 'En attente'}
+                              </span>
+                              <span className="text-sm font-medium text-gray-800 w-20 text-right">
+                                {(inst.amount / 100).toFixed(2)} €
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${inst.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                              {inst.status === 'paid' ? 'Encaissé' : 'En attente'}
-                            </span>
-                            <span className="text-sm font-medium text-gray-800 w-20 text-right">
-                              {(inst.amount / 100).toFixed(2)} €
-                            </span>
-                          </div>
+                          {inst.method === 'cheque' && (inst.chequeNumber || inst.draweeBank || inst.draweeCity) && (
+                            <p className="text-xs text-gray-400 ml-8 mt-0.5">
+                              {[
+                                inst.chequeNumber ? `N° ${inst.chequeNumber}` : null,
+                                inst.draweeBank,
+                                inst.draweeCity,
+                              ].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
