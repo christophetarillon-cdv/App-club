@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  collection, getDocs, query, where, addDoc, doc, getDoc, deleteDoc, serverTimestamp,
+  collection, getDocs, query, where, addDoc, doc, getDoc,
+  deleteDoc, writeBatch, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -16,6 +17,7 @@ interface MembershipEntry {
   dancerId?: string;
   dancerName?: string;
   planLabel?: string;
+  paymentGroupId?: string;
   pricingPlanId: string;
   totalDue: number;
   totalPaid: number;
@@ -23,6 +25,17 @@ interface MembershipEntry {
   paymentPlanStatus: string;
   installmentIds: string[];
   status: string;
+}
+
+interface PaymentGroup {
+  id: string;
+  membershipIds: string[];
+  totalDue: number;
+  totalPaid: number;
+  paymentMethod: string;
+  paymentPlanStatus: string;
+  installmentIds: string[];
+  dancers: { name: string; planLabel: string }[];
 }
 
 type PaymentMethod = 'cheque' | 'transfer' | 'cash';
@@ -38,6 +51,7 @@ export default function MembershipPage() {
   const [season, setSeason] = useState<Season | null>(null);
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [memberships, setMemberships] = useState<MembershipEntry[]>([]);
+  const [paymentGroups, setPaymentGroups] = useState<PaymentGroup[]>([]);
   const [myDancers, setMyDancers] = useState<Dancer[]>([]);
   const [globalEnrolledIds, setGlobalEnrolledIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -59,6 +73,7 @@ export default function MembershipPage() {
   const [selectedPlanIds, setSelectedPlanIds] = useState<Record<string, string>>({});
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('cheque');
   const [submitting, setSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -82,10 +97,12 @@ export default function MembershipPage() {
       }
 
       const idToken = await user.getIdToken();
-      const [plansSnap, membershipSnap, enrolledRes] = await Promise.all([
+      const [plansSnap, membershipSnap, groupsSnap, enrolledRes] = await Promise.all([
         getDocs(query(collection(db, 'pricingPlans'),
           where('seasonId', '==', activeSeason.id), where('isActive', '==', true))),
         getDocs(query(collection(db, 'memberships'),
+          where('userId', '==', user.uid), where('seasonId', '==', activeSeason.id))),
+        getDocs(query(collection(db, 'paymentGroups'),
           where('userId', '==', user.uid), where('seasonId', '==', activeSeason.id))),
         fetch(`/api/dancers/enrolled?seasonId=${activeSeason.id}`, {
           headers: { Authorization: `Bearer ${idToken}` },
@@ -122,6 +139,7 @@ export default function MembershipPage() {
           }
           return {
             id: md.id, dancerId, dancerName, planLabel,
+            paymentGroupId: data.paymentGroupId,
             pricingPlanId: data.pricingPlanId,
             totalDue: data.totalDue, totalPaid: data.totalPaid,
             paymentMethod: data.paymentMethod, paymentPlanStatus: data.paymentPlanStatus,
@@ -130,7 +148,28 @@ export default function MembershipPage() {
         })
       );
       setMemberships(loadedMemberships);
-      if (loadedMemberships.length === 0) setShowCreateForm(true);
+
+      // Build payment groups with enriched dancer info
+      const membershipById = new Map(loadedMemberships.map(m => [m.id, m]));
+      const loadedGroups: PaymentGroup[] = groupsSnap.docs.map(gd => {
+        const data = gd.data();
+        const membershipIds: string[] = data.membershipIds ?? [];
+        const dancers = membershipIds.map(mid => {
+          const m = membershipById.get(mid);
+          return { name: m?.dancerName ?? '—', planLabel: m?.planLabel ?? '—' };
+        });
+        return {
+          id: gd.id, membershipIds,
+          totalDue: data.totalDue, totalPaid: data.totalPaid,
+          paymentMethod: data.paymentMethod, paymentPlanStatus: data.paymentPlanStatus,
+          installmentIds: data.installmentIds ?? [],
+          dancers,
+        };
+      });
+      setPaymentGroups(loadedGroups);
+
+      const hasAnyMembership = loadedMemberships.length > 0 || loadedGroups.length > 0;
+      if (!hasAnyMembership) setShowCreateForm(true);
       } catch (err) {
         console.error('Erreur chargement cotisation:', err);
       } finally {
@@ -222,29 +261,61 @@ export default function MembershipPage() {
   const handleCreate = async () => {
     if (!user || !season || !allPlansFilled) return;
     setSubmitting(true);
+    setCreateError(null);
     const newIds: string[] = [];
-    for (const dancer of dancersToCreate) {
-      const planId = selectedPlanIds[dancer.id]!;
-      const plan = plans.find(p => p.id === planId)!;
-      const ref = await addDoc(collection(db, 'memberships'), {
-        userId: user.uid,
-        dancerId: dancer.id,
-        seasonId: season.id,
-        pricingPlanId: planId,
-        totalDue: plan.amount,
-        totalPaid: 0,
-        paymentMethod: selectedMethod,
-        paymentPlanStatus: 'pending',
-        installmentIds: [],
-        status: 'pending',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      newIds.push(ref.id);
+    try {
+      for (const dancer of dancersToCreate) {
+        const planId = selectedPlanIds[dancer.id]!;
+        const plan = plans.find(p => p.id === planId)!;
+        const ref = await addDoc(collection(db, 'memberships'), {
+          userId: user.uid,
+          dancerId: dancer.id,
+          seasonId: season.id,
+          pricingPlanId: planId,
+          totalDue: plan.amount,
+          totalPaid: 0,
+          paymentMethod: selectedMethod,
+          paymentPlanStatus: 'pending',
+          installmentIds: [],
+          status: 'pending',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        newIds.push(ref.id);
+      }
+
+      if (dancersToCreate.length === 1) {
+        window.location.href = `/membership/payment-plan?membershipId=${newIds[0]}`;
+      } else {
+        const totalDue = dancersToCreate.reduce((sum, dancer) => {
+          const planId = selectedPlanIds[dancer.id]!;
+          return sum + (plans.find(p => p.id === planId)?.amount ?? 0);
+        }, 0);
+        const groupRef = await addDoc(collection(db, 'paymentGroups'), {
+          userId: user.uid,
+          membershipIds: newIds,
+          totalDue,
+          totalPaid: 0,
+          paymentMethod: selectedMethod,
+          paymentPlanStatus: 'pending',
+          installmentIds: [],
+          seasonId: season.id,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        const batch = writeBatch(db);
+        for (const mId of newIds) {
+          batch.update(doc(db, 'memberships', mId), { paymentGroupId: groupRef.id });
+        }
+        await batch.commit();
+        window.location.href = `/membership/payment-plan?groupId=${groupRef.id}`;
+      }
+    } catch (err: unknown) {
+      console.error('Erreur création cotisation:', err);
+      setCreateError(err instanceof Error ? err.message : 'Erreur lors de la création.');
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
-    // Redirect to payment plan for the first new membership
-    window.location.href = `/membership/payment-plan?membershipId=${newIds[0]}`;
   };
 
   if (loading) return (
@@ -267,8 +338,8 @@ export default function MembershipPage() {
 
         {season && (
           <div className="space-y-4">
-            {/* Existing memberships */}
-            {memberships.map(m => (
+            {/* Solo memberships (not part of a group) */}
+            {memberships.filter(m => !m.paymentGroupId).map(m => (
               <MembershipCard
                 key={m.id}
                 membership={m}
@@ -281,8 +352,26 @@ export default function MembershipPage() {
               />
             ))}
 
+            {/* Payment groups */}
+            {paymentGroups.map(group => (
+              <GroupMembershipCard
+                key={group.id}
+                group={group}
+                season={season}
+                onCancel={async () => {
+                  if (!confirm('Annuler toutes les cotisations de ce groupe ? Cette action est irréversible.')) return;
+                  const batch = writeBatch(db);
+                  for (const mId of group.membershipIds) batch.delete(doc(db, 'memberships', mId));
+                  batch.delete(doc(db, 'paymentGroups', group.id));
+                  await batch.commit();
+                  setPaymentGroups(prev => prev.filter(g => g.id !== group.id));
+                  setMemberships(prev => prev.filter(m => !group.membershipIds.includes(m.id)));
+                }}
+              />
+            ))}
+
             {/* Create form toggle */}
-            {memberships.length > 0 && !showCreateForm && (
+            {(memberships.length > 0 || paymentGroups.length > 0) && !showCreateForm && (
               <button
                 onClick={() => { resetCreateForm(); setShowCreateForm(true); }}
                 className="w-full border-2 border-dashed border-gray-300 rounded-2xl py-4 text-sm font-medium text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
@@ -474,6 +563,10 @@ export default function MembershipPage() {
                       </div>
                     )}
 
+                    {createError && (
+                      <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{createError}</p>
+                    )}
+
                     <div className="flex gap-3">
                       <button onClick={() => setStep('who')}
                         className="flex-1 bg-gray-100 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-200 text-sm transition-colors">
@@ -563,6 +656,86 @@ function MembershipCard({ membership, season, onCancel }: {
       )}
       {membership.paymentPlanStatus === 'rejected' && (
         <Link href={`/membership/payment-plan?membershipId=${membership.id}`}
+          className="block w-full text-center mt-4 bg-orange-600 text-white font-semibold py-2.5 rounded-lg hover:bg-orange-700 text-sm transition-colors">
+          Modifier le plan de paiement →
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function GroupMembershipCard({ group, season, onCancel }: {
+  group: PaymentGroup;
+  season: Season;
+  onCancel: () => Promise<void>;
+}) {
+  const METHOD_LABEL: Record<string, string> = {
+    cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces',
+  };
+  const statusLabel = group.paymentPlanStatus === 'approved' ? 'Approuvé' :
+    group.paymentPlanStatus === 'rejected' ? 'Refusé' : 'En attente';
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <h2 className="font-semibold text-gray-800">Cotisations groupées</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Saison {season.label}</p>
+        </div>
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+          group.paymentPlanStatus === 'approved' ? 'bg-green-100 text-green-700' :
+          group.paymentPlanStatus === 'rejected' ? 'bg-red-100 text-red-600' :
+          'bg-orange-100 text-orange-700'
+        }`}>{statusLabel}</span>
+      </div>
+
+      <div className="space-y-1 mb-4">
+        {group.dancers.map((d, i) => (
+          <div key={i} className="flex items-center justify-between text-sm">
+            <span className="font-medium text-gray-900">{d.name}</span>
+            <span className="text-gray-500">{d.planLabel}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-sm border-t border-gray-100 pt-3">
+        <div>
+          <p className="text-gray-400 text-xs">Total dû</p>
+          <p className="font-semibold text-gray-900">{(group.totalDue / 100).toFixed(2)} €</p>
+        </div>
+        <div>
+          <p className="text-gray-400 text-xs">Total payé</p>
+          <p className={`font-semibold ${group.totalPaid >= group.totalDue ? 'text-green-700' : 'text-gray-900'}`}>
+            {(group.totalPaid / 100).toFixed(2)} €
+          </p>
+        </div>
+        <div>
+          <p className="text-gray-400 text-xs">Mode de paiement</p>
+          <p className="font-medium text-gray-700">{METHOD_LABEL[group.paymentMethod] ?? group.paymentMethod}</p>
+        </div>
+        <div>
+          <p className="text-gray-400 text-xs">Plan de paiement</p>
+          <p className={`font-medium ${
+            group.paymentPlanStatus === 'approved' ? 'text-green-700' :
+            group.paymentPlanStatus === 'rejected' ? 'text-red-600' : 'text-orange-600'
+          }`}>{statusLabel}</p>
+        </div>
+      </div>
+
+      {group.paymentPlanStatus === 'pending' && group.installmentIds.length === 0 && (
+        <div className="mt-4 flex gap-2">
+          <Link href={`/membership/payment-plan?groupId=${group.id}`}
+            className="flex-[3] block text-center bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 text-sm transition-colors">
+            Proposer un plan de paiement →
+          </Link>
+          <button onClick={onCancel}
+            className="flex-1 text-sm font-medium text-red-500 border border-red-200 rounded-lg py-2.5 hover:bg-red-50 transition-colors">
+            Annuler
+          </button>
+        </div>
+      )}
+      {group.paymentPlanStatus === 'rejected' && (
+        <Link href={`/membership/payment-plan?groupId=${group.id}`}
           className="block w-full text-center mt-4 bg-orange-600 text-white font-semibold py-2.5 rounded-lg hover:bg-orange-700 text-sm transition-colors">
           Modifier le plan de paiement →
         </Link>
