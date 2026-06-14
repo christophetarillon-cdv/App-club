@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import {
-  collection, getDocs, query, where, doc, updateDoc, writeBatch, addDoc, serverTimestamp,
+  collection, getDocs, query, where, doc, getDoc, writeBatch, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 interface Membership {
@@ -28,6 +29,8 @@ const emptyInstallment = (): Installment => ({ expectedDate: '', amount: '' });
 
 export default function PaymentPlanPage() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+  const membershipId = searchParams.get('membershipId');
   const [membership, setMembership] = useState<Membership | null>(null);
   const [installments, setInstallments] = useState<Installment[]>([emptyInstallment()]);
   const [loading, setLoading] = useState(true);
@@ -37,19 +40,26 @@ export default function PaymentPlanPage() {
   useEffect(() => {
     if (!user) return;
     const load = async () => {
-      const seasonsSnap = await getDocs(query(collection(db, 'seasons'), where('isActive', '==', true)));
-      if (seasonsSnap.empty) { setLoading(false); return; }
-      const seasonId = seasonsSnap.docs[0].id;
-      const snap = await getDocs(query(collection(db, 'memberships'),
-        where('userId', '==', user.uid),
-        where('seasonId', '==', seasonId)));
-      if (!snap.empty) {
-        setMembership({ id: snap.docs[0].id, ...snap.docs[0].data() as Omit<Membership, 'id'> });
+      if (membershipId) {
+        const snap = await getDoc(doc(db, 'memberships', membershipId));
+        if (snap.exists()) {
+          setMembership({ id: snap.id, ...snap.data() as Omit<Membership, 'id'> });
+        }
+      } else {
+        const seasonsSnap = await getDocs(query(collection(db, 'seasons'), where('isActive', '==', true)));
+        if (seasonsSnap.empty) { setLoading(false); return; }
+        const seasonId = seasonsSnap.docs[0]!.id;
+        const snap = await getDocs(query(collection(db, 'memberships'),
+          where('userId', '==', user.uid),
+          where('seasonId', '==', seasonId)));
+        if (!snap.empty) {
+          setMembership({ id: snap.docs[0]!.id, ...snap.docs[0]!.data() as Omit<Membership, 'id'> });
+        }
       }
       setLoading(false);
     };
     load();
-  }, [user]);
+  }, [user, membershipId]);
 
   const totalCents = installments.reduce((sum, i) => {
     const v = parseFloat(i.amount);

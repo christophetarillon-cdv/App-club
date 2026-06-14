@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   collection, getDocs, query, where, addDoc, doc, getDoc, serverTimestamp,
 } from 'firebase/firestore';
@@ -8,10 +8,14 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 
+interface Dancer { id: string; firstName: string; lastName: string; accountEmail?: string; }
 interface Season { id: string; label: string; }
 interface PricingPlan { id: string; label: string; amount: number; conditions: string; seasonId: string; }
-interface Membership {
+interface MembershipEntry {
   id: string;
+  dancerId?: string;
+  dancerName?: string;
+  planLabel?: string;
   pricingPlanId: string;
   totalDue: number;
   totalPaid: number;
@@ -22,87 +26,220 @@ interface Membership {
 }
 
 type PaymentMethod = 'cheque' | 'transfer' | 'cash';
+type PayScope = 'me' | 'myAccount' | 'otherAccount';
+type Step = 'who' | 'plan';
 
 const METHOD_LABEL: Record<PaymentMethod, string> = {
-  cheque: 'Chèque',
-  transfer: 'Virement',
-  cash: 'Espèces',
+  cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces',
 };
 
 export default function MembershipPage() {
   const { user } = useAuth();
   const [season, setSeason] = useState<Season | null>(null);
   const [plans, setPlans] = useState<PricingPlan[]>([]);
-  const [membership, setMembership] = useState<Membership | null | undefined>(undefined);
-  const [planDetail, setPlanDetail] = useState<PricingPlan | null>(null);
+  const [memberships, setMemberships] = useState<MembershipEntry[]>([]);
+  const [myDancers, setMyDancers] = useState<Dancer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+
+  // Creation flow
+  const [step, setStep] = useState<Step>('who');
+  const [payScope, setPayScope] = useState<PayScope>('me');
+  const [selectedDancerIds, setSelectedDancerIds] = useState<Set<string>>(new Set());
+  const [selectedOtherDancers, setSelectedOtherDancers] = useState<Dancer[]>([]);
+
+  // Other account search
+  const [otherSearch, setOtherSearch] = useState('');
+  const [allOtherDancers, setAllOtherDancers] = useState<Dancer[]>([]);
+  const [otherSearchResults, setOtherSearchResults] = useState<Dancer[]>([]);
+  const otherSearchLoaded = useRef(false);
+
+  // Plan selection
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('cheque');
   const [submitting, setSubmitting] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
-    const load = async () => {
+    (async () => {
       const seasonsSnap = await getDocs(query(collection(db, 'seasons'), where('isActive', '==', true)));
       if (seasonsSnap.empty) { setLoading(false); return; }
-      const activeSeason = { id: seasonsSnap.docs[0].id, label: seasonsSnap.docs[0].data().label };
+      const activeSeason = { id: seasonsSnap.docs[0]!.id, label: seasonsSnap.docs[0]!.data().label as string };
       setSeason(activeSeason);
+
+      const accSnap = await getDoc(doc(db, 'accounts', user.uid));
+      let myDancersList: Dancer[] = [];
+      if (accSnap.exists()) {
+        const dancerIds: string[] = accSnap.data().dancerIds ?? [];
+        const dancerDocs = await Promise.all(dancerIds.map(id => getDoc(doc(db, 'dancers', id))));
+        myDancersList = dancerDocs
+          .filter(d => d.exists())
+          .map(d => ({ id: d.id, firstName: d.data()!.firstName ?? '', lastName: d.data()!.lastName ?? '' }));
+        setMyDancers(myDancersList);
+        if (myDancersList[0]) setSelectedDancerIds(new Set([myDancersList[0].id]));
+      }
 
       const [plansSnap, membershipSnap] = await Promise.all([
         getDocs(query(collection(db, 'pricingPlans'),
-          where('seasonId', '==', activeSeason.id),
-          where('isActive', '==', true))),
+          where('seasonId', '==', activeSeason.id), where('isActive', '==', true))),
         getDocs(query(collection(db, 'memberships'),
-          where('userId', '==', user.uid),
-          where('seasonId', '==', activeSeason.id))),
+          where('userId', '==', user.uid), where('seasonId', '==', activeSeason.id))),
       ]);
 
-      const loadedPlans = plansSnap.docs.map(d => ({
+      const loadedPlans: PricingPlan[] = plansSnap.docs.map(d => ({
         id: d.id, label: d.data().label, amount: d.data().amount,
         conditions: d.data().conditions ?? '', seasonId: d.data().seasonId,
       }));
       setPlans(loadedPlans);
 
-      if (!membershipSnap.empty) {
-        const md = membershipSnap.docs[0];
-        const m: Membership = { id: md.id, ...md.data() as Omit<Membership, 'id'> };
-        setMembership(m);
-        const plan = loadedPlans.find(p => p.id === m.pricingPlanId);
-        if (plan) setPlanDetail(plan);
-        else {
-          const planSnap = await getDoc(doc(db, 'pricingPlans', m.pricingPlanId));
-          if (planSnap.exists()) {
-            setPlanDetail({ id: planSnap.id, ...planSnap.data() as Omit<PricingPlan, 'id'> });
+      const dancerMap = new Map(myDancersList.map(d => [d.id, d]));
+      const loadedMemberships: MembershipEntry[] = await Promise.all(
+        membershipSnap.docs.map(async md => {
+          const data = md.data();
+          let dancerName: string | undefined;
+          const dancerId: string | undefined = data.dancerId;
+          if (dancerId) {
+            const dancer = dancerMap.get(dancerId);
+            if (dancer) {
+              dancerName = `${dancer.firstName} ${dancer.lastName}`.trim();
+            } else {
+              const ds = await getDoc(doc(db, 'dancers', dancerId));
+              if (ds.exists()) dancerName = `${ds.data().firstName} ${ds.data().lastName}`.trim();
+            }
           }
-        }
-      } else {
-        setMembership(null);
-      }
+          let planLabel: string | undefined = loadedPlans.find(p => p.id === data.pricingPlanId)?.label;
+          if (!planLabel && data.pricingPlanId) {
+            const ps = await getDoc(doc(db, 'pricingPlans', data.pricingPlanId));
+            if (ps.exists()) planLabel = ps.data().label;
+          }
+          return {
+            id: md.id, dancerId, dancerName, planLabel,
+            pricingPlanId: data.pricingPlanId,
+            totalDue: data.totalDue, totalPaid: data.totalPaid,
+            paymentMethod: data.paymentMethod, paymentPlanStatus: data.paymentPlanStatus,
+            installmentIds: data.installmentIds ?? [], status: data.status,
+          };
+        })
+      );
+      setMemberships(loadedMemberships);
+      if (loadedMemberships.length === 0) setShowCreateForm(true);
       setLoading(false);
-    };
-    load();
+    })();
   }, [user]);
 
+  // Load all other dancers when "autre compte" is selected
+  const loadOtherDancers = async () => {
+    if (otherSearchLoaded.current) return;
+    otherSearchLoaded.current = true;
+    const [accSnap, dancerSnap] = await Promise.all([
+      getDocs(collection(db, 'accounts')),
+      getDocs(collection(db, 'dancers')),
+    ]);
+    const emailMap = new Map<string, string>();
+    accSnap.docs.forEach(d => {
+      const dancerIds: string[] = d.data().dancerIds ?? [];
+      dancerIds.forEach(did => emailMap.set(did, d.data().email ?? ''));
+    });
+    const myIds = new Set(myDancers.map(d => d.id));
+    const others: Dancer[] = dancerSnap.docs
+      .filter(d => !myIds.has(d.id))
+      .map(d => ({
+        id: d.id,
+        firstName: d.data().firstName ?? '',
+        lastName: d.data().lastName ?? '',
+        accountEmail: emailMap.get(d.id),
+      }));
+    setAllOtherDancers(others);
+  };
+
+  useEffect(() => {
+    if (payScope !== 'otherAccount' || otherSearch.length < 2) {
+      setOtherSearchResults([]);
+      return;
+    }
+    const lower = otherSearch.toLowerCase();
+    const alreadySelectedIds = new Set(selectedOtherDancers.map(d => d.id));
+    setOtherSearchResults(
+      allOtherDancers
+        .filter(d => !alreadySelectedIds.has(d.id) &&
+          (`${d.firstName} ${d.lastName}`.toLowerCase().includes(lower) ||
+           d.accountEmail?.toLowerCase().includes(lower)))
+        .slice(0, 6)
+    );
+  }, [otherSearch, allOtherDancers, payScope, selectedOtherDancers]);
+
+  const handlePayScopeChange = (scope: PayScope) => {
+    setPayScope(scope);
+    if (scope === 'me') {
+      if (myDancers[0]) setSelectedDancerIds(new Set([myDancers[0].id]));
+    } else if (scope === 'myAccount') {
+      setSelectedDancerIds(new Set(myDancers.map(d => d.id)));
+    } else {
+      if (myDancers[0]) setSelectedDancerIds(new Set([myDancers[0].id]));
+      loadOtherDancers();
+    }
+  };
+
+  const toggleMyDancer = (id: string) => {
+    setSelectedDancerIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      if (next.size === 0 && myDancers[0]) next.add(myDancers[0].id);
+      return next;
+    });
+  };
+
+  const addOtherDancer = (dancer: Dancer) => {
+    setSelectedOtherDancers(prev =>
+      prev.find(d => d.id === dancer.id) ? prev : [...prev, dancer]
+    );
+    setOtherSearch('');
+  };
+
+  const alreadyEnrolledIds = new Set(memberships.map(m => m.dancerId).filter(Boolean) as string[]);
+
+  const allSelectedDancers: Dancer[] = [
+    ...myDancers.filter(d => selectedDancerIds.has(d.id)),
+    ...selectedOtherDancers,
+  ];
+  const dancersToCreate = allSelectedDancers.filter(d => !alreadyEnrolledIds.has(d.id));
+
+  const resetCreateForm = () => {
+    setStep('who');
+    setPayScope('me');
+    if (myDancers[0]) setSelectedDancerIds(new Set([myDancers[0].id]));
+    setSelectedOtherDancers([]);
+    setOtherSearch('');
+    setSelectedPlanId('');
+    setSelectedMethod('cheque');
+  };
+
   const handleCreate = async () => {
-    if (!user || !season || !selectedPlanId) return;
+    if (!user || !season || !selectedPlanId || dancersToCreate.length === 0) return;
     const plan = plans.find(p => p.id === selectedPlanId);
     if (!plan) return;
     setSubmitting(true);
-    await addDoc(collection(db, 'memberships'), {
-      userId: user.uid,
-      seasonId: season.id,
-      pricingPlanId: selectedPlanId,
-      totalDue: plan.amount,
-      totalPaid: 0,
-      paymentMethod: selectedMethod,
-      paymentPlanStatus: 'pending',
-      installmentIds: [],
-      status: 'pending',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    const newIds: string[] = [];
+    for (const dancer of dancersToCreate) {
+      const ref = await addDoc(collection(db, 'memberships'), {
+        userId: user.uid,
+        dancerId: dancer.id,
+        seasonId: season.id,
+        pricingPlanId: selectedPlanId,
+        totalDue: plan.amount,
+        totalPaid: 0,
+        paymentMethod: selectedMethod,
+        paymentPlanStatus: 'pending',
+        installmentIds: [],
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      newIds.push(ref.id);
+    }
     setSubmitting(false);
-    window.location.href = '/membership/payment-plan';
+    // Redirect to payment plan for the first new membership
+    window.location.href = `/membership/payment-plan?membershipId=${newIds[0]}`;
   };
 
   if (loading) return (
@@ -123,114 +260,283 @@ export default function MembershipPage() {
           </div>
         )}
 
-        {season && membership === null && (
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-5">
-            <div>
-              <h2 className="font-semibold text-gray-800 mb-1">Saison {season.label}</h2>
-              <p className="text-sm text-gray-500">Choisissez un tarif et un mode de paiement pour créer votre cotisation.</p>
-            </div>
-
-            {plans.length === 0 && (
-              <p className="text-sm text-gray-400">Aucun tarif disponible pour cette saison.</p>
-            )}
-
-            <div className="space-y-2">
-              {plans.map(p => (
-                <label key={p.id} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedPlanId === p.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
-                  <input type="radio" name="plan" value={p.id} checked={selectedPlanId === p.id}
-                    onChange={() => setSelectedPlanId(p.id)} className="mt-0.5" />
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">{p.label}</p>
-                    <p className="text-sm font-semibold text-blue-700">{(p.amount / 100).toFixed(2)} €</p>
-                    {p.conditions && <p className="text-xs text-gray-500 mt-0.5">{p.conditions}</p>}
-                  </div>
-                </label>
-              ))}
-            </div>
-
-            {selectedPlanId && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Mode de paiement</p>
-                <div className="flex gap-2">
-                  {(['cheque', 'transfer', 'cash'] as PaymentMethod[]).map(m => (
-                    <button key={m} type="button"
-                      onClick={() => setSelectedMethod(m)}
-                      className={`text-sm px-4 py-2 rounded-lg font-medium border transition-colors ${selectedMethod === m ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
-                      {METHOD_LABEL[m]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <button onClick={handleCreate} disabled={!selectedPlanId || submitting}
-              className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
-              {submitting ? 'Création…' : 'Créer ma cotisation'}
-            </button>
-          </div>
-        )}
-
-        {season && membership && (
+        {season && (
           <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h2 className="font-semibold text-gray-800">{planDetail?.label ?? 'Cotisation'}</h2>
-                  <p className="text-xs text-gray-400 mt-0.5">Saison {season.label}</p>
-                </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                  membership.status === 'active' ? 'bg-green-100 text-green-700' :
-                  membership.status === 'complete' ? 'bg-blue-100 text-blue-700' :
-                  'bg-orange-100 text-orange-700'
-                }`}>
-                  {membership.status === 'active' ? 'Active' : membership.status === 'complete' ? 'Soldée' : 'En attente'}
-                </span>
-              </div>
+            {/* Existing memberships */}
+            {memberships.map(m => (
+              <MembershipCard key={m.id} membership={m} season={season} />
+            ))}
 
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-gray-400 text-xs">Total dû</p>
-                  <p className="font-semibold text-gray-900">{(membership.totalDue / 100).toFixed(2)} €</p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-xs">Total payé</p>
-                  <p className={`font-semibold ${membership.totalPaid >= membership.totalDue ? 'text-green-700' : 'text-gray-900'}`}>
-                    {(membership.totalPaid / 100).toFixed(2)} €
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-xs">Mode de paiement</p>
-                  <p className="font-medium text-gray-700">{METHOD_LABEL[membership.paymentMethod as PaymentMethod] ?? membership.paymentMethod}</p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-xs">Plan de paiement</p>
-                  <p className={`font-medium ${
-                    membership.paymentPlanStatus === 'approved' ? 'text-green-700' :
-                    membership.paymentPlanStatus === 'rejected' ? 'text-red-600' :
-                    'text-orange-600'
-                  }`}>
-                    {membership.paymentPlanStatus === 'approved' ? 'Approuvé' :
-                     membership.paymentPlanStatus === 'rejected' ? 'Refusé' : 'En attente'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {membership.paymentPlanStatus === 'pending' && membership.installmentIds.length === 0 && (
-              <Link href="/membership/payment-plan"
-                className="block w-full text-center bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 text-sm transition-colors">
-                Proposer un plan de paiement →
-              </Link>
+            {/* Create form toggle */}
+            {memberships.length > 0 && !showCreateForm && (
+              <button
+                onClick={() => { resetCreateForm(); setShowCreateForm(true); }}
+                className="w-full border-2 border-dashed border-gray-300 rounded-2xl py-4 text-sm font-medium text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
+              >
+                + Ajouter une cotisation pour un autre danseur
+              </button>
             )}
-            {membership.paymentPlanStatus === 'rejected' && (
-              <Link href="/membership/payment-plan"
-                className="block w-full text-center bg-orange-600 text-white font-semibold py-2.5 rounded-lg hover:bg-orange-700 text-sm transition-colors">
-                Modifier le plan de paiement →
-              </Link>
+
+            {/* Creation form */}
+            {showCreateForm && (
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-5">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-semibold text-gray-800">
+                    {memberships.length === 0 ? `Saison ${season.label}` : 'Nouvelle cotisation'}
+                  </h2>
+                  {memberships.length > 0 && (
+                    <button onClick={() => setShowCreateForm(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+                  )}
+                </div>
+
+                {/* Step 0: Who */}
+                {step === 'who' && (
+                  <>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700 mb-3">Pour qui souhaitez-vous créer une cotisation ?</p>
+                      <div className="space-y-2">
+                        {/* Me only */}
+                        <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${payScope === 'me' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                          <input type="radio" name="scope" checked={payScope === 'me'} onChange={() => handlePayScopeChange('me')} className="mt-0.5" />
+                          <div>
+                            <p className="font-medium text-gray-900">Pour moi seul(e)</p>
+                            {myDancers[0] && (
+                              <p className="text-sm text-gray-500">{myDancers[0].firstName} {myDancers[0].lastName}</p>
+                            )}
+                          </div>
+                        </label>
+
+                        {/* Multiple dancers from my account */}
+                        {myDancers.length > 1 && (
+                          <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${payScope === 'myAccount' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                            <input type="radio" name="scope" checked={payScope === 'myAccount'} onChange={() => handlePayScopeChange('myAccount')} className="mt-0.5" />
+                            <div>
+                              <p className="font-medium text-gray-900">Plusieurs danseurs de mon compte</p>
+                              <p className="text-sm text-gray-500">{myDancers.map(d => `${d.firstName} ${d.lastName}`).join(', ')}</p>
+                            </div>
+                          </label>
+                        )}
+
+                        {/* Other account */}
+                        <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${payScope === 'otherAccount' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                          <input type="radio" name="scope" checked={payScope === 'otherAccount'} onChange={() => handlePayScopeChange('otherAccount')} className="mt-0.5" />
+                          <div>
+                            <p className="font-medium text-gray-900">Moi + danseurs d'un autre compte</p>
+                            <p className="text-sm text-gray-500">Payer pour des danseurs d'un autre compte</p>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Dancer checkboxes for myAccount */}
+                    {payScope === 'myAccount' && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sélectionnez les danseurs</p>
+                        {myDancers.map(dancer => {
+                          const enrolled = alreadyEnrolledIds.has(dancer.id);
+                          return (
+                            <label key={dancer.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${enrolled ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed' : selectedDancerIds.has(dancer.id) ? 'border-blue-500 bg-blue-50 cursor-pointer' : 'border-gray-200 hover:bg-gray-50 cursor-pointer'}`}>
+                              <input type="checkbox" checked={selectedDancerIds.has(dancer.id)} onChange={() => !enrolled && toggleMyDancer(dancer.id)} disabled={enrolled} className="mt-0.5" />
+                              <span className="font-medium text-gray-900 flex-1">{dancer.firstName} {dancer.lastName}</span>
+                              {enrolled && <span className="text-xs text-green-600 font-medium">Déjà inscrit(e)</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Other account search */}
+                    {payScope === 'otherAccount' && (
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Mes danseurs</p>
+                          {myDancers.map(dancer => {
+                            const enrolled = alreadyEnrolledIds.has(dancer.id);
+                            return (
+                              <label key={dancer.id} className={`flex items-center gap-3 p-3 rounded-xl border mb-1.5 transition-colors ${enrolled ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed' : selectedDancerIds.has(dancer.id) ? 'border-blue-500 bg-blue-50 cursor-pointer' : 'border-gray-200 hover:bg-gray-50 cursor-pointer'}`}>
+                                <input type="checkbox" checked={selectedDancerIds.has(dancer.id)} onChange={() => !enrolled && toggleMyDancer(dancer.id)} disabled={enrolled} />
+                                <span className="font-medium text-gray-900 flex-1">{dancer.firstName} {dancer.lastName}</span>
+                                {enrolled && <span className="text-xs text-green-600 font-medium">Déjà inscrit(e)</span>}
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Rechercher un danseur d'un autre compte</p>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={otherSearch}
+                              onChange={e => setOtherSearch(e.target.value)}
+                              placeholder="Rechercher par prénom nom ou email…"
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                            />
+                            {otherSearchResults.length > 0 && (
+                              <div className="absolute z-10 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                                {otherSearchResults.map(d => (
+                                  <button key={d.id} type="button" onClick={() => addOtherDancer(d)}
+                                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50">
+                                    <span className="font-medium text-gray-900">{d.firstName} {d.lastName}</span>
+                                    {d.accountEmail && <span className="text-gray-400 ml-2">{d.accountEmail}</span>}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {selectedOtherDancers.length > 0 && (
+                            <div className="mt-2 space-y-1.5">
+                              {selectedOtherDancers.map(d => (
+                                <div key={d.id} className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm">
+                                  <span className="font-medium text-gray-900">{d.firstName} {d.lastName}</span>
+                                  <button type="button" onClick={() => setSelectedOtherDancers(prev => prev.filter(x => x.id !== d.id))}
+                                    className="text-red-400 hover:text-red-600 font-bold ml-2">✕</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => setStep('plan')}
+                      disabled={dancersToCreate.length === 0}
+                      className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors"
+                    >
+                      Continuer →
+                    </button>
+                  </>
+                )}
+
+                {/* Step 1: Plan + method */}
+                {step === 'plan' && (
+                  <>
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Danseurs concernés</p>
+                      <div className="flex flex-wrap gap-2">
+                        {dancersToCreate.map(d => (
+                          <span key={d.id} className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-1 rounded-full">
+                            {d.firstName} {d.lastName}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {plans.length === 0 && (
+                      <p className="text-sm text-gray-400">Aucun tarif disponible pour cette saison.</p>
+                    )}
+
+                    <div className="space-y-2">
+                      {plans.map(p => (
+                        <label key={p.id} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedPlanId === p.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                          <input type="radio" name="plan" value={p.id} checked={selectedPlanId === p.id}
+                            onChange={() => setSelectedPlanId(p.id)} className="mt-0.5" />
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-900">{p.label}</p>
+                            <p className="text-sm font-semibold text-blue-700">{(p.amount / 100).toFixed(2)} €</p>
+                            {p.conditions && <p className="text-xs text-gray-500 mt-0.5">{p.conditions}</p>}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+
+                    {selectedPlanId && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Mode de paiement</p>
+                        <div className="flex gap-2">
+                          {(['cheque', 'transfer', 'cash'] as PaymentMethod[]).map(m => (
+                            <button key={m} type="button" onClick={() => setSelectedMethod(m)}
+                              className={`text-sm px-4 py-2 rounded-lg font-medium border transition-colors ${selectedMethod === m ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                              {METHOD_LABEL[m]}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-3">
+                      <button onClick={() => setStep('who')}
+                        className="flex-1 bg-gray-100 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-200 text-sm transition-colors">
+                        ← Retour
+                      </button>
+                      <button onClick={handleCreate} disabled={!selectedPlanId || submitting}
+                        className="flex-[2] bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
+                        {submitting ? 'Création…' : dancersToCreate.length > 1 ? `Créer les ${dancersToCreate.length} cotisations` : 'Créer la cotisation'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function MembershipCard({ membership, season }: { membership: MembershipEntry; season: Season }) {
+  const METHOD_LABEL: Record<string, string> = {
+    cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces',
+  };
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+      <div className="flex items-start justify-between">
+        <div>
+          {membership.dancerName && (
+            <p className="text-xs font-semibold text-blue-600 mb-0.5">{membership.dancerName}</p>
+          )}
+          <h2 className="font-semibold text-gray-800">{membership.planLabel ?? 'Cotisation'}</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Saison {season.label}</p>
+        </div>
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+          membership.status === 'active' ? 'bg-green-100 text-green-700' :
+          membership.status === 'complete' ? 'bg-blue-100 text-blue-700' :
+          'bg-orange-100 text-orange-700'
+        }`}>
+          {membership.status === 'active' ? 'Active' : membership.status === 'complete' ? 'Soldée' : 'En attente'}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <p className="text-gray-400 text-xs">Total dû</p>
+          <p className="font-semibold text-gray-900">{(membership.totalDue / 100).toFixed(2)} €</p>
+        </div>
+        <div>
+          <p className="text-gray-400 text-xs">Total payé</p>
+          <p className={`font-semibold ${membership.totalPaid >= membership.totalDue ? 'text-green-700' : 'text-gray-900'}`}>
+            {(membership.totalPaid / 100).toFixed(2)} €
+          </p>
+        </div>
+        <div>
+          <p className="text-gray-400 text-xs">Mode de paiement</p>
+          <p className="font-medium text-gray-700">{METHOD_LABEL[membership.paymentMethod] ?? membership.paymentMethod}</p>
+        </div>
+        <div>
+          <p className="text-gray-400 text-xs">Plan de paiement</p>
+          <p className={`font-medium ${
+            membership.paymentPlanStatus === 'approved' ? 'text-green-700' :
+            membership.paymentPlanStatus === 'rejected' ? 'text-red-600' : 'text-orange-600'
+          }`}>
+            {membership.paymentPlanStatus === 'approved' ? 'Approuvé' :
+             membership.paymentPlanStatus === 'rejected' ? 'Refusé' : 'En attente'}
+          </p>
+        </div>
+      </div>
+
+      {membership.paymentPlanStatus === 'pending' && membership.installmentIds.length === 0 && (
+        <Link href={`/membership/payment-plan?membershipId=${membership.id}`}
+          className="block w-full text-center mt-4 bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 text-sm transition-colors">
+          Proposer un plan de paiement →
+        </Link>
+      )}
+      {membership.paymentPlanStatus === 'rejected' && (
+        <Link href={`/membership/payment-plan?membershipId=${membership.id}`}
+          className="block w-full text-center mt-4 bg-orange-600 text-white font-semibold py-2.5 rounded-lg hover:bg-orange-700 text-sm transition-colors">
+          Modifier le plan de paiement →
+        </Link>
+      )}
     </div>
   );
 }
