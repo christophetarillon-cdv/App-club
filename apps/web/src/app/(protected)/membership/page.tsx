@@ -262,9 +262,9 @@ export default function MembershipPage() {
     if (!user || !season || !allPlansFilled) return;
     setSubmitting(true);
     setCreateError(null);
-    const newIds: string[] = [];
     try {
-      for (const dancer of dancersToCreate) {
+      if (dancersToCreate.length === 1) {
+        const dancer = dancersToCreate[0]!;
         const planId = selectedPlanIds[dancer.id]!;
         const plan = plans.find(p => p.id === planId)!;
         const ref = await addDoc(collection(db, 'memberships'), {
@@ -281,19 +281,43 @@ export default function MembershipPage() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        newIds.push(ref.id);
-      }
-
-      if (dancersToCreate.length === 1) {
-        window.location.href = `/membership/payment-plan?membershipId=${newIds[0]}`;
+        window.location.href = `/membership/payment-plan?membershipId=${ref.id}`;
       } else {
+        // Pre-generate group ref so memberships can include paymentGroupId at create time
+        const groupRef = doc(collection(db, 'paymentGroups'));
+        const batch = writeBatch(db);
+        const membershipIds: string[] = [];
+
+        for (const dancer of dancersToCreate) {
+          const planId = selectedPlanIds[dancer.id]!;
+          const plan = plans.find(p => p.id === planId)!;
+          const mRef = doc(collection(db, 'memberships'));
+          membershipIds.push(mRef.id);
+          batch.set(mRef, {
+            userId: user.uid,
+            dancerId: dancer.id,
+            seasonId: season.id,
+            pricingPlanId: planId,
+            totalDue: plan.amount,
+            totalPaid: 0,
+            paymentMethod: selectedMethod,
+            paymentPlanStatus: 'pending',
+            installmentIds: [],
+            status: 'pending',
+            paymentGroupId: groupRef.id,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+
         const totalDue = dancersToCreate.reduce((sum, dancer) => {
           const planId = selectedPlanIds[dancer.id]!;
           return sum + (plans.find(p => p.id === planId)?.amount ?? 0);
         }, 0);
-        const groupRef = await addDoc(collection(db, 'paymentGroups'), {
+
+        batch.set(groupRef, {
           userId: user.uid,
-          membershipIds: newIds,
+          membershipIds,
           totalDue,
           totalPaid: 0,
           paymentMethod: selectedMethod,
@@ -303,10 +327,7 @@ export default function MembershipPage() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        const batch = writeBatch(db);
-        for (const mId of newIds) {
-          batch.update(doc(db, 'memberships', mId), { paymentGroupId: groupRef.id });
-        }
+
         await batch.commit();
         window.location.href = `/membership/payment-plan?groupId=${groupRef.id}`;
       }
