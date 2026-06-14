@@ -139,7 +139,11 @@ service cloud.firestore {
           .hasOnly(['paymentMethod', 'installmentIds', 'updatedAt']) &&
         resource.data.paymentPlanStatus == 'pending'
       );
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (
+        isOwner(resource.data.userId) &&
+        resource.data.paymentPlanStatus == 'pending' &&
+        resource.data.installmentIds.size() == 0
+      );
     }
 
     match /payments/{id} {

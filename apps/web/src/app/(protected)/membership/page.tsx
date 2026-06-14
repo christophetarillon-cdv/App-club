@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  collection, getDocs, query, where, addDoc, doc, getDoc, serverTimestamp,
+  collection, getDocs, query, where, addDoc, doc, getDoc, deleteDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -269,7 +269,16 @@ export default function MembershipPage() {
           <div className="space-y-4">
             {/* Existing memberships */}
             {memberships.map(m => (
-              <MembershipCard key={m.id} membership={m} season={season} />
+              <MembershipCard
+                key={m.id}
+                membership={m}
+                season={season}
+                onCancel={async () => {
+                  if (!confirm('Annuler cette cotisation ? Cette action est irréversible.')) return;
+                  await deleteDoc(doc(db, 'memberships', m.id));
+                  setMemberships(prev => prev.filter(x => x.id !== m.id));
+                }}
+              />
             ))}
 
             {/* Create form toggle */}
@@ -486,7 +495,11 @@ export default function MembershipPage() {
   );
 }
 
-function MembershipCard({ membership, season }: { membership: MembershipEntry; season: Season }) {
+function MembershipCard({ membership, season, onCancel }: {
+  membership: MembershipEntry;
+  season: Season;
+  onCancel: () => Promise<void>;
+}) {
   const METHOD_LABEL: Record<string, string> = {
     cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces',
   };
@@ -537,10 +550,16 @@ function MembershipCard({ membership, season }: { membership: MembershipEntry; s
       </div>
 
       {membership.paymentPlanStatus === 'pending' && membership.installmentIds.length === 0 && (
-        <Link href={`/membership/payment-plan?membershipId=${membership.id}`}
-          className="block w-full text-center mt-4 bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 text-sm transition-colors">
-          Proposer un plan de paiement →
-        </Link>
+        <div className="mt-4 flex gap-2">
+          <Link href={`/membership/payment-plan?membershipId=${membership.id}`}
+            className="flex-[3] block text-center bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 text-sm transition-colors">
+            Proposer un plan de paiement →
+          </Link>
+          <button onClick={onCancel}
+            className="flex-1 text-sm font-medium text-red-500 border border-red-200 rounded-lg py-2.5 hover:bg-red-50 transition-colors">
+            Annuler
+          </button>
+        </div>
       )}
       {membership.paymentPlanStatus === 'rejected' && (
         <Link href={`/membership/payment-plan?membershipId=${membership.id}`}
