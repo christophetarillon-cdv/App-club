@@ -279,7 +279,7 @@ export default function AdminPaymentPlansPage() {
                       </button>
                     </>
                   )}
-                  {row.installments.length > 0 && (
+                  {row.installmentIds.length > 0 && (
                     <button onClick={() => setExpanded(expanded === row.id ? null : row.id)}
                       className="text-xs text-gray-400 hover:text-gray-700">
                       {expanded === row.id ? 'Masquer' : 'Détail'}
@@ -288,11 +288,16 @@ export default function AdminPaymentPlansPage() {
                 </div>
               </div>
               {expanded === row.id && row.installments.length > 0 && (
-                <div className="border-t border-gray-100 px-5 py-3 space-y-1">
+                <div className="border-t border-gray-100 px-5 py-3 space-y-1.5">
                   {row.installments.map((inst, idx) => (
-                    <div key={inst.id} className="flex justify-between text-sm text-gray-600">
-                      <span>Versement {idx + 1} — {inst.expectedDate}</span>
-                      <span className="font-medium">{(inst.amount / 100).toFixed(2)} €</span>
+                    <div key={inst.id} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">Versement {idx + 1} — {inst.expectedDate}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${inst.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                          {inst.status === 'paid' ? 'Encaissé' : 'En attente'}
+                        </span>
+                        <span className="font-medium text-gray-800 w-16 text-right">{(inst.amount / 100).toFixed(2)} €</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -336,7 +341,7 @@ export default function AdminPaymentPlansPage() {
                       </button>
                     </>
                   )}
-                  {g.installments.length > 0 && (
+                  {g.installmentIds.length > 0 && (
                     <button onClick={() => setExpanded(expanded === g.id ? null : g.id)}
                       className="text-xs text-gray-400 hover:text-gray-700">
                       {expanded === g.id ? 'Masquer' : 'Détail'}
@@ -345,11 +350,16 @@ export default function AdminPaymentPlansPage() {
                 </div>
               </div>
               {expanded === g.id && g.installments.length > 0 && (
-                <div className="border-t border-gray-100 px-5 py-3 space-y-1">
+                <div className="border-t border-gray-100 px-5 py-3 space-y-1.5">
                   {g.installments.map((inst, idx) => (
-                    <div key={inst.id} className="flex justify-between text-sm text-gray-600">
-                      <span>Versement {idx + 1} — {inst.expectedDate}</span>
-                      <span className="font-medium">{(inst.amount / 100).toFixed(2)} €</span>
+                    <div key={inst.id} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">Versement {idx + 1} — {inst.expectedDate}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${inst.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                          {inst.status === 'paid' ? 'Encaissé' : 'En attente'}
+                        </span>
+                        <span className="font-medium text-gray-800 w-16 text-right">{(inst.amount / 100).toFixed(2)} €</span>
+                      </div>
                     </div>
                   ))}
                 </div>
