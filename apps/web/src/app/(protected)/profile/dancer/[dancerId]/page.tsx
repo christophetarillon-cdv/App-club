@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { Timestamp } from 'firebase/firestore';
 import { storage } from '@/lib/firebase';
 import { updateDancer } from '@/lib/auth';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,6 +33,7 @@ export default function DancerProfilePage() {
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [birthDate, setBirthDate] = useState('');
   const [emergencyName, setEmergencyName] = useState('');
   const [emergencyPhone, setEmergencyPhone] = useState('');
   const [saving, setSaving] = useState(false);
@@ -49,6 +51,8 @@ export default function DancerProfilePage() {
       setLastName(dancer.lastName);
       setPhone(dancer.phone ?? '');
       setAddress(dancer.address ?? '');
+      const bd = dancer.birthDate as any;
+      setBirthDate(bd ? new Date(bd.seconds * 1000).toISOString().split('T')[0] : '');
       setEmergencyName(dancer.emergencyContact?.name ?? '');
       setEmergencyPhone(dancer.emergencyContact?.phone ?? '');
       setPhotoPreview(dancer.photoUrl ?? null);
@@ -93,6 +97,7 @@ export default function DancerProfilePage() {
         lastName: lastName.trim(),
         phone: phone.trim(),
         address: address.trim(),
+        birthDate: birthDate ? Timestamp.fromDate(new Date(birthDate)) as any : undefined,
         emergencyContact: (emergencyName.trim() || emergencyPhone.trim())
           ? { name: emergencyName.trim(), phone: emergencyPhone.trim() }
           : undefined,
@@ -194,6 +199,12 @@ export default function DancerProfilePage() {
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Adresse</label>
             <textarea value={address} onChange={e => setAddress(e.target.value)} rows={2}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Date de naissance</label>
+            <input type="date" value={birthDate} onChange={e => setBirthDate(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
           </div>
 
           <div className="space-y-2">
