@@ -1,5 +1,7 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 
 function initAdmin() {
   if (!getApps().length) {
@@ -13,4 +15,14 @@ function initAdmin() {
 export function getAdminBucket(): any {
   initAdmin();
   return getStorage().bucket();
+}
+
+export function getAdminFirestore() {
+  initAdmin();
+  return getFirestore();
+}
+
+export function getAdminAuth() {
+  initAdmin();
+  return getAuth();
 }

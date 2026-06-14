@@ -39,6 +39,7 @@ export default function MembershipPage() {
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [memberships, setMemberships] = useState<MembershipEntry[]>([]);
   const [myDancers, setMyDancers] = useState<Dancer[]>([]);
+  const [globalEnrolledIds, setGlobalEnrolledIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
 
@@ -79,12 +80,17 @@ export default function MembershipPage() {
         if (myDancersList[0]) setSelectedDancerIds(new Set([myDancersList[0].id]));
       }
 
-      const [plansSnap, membershipSnap] = await Promise.all([
+      const idToken = await user.getIdToken();
+      const [plansSnap, membershipSnap, enrolledRes] = await Promise.all([
         getDocs(query(collection(db, 'pricingPlans'),
           where('seasonId', '==', activeSeason.id), where('isActive', '==', true))),
         getDocs(query(collection(db, 'memberships'),
           where('userId', '==', user.uid), where('seasonId', '==', activeSeason.id))),
+        fetch(`/api/dancers/enrolled?seasonId=${activeSeason.id}`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        }).then(r => r.json() as Promise<string[]>).catch(() => [] as string[]),
       ]);
+      setGlobalEnrolledIds(new Set(enrolledRes));
 
       const loadedPlans: PricingPlan[] = plansSnap.docs.map(d => ({
         id: d.id, label: d.data().label, amount: d.data().amount,
@@ -134,7 +140,7 @@ export default function MembershipPage() {
     const dancerSnap = await getDocs(collection(db, 'dancers'));
     const myIds = new Set(myDancers.map(d => d.id));
     const others: Dancer[] = dancerSnap.docs
-      .filter(d => !myIds.has(d.id))
+      .filter(d => !myIds.has(d.id) && !globalEnrolledIds.has(d.id))
       .map(d => ({
         id: d.id,
         firstName: d.data().firstName ?? '',
@@ -186,7 +192,7 @@ export default function MembershipPage() {
     setOtherSearch('');
   };
 
-  const alreadyEnrolledIds = new Set(memberships.map(m => m.dancerId).filter(Boolean) as string[]);
+  const alreadyEnrolledIds = globalEnrolledIds;
 
   const allSelectedDancers: Dancer[] = [
     ...myDancers.filter(d => selectedDancerIds.has(d.id)),
