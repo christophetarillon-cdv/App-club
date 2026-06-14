@@ -52,7 +52,7 @@ export default function AdminDancersPage() {
         label: d.data().label ?? d.id,
         startDate: d.data().startDate ?? '',
       }));
-      s.sort((a, b) => b.startDate.localeCompare(a.startDate));
+      s.sort((a, b) => String(b.startDate ?? '').localeCompare(String(a.startDate ?? '')));
       setSeasons(s);
       if (s.length > 0) setSelectedSeasonId(s[0].id);
     });
