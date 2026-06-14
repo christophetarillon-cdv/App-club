@@ -15,19 +15,41 @@ interface Season {
   isActive: boolean;
 }
 
+type PaymentMethod = 'cheque' | 'transfer' | 'cash';
+
+const METHOD_LABEL: Record<string, string> = {
+  cheque: 'Chèques', transfer: 'Virements', cash: 'Espèces',
+};
+const METHOD_COLOR: Record<string, string> = {
+  cheque: 'bg-blue-100 text-blue-700',
+  transfer: 'bg-purple-100 text-purple-700',
+  cash: 'bg-green-100 text-green-700',
+};
+const ITEM_LABEL: Record<string, string> = {
+  cheque: 'chèque', transfer: 'virement', cash: 'règlement espèces',
+};
+
 interface DepositRow {
   memberName: string;
   amount: number;
   expectedDate: string;
   cmc7?: string;
+  chequeNumber?: string;
+  draweeBank?: string;
+  draweeCity?: string;
+  transferRef?: string;
+  transferDate?: string;
+  cashReceiptRef?: string;
 }
 
 interface Deposit {
   id: string;
   depositDate: string;
+  paymentMethod: PaymentMethod;
   bankAccount: string;
+  bankAccountName?: string;
   totalAmount: number;
-  chequeCount: number;
+  itemCount: number;
   createdAt: { toDate: () => Date } | null;
   pdfUrl?: string;
   installmentIds?: string[];
@@ -70,9 +92,11 @@ export default function BankDepositsPage() {
     const all: Deposit[] = snap.docs.map(d => ({
       id: d.id,
       depositDate: d.data().depositDate,
-      bankAccount: d.data().bankAccount,
+      paymentMethod: (d.data().paymentMethod ?? 'cheque') as PaymentMethod,
+      bankAccount: d.data().bankAccount ?? '',
+      bankAccountName: d.data().bankAccountName ?? d.data().bankAccount ?? '',
       totalAmount: d.data().totalAmount,
-      chequeCount: d.data().chequeCount,
+      itemCount: d.data().itemCount ?? d.data().chequeCount ?? 0,
       createdAt: d.data().createdAt ?? null,
       pdfUrl: d.data().pdfUrl,
       installmentIds: d.data().installmentIds,
@@ -157,7 +181,7 @@ export default function BankDepositsPage() {
       page.drawLine({ start: { x: 50, y }, end: { x: 545, y }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
       y -= 18;
       page.drawText(`Total : ${(deposit.totalAmount / 100).toFixed(2)} €`, { x: 300, y, size: 11, font: fontBold });
-      page.drawText(`${deposit.chequeCount} chèque${deposit.chequeCount > 1 ? 's' : ''}`, { x: 50, y, size: 11, font: fontBold });
+      page.drawText(`${deposit.itemCount} règlement${deposit.itemCount > 1 ? 's' : ''}`, { x: 50, y, size: 11, font: fontBold });
 
       const pdfBytes = await pdfDoc.save();
       const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
@@ -174,7 +198,6 @@ export default function BankDepositsPage() {
 
   const selectedSeason = seasons.find(s => s.id === selectedSeasonId);
   const grandTotal = deposits.reduce((sum, d) => sum + d.totalAmount, 0);
-  const grandCount = deposits.reduce((sum, d) => sum + d.chequeCount, 0);
 
   return (
     <div>
@@ -216,19 +239,36 @@ export default function BankDepositsPage() {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-4">
                 <div className="divide-y divide-gray-50">
                   {deposits.map(dep => (
-                    <div key={dep.id} className="flex items-center gap-4 px-5 py-4">
+                    <div key={dep.id} className="flex items-start gap-4 px-5 py-4">
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 text-sm">
-                          {new Date(dep.depositDate + 'T12:00:00').toLocaleDateString('fr-FR', {
-                            day: 'numeric', month: 'long', year: 'numeric',
-                          })}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-0.5">{dep.bankAccount}</p>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <p className="font-semibold text-gray-900 text-sm">
+                            {new Date(dep.depositDate + 'T12:00:00').toLocaleDateString('fr-FR', {
+                              day: 'numeric', month: 'long', year: 'numeric',
+                            })}
+                          </p>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${METHOD_COLOR[dep.paymentMethod] ?? 'bg-gray-100 text-gray-500'}`}>
+                            {METHOD_LABEL[dep.paymentMethod] ?? dep.paymentMethod}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500">{dep.bankAccountName}</p>
                         {dep.rows && (
                           <div className="mt-1.5 space-y-0.5">
                             {dep.rows.map((r, i) => (
                               <p key={i} className="text-xs text-gray-400">
                                 {r.memberName} — {(r.amount / 100).toFixed(2)} €
+                                {dep.paymentMethod === 'cheque' && r.chequeNumber && (
+                                  <span className="font-mono ml-1.5">N° {r.chequeNumber}</span>
+                                )}
+                                {dep.paymentMethod === 'cheque' && (r.draweeBank || r.draweeCity) && (
+                                  <span className="ml-1.5">{[r.draweeBank, r.draweeCity].filter(Boolean).join(' / ')}</span>
+                                )}
+                                {dep.paymentMethod === 'transfer' && r.transferRef && (
+                                  <span className="ml-1.5">Réf : {r.transferRef}</span>
+                                )}
+                                {dep.paymentMethod === 'cash' && r.cashReceiptRef && (
+                                  <span className="ml-1.5">Reçu N° {r.cashReceiptRef}</span>
+                                )}
                                 {r.cmc7 && <span className="font-mono ml-2">{r.cmc7.slice(0, 20)}</span>}
                               </p>
                             ))}
@@ -237,21 +277,17 @@ export default function BankDepositsPage() {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="text-xs text-gray-500">
-                          {dep.chequeCount} chèque{dep.chequeCount > 1 ? 's' : ''}
+                          {dep.itemCount} {ITEM_LABEL[dep.paymentMethod] ?? 'règlement'}{dep.itemCount > 1 ? 's' : ''}
                         </p>
                         <p className="font-bold text-gray-900 text-sm">{(dep.totalAmount / 100).toFixed(2)} €</p>
                       </div>
                       {dep.pdfUrl ? (
                         <a href={dep.pdfUrl} target="_blank" rel="noreferrer"
-                          className="flex-shrink-0 text-xs text-blue-600 hover:underline ml-2">
-                          PDF
-                        </a>
+                          className="flex-shrink-0 text-xs text-blue-600 hover:underline">PDF</a>
                       ) : (
-                        <button
-                          onClick={() => regeneratePdf(dep)}
-                          disabled={generatingId === dep.id}
+                        <button onClick={() => regeneratePdf(dep)} disabled={generatingId === dep.id}
                           title="Régénérer le PDF"
-                          className="flex-shrink-0 text-xs text-blue-600 hover:underline disabled:text-gray-300 disabled:no-underline ml-2">
+                          className="flex-shrink-0 text-xs text-blue-600 hover:underline disabled:text-gray-300">
                           {generatingId === dep.id ? '…' : 'PDF ↺'}
                         </button>
                       )}
@@ -262,7 +298,7 @@ export default function BankDepositsPage() {
 
               <div className="bg-gray-50 rounded-xl border border-gray-200 px-5 py-3 flex items-center justify-between">
                 <p className="text-sm text-gray-500">
-                  {deposits.length} bordereau{deposits.length > 1 ? 'x' : ''} — {grandCount} chèque{grandCount > 1 ? 's' : ''}
+                  {deposits.length} bordereau{deposits.length > 1 ? 'x' : ''}
                 </p>
                 <p className="font-bold text-gray-900">{(grandTotal / 100).toFixed(2)} €</p>
               </div>
