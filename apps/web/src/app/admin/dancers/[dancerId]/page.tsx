@@ -179,7 +179,7 @@ export default function DancerDetailPage() {
         const allEntries: Entry[] = [];
 
         membershipSnap.docs.forEach(d => {
-          const m = { id: d.id, ...d.data() };
+          const m = { id: d.id, ...d.data() } as any;
           if (m.paymentGroupId) return;
           if (!isThisDancer(m)) return;
           allEntries.push({
