@@ -108,17 +108,15 @@ export default function AdminCreatePaymentPlanPage() {
     if (searchQuery.length < 2) { setSearchResults([]); return; }
     const lower = searchQuery.toLowerCase();
     const selectedIds = new Set(selectedDancers.map(d => d.id));
-    const matches = allDancers.filter(d =>
-      !selectedIds.has(d.id) &&
-      `${d.firstName} ${d.lastName}`.toLowerCase().includes(lower)
+    setSearchResults(
+      allDancers
+        .filter(d =>
+          !selectedIds.has(d.id) &&
+          !enrolledIds.has(d.id) &&
+          `${d.firstName} ${d.lastName}`.toLowerCase().includes(lower)
+        )
+        .slice(0, 8)
     );
-    // Non-inscrits en premier, inscrits grisés après
-    matches.sort((a, b) => {
-      const aE = enrolledIds.has(a.id);
-      const bE = enrolledIds.has(b.id);
-      return aE === bE ? 0 : aE ? 1 : -1;
-    });
-    setSearchResults(matches.slice(0, 8));
   }, [searchQuery, allDancers, selectedDancers, enrolledIds]);
 
   const addDancer = (dancer: Dancer) => {
@@ -334,15 +332,11 @@ export default function AdminCreatePaymentPlanPage() {
                   <div className="absolute z-10 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
                     {searchResults.map(d => {
                       const account = allAccounts.find(a => a.id === d.accountId);
-                      const enrolled = enrolledIds.has(d.id);
                       return (
-                        <button key={d.id} type="button"
-                          onClick={() => !enrolled && addDancer(d)}
-                          disabled={enrolled}
-                          className={`w-full text-left px-4 py-2.5 text-sm border-b border-gray-50 last:border-0 ${enrolled ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'hover:bg-gray-50'}`}>
+                        <button key={d.id} type="button" onClick={() => addDancer(d)}
+                          className="w-full text-left px-4 py-2.5 text-sm border-b border-gray-50 last:border-0 hover:bg-gray-50">
                           <span className="font-medium text-gray-900">{d.firstName} {d.lastName}</span>
                           {account && <span className="text-gray-400 ml-2 text-xs">{account.email}</span>}
-                          {enrolled && <span className="ml-2 text-xs text-green-600 font-medium">Déjà inscrit(e)</span>}
                         </button>
                       );
                     })}
