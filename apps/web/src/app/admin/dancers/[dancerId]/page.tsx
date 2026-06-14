@@ -13,19 +13,21 @@ interface Dancer {
   accountId: string;
   roles: string[];
   isActive: boolean;
+  phone?: string;
+  address?: string;
+  birthDate?: any;
+  isMinor?: boolean;
+  memberNumber?: string;
+  emergencyContact?: { name?: string; phone?: string };
 }
 interface Account {
   id: string;
   email: string;
   displayName: string;
   dancerIds: string[];
+  phone?: string;
 }
-interface Installment {
-  id: string;
-  expectedDate: string;
-  amount: number;
-  status: string;
-}
+interface Installment { id: string; expectedDate: string; amount: number; status: string; }
 interface Entry {
   id: string;
   kind: 'solo' | 'group';
@@ -40,6 +42,18 @@ interface Entry {
   installments: Installment[];
   groupDancerNames: string[];
 }
+interface CourseRow {
+  registrationId: string;
+  registrationStatus: string;
+  seasonId: string;
+  seasonLabel: string;
+  danceStyleLabel: string;
+  levelLabel: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  courseName?: string;
+}
 
 const STATUS_LABEL: Record<string, string> = {
   pending: 'En attente', approved: 'Approuvé', active: 'Actif',
@@ -50,20 +64,47 @@ const STATUS_COLOR: Record<string, string> = {
   active: 'bg-green-100 text-green-700', rejected: 'bg-red-100 text-red-700',
   cancelled: 'bg-gray-100 text-gray-500',
 };
+const REG_STATUS_LABEL: Record<string, string> = {
+  active: 'Inscrit', cancelled: 'Annulé', waitlist: 'Liste d\'attente',
+};
+const REG_STATUS_COLOR: Record<string, string> = {
+  active: 'bg-green-100 text-green-700',
+  cancelled: 'bg-gray-100 text-gray-500',
+  waitlist: 'bg-orange-100 text-orange-700',
+};
 const METHOD_LABEL: Record<string, string> = {
   cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', online: 'En ligne',
 };
+const DAY_LABEL = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+
+function formatDate(ts: any): string {
+  if (!ts) return '';
+  try {
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString('fr-FR');
+  } catch { return ''; }
+}
+
+function InfoRow({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <div>
+      <p className="text-xs text-gray-400">{label}</p>
+      <p className="text-sm text-gray-800">{value}</p>
+    </div>
+  );
+}
 
 export default function DancerDetailPage() {
   const { dancerId } = useParams<{ dancerId: string }>();
   const [dancer, setDancer] = useState<Dancer | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [courses, setCourses] = useState<CourseRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!dancerId) return;
-
     (async () => {
       setLoading(true);
       try {
@@ -77,6 +118,12 @@ export default function DancerDetailPage() {
           accountId: d.accountId ?? '',
           roles: d.roles ?? [],
           isActive: d.isActive !== false,
+          phone: d.phone,
+          address: d.address,
+          birthDate: d.birthDate,
+          isMinor: d.isMinor,
+          memberNumber: d.memberNumber,
+          emergencyContact: d.emergencyContact,
         };
         setDancer(dancerData);
 
@@ -86,15 +133,19 @@ export default function DancerDetailPage() {
           email: accountSnap.data().email ?? '',
           displayName: accountSnap.data().displayName ?? '',
           dancerIds: accountSnap.data().dancerIds ?? [],
+          phone: accountSnap.data().phone,
         } : null;
         setAccount(accountData);
 
-        const [membershipSnap, groupSnap, seasonSnap, planSnap, allDancerSnap] = await Promise.all([
+        const [membershipSnap, groupSnap, seasonSnap, planSnap, allDancerSnap, regSnap, styleSnap, levelSnap] = await Promise.all([
           getDocs(query(collection(db, 'memberships'), where('userId', '==', dancerData.accountId))),
           getDocs(query(collection(db, 'paymentGroups'), where('userId', '==', dancerData.accountId))),
           getDocs(collection(db, 'seasons')),
           getDocs(collection(db, 'pricingPlans')),
           getDocs(collection(db, 'dancers')),
+          getDocs(query(collection(db, 'registrations'), where('userId', '==', dancerData.accountId))),
+          getDocs(collection(db, 'danceStyles')),
+          getDocs(collection(db, 'levels')),
         ]);
 
         const seasonLabelMap = new Map<string, string>();
@@ -108,6 +159,12 @@ export default function DancerDetailPage() {
           dancerNameMap.set(d.id, `${d.data().firstName ?? ''} ${d.data().lastName ?? ''}`.trim());
         });
 
+        const styleLabelMap = new Map<string, string>();
+        styleSnap.docs.forEach(d => styleLabelMap.set(d.id, d.data().name ?? d.data().label ?? ''));
+
+        const levelLabelMap = new Map<string, string>();
+        levelSnap.docs.forEach(d => levelLabelMap.set(d.id, d.data().name ?? d.data().label ?? ''));
+
         const membershipById = new Map<string, any>();
         membershipSnap.docs.forEach(d => membershipById.set(d.id, { id: d.id, ...d.data() }));
 
@@ -116,89 +173,105 @@ export default function DancerDetailPage() {
           return accountData?.dancerIds?.[0] === dancerId;
         };
 
+        // ── Cotisations ────────────────────────────────────────────────
         const allEntries: Entry[] = [];
 
-        // Solo memberships
         membershipSnap.docs.forEach(d => {
           const m = { id: d.id, ...d.data() };
           if (m.paymentGroupId) return;
           if (!isThisDancer(m)) return;
           allEntries.push({
-            id: m.id,
-            kind: 'solo',
+            id: m.id, kind: 'solo',
             seasonId: m.seasonId ?? '',
             seasonLabel: seasonLabelMap.get(m.seasonId) ?? m.seasonId,
             planLabel: planLabelMap.get(m.pricingPlanId) ?? '',
             paymentMethod: m.paymentMethod ?? '',
-            totalDue: m.totalDue ?? 0,
-            totalPaid: m.totalPaid ?? 0,
+            totalDue: m.totalDue ?? 0, totalPaid: m.totalPaid ?? 0,
             status: m.paymentPlanStatus ?? '',
-            installmentIds: m.installmentIds ?? [],
-            installments: [],
-            groupDancerNames: [],
+            installmentIds: m.installmentIds ?? [], installments: [], groupDancerNames: [],
           });
         });
 
-        // Group memberships
         for (const d of groupSnap.docs) {
           const g = { id: d.id, ...d.data() };
           const membershipIds: string[] = g.membershipIds ?? [];
           const myMembership = membershipIds.map(id => membershipById.get(id)).filter(Boolean).find(m => isThisDancer(m));
           if (!myMembership) continue;
-
           const otherDancerNames = (accountData?.dancerIds ?? [])
             .filter(id => id !== dancerId)
-            .map(id => dancerNameMap.get(id) ?? '')
-            .filter(Boolean);
-
+            .map(id => dancerNameMap.get(id) ?? '').filter(Boolean);
           allEntries.push({
-            id: g.id,
-            kind: 'group',
+            id: g.id, kind: 'group',
             seasonId: g.seasonId ?? '',
             seasonLabel: seasonLabelMap.get(g.seasonId) ?? g.seasonId,
             planLabel: planLabelMap.get(myMembership.pricingPlanId) ?? '',
             paymentMethod: g.paymentMethod ?? '',
-            totalDue: g.totalDue ?? 0,
-            totalPaid: g.totalPaid ?? 0,
+            totalDue: g.totalDue ?? 0, totalPaid: g.totalPaid ?? 0,
             status: g.paymentPlanStatus ?? '',
-            installmentIds: g.installmentIds ?? [],
-            installments: [],
+            installmentIds: g.installmentIds ?? [], installments: [],
             groupDancerNames: otherDancerNames,
           });
         }
 
         allEntries.sort((a, b) => b.seasonId.localeCompare(a.seasonId));
 
-        // Load installments in parallel
         await Promise.all(allEntries.map(async entry => {
           if (entry.installmentIds.length === 0) return;
           const insts = await Promise.all(
             entry.installmentIds.map(async id => {
               const snap = await getDoc(doc(db, 'paymentInstallments', id));
-              return snap.exists() ? {
-                id,
-                expectedDate: snap.data().expectedDate ?? '',
-                amount: snap.data().amount ?? 0,
-                status: snap.data().status ?? 'pending',
-              } : null;
+              return snap.exists() ? { id, expectedDate: snap.data().expectedDate ?? '', amount: snap.data().amount ?? 0, status: snap.data().status ?? 'pending' } : null;
             })
           );
           entry.installments = insts.filter(Boolean) as Installment[];
         }));
 
         setEntries(allEntries);
+
+        // ── Inscriptions ───────────────────────────────────────────────
+        const uniqueCourseIds = [...new Set(regSnap.docs.map(d => d.data().courseId).filter(Boolean))];
+        const courseSnaps = await Promise.all(uniqueCourseIds.map(id => getDoc(doc(db, 'courses', id))));
+        const courseMap = new Map<string, any>();
+        courseSnaps.forEach(s => { if (s.exists()) courseMap.set(s.id, s.data()); });
+
+        const courseRows: CourseRow[] = regSnap.docs
+          .map(d => {
+            const r = d.data();
+            const c = courseMap.get(r.courseId);
+            return {
+              registrationId: d.id,
+              registrationStatus: r.status ?? 'active',
+              seasonId: r.seasonId ?? '',
+              seasonLabel: seasonLabelMap.get(r.seasonId) ?? r.seasonId ?? '',
+              danceStyleLabel: c ? (styleLabelMap.get(c.danceStyleId) ?? '') : '',
+              levelLabel: c ? (levelLabelMap.get(c.levelId) ?? '') : '',
+              dayOfWeek: c?.dayOfWeek ?? 0,
+              startTime: c?.startTime ?? '',
+              endTime: c?.endTime ?? '',
+              courseName: c?.name,
+            };
+          })
+          .filter(r => r.registrationStatus !== 'cancelled')
+          .sort((a, b) => b.seasonId.localeCompare(a.seasonId));
+
+        setCourses(courseRows);
       } finally {
         setLoading(false);
       }
     })();
   }, [dancerId]);
 
-  if (loading) {
-    return <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>;
-  }
-  if (!dancer) {
-    return <div className="text-center py-12 text-gray-400 text-sm">Danseur introuvable.</div>;
-  }
+  if (loading) return <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>;
+  if (!dancer) return <div className="text-center py-12 text-gray-400 text-sm">Danseur introuvable.</div>;
+
+  const phone = dancer.phone || account?.phone;
+
+  // Group courses by season
+  const coursesBySeason = courses.reduce<Record<string, CourseRow[]>>((acc, r) => {
+    if (!acc[r.seasonId]) acc[r.seasonId] = [];
+    acc[r.seasonId].push(r);
+    return acc;
+  }, {});
 
   return (
     <div>
@@ -207,27 +280,98 @@ export default function DancerDetailPage() {
         <h1 className="text-2xl font-bold text-gray-900">{dancer.firstName} {dancer.lastName}</h1>
       </div>
 
-      {/* Dancer info card */}
+      {/* Info card */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between mb-4">
           <div>
             <p className="text-lg font-semibold text-gray-900">{dancer.firstName} {dancer.lastName}</p>
-            {account && <p className="text-sm text-gray-500 mt-0.5">{account.email}</p>}
+            {dancer.memberNumber && (
+              <p className="text-xs text-gray-400 mt-0.5">N° {dancer.memberNumber}</p>
+            )}
           </div>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${dancer.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
-            {dancer.isActive ? 'Actif' : 'Inactif'}
-          </span>
+          <div className="flex items-center gap-2">
+            {dancer.isMinor && (
+              <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">Mineur</span>
+            )}
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${dancer.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+              {dancer.isActive ? 'Actif' : 'Inactif'}
+            </span>
+          </div>
         </div>
-        {dancer.roles.length > 0 && (
-          <div className="flex gap-2 mt-3">
-            {dancer.roles.map(r => (
-              <span key={r} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">
-                {r === 'member' ? 'Membre' : r === 'trial' ? 'Essai' : r}
-              </span>
-            ))}
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <InfoRow label="Email" value={account?.email} />
+          <InfoRow label="Téléphone" value={phone} />
+          <InfoRow label="Date de naissance" value={formatDate(dancer.birthDate)} />
+          <InfoRow label="Adresse" value={dancer.address} />
+          {dancer.roles.length > 0 && (
+            <div>
+              <p className="text-xs text-gray-400">Rôle</p>
+              <div className="flex gap-1.5 mt-0.5 flex-wrap">
+                {dancer.roles.map(r => (
+                  <span key={r} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">
+                    {r === 'member' ? 'Membre' : r === 'trial' ? 'Essai' : r}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {dancer.emergencyContact && (dancer.emergencyContact.name || dancer.emergencyContact.phone) && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Contact d'urgence</p>
+            <div className="flex gap-6">
+              <InfoRow label="Nom" value={dancer.emergencyContact.name} />
+              <InfoRow label="Téléphone" value={dancer.emergencyContact.phone} />
+            </div>
           </div>
         )}
       </div>
+
+      {/* Inscriptions aux cours */}
+      <h2 className="text-base font-semibold text-gray-900 mb-3">
+        Cours
+        {account && account.dancerIds.length > 1 && (
+          <span className="ml-2 text-xs font-normal text-gray-400">(ensemble du compte)</span>
+        )}
+      </h2>
+
+      {Object.keys(coursesBySeason).length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 text-center text-sm text-gray-400 mb-6">
+          Aucune inscription active.
+        </div>
+      ) : (
+        <div className="space-y-3 mb-6">
+          {Object.entries(coursesBySeason).map(([seasonId, rows]) => (
+            <div key={seasonId} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+                {rows[0]?.seasonLabel || seasonId}
+              </p>
+              <div className="space-y-2">
+                {rows.map(r => (
+                  <div key={r.registrationId} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">
+                        {r.danceStyleLabel || r.courseName || '—'}
+                        {r.levelLabel && <span className="text-gray-400 font-normal"> · {r.levelLabel}</span>}
+                      </p>
+                      {(r.dayOfWeek !== undefined || r.startTime) && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {DAY_LABEL[r.dayOfWeek]} {r.startTime}{r.endTime && `–${r.endTime}`}
+                        </p>
+                      )}
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${REG_STATUS_COLOR[r.registrationStatus] ?? 'bg-gray-100 text-gray-500'}`}>
+                      {REG_STATUS_LABEL[r.registrationStatus] ?? r.registrationStatus}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Cotisations */}
       <h2 className="text-base font-semibold text-gray-900 mb-3">Cotisations</h2>
@@ -240,7 +384,6 @@ export default function DancerDetailPage() {
         <div className="space-y-4">
           {entries.map(entry => (
             <div key={entry.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-              {/* Header */}
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <div className="flex items-center gap-2">
@@ -258,7 +401,6 @@ export default function DancerDetailPage() {
                 </span>
               </div>
 
-              {/* Details grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                 {entry.planLabel && (
                   <div>
@@ -282,7 +424,6 @@ export default function DancerDetailPage() {
                 </div>
               </div>
 
-              {/* Installments */}
               <div className="border-t border-gray-100 pt-4">
                 {entry.installments.length > 0 ? (
                   <>
