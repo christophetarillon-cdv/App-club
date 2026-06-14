@@ -63,6 +63,7 @@ export default function MembershipPage() {
   useEffect(() => {
     if (!user) return;
     (async () => {
+      try {
       const seasonsSnap = await getDocs(query(collection(db, 'seasons'), where('isActive', '==', true)));
       if (seasonsSnap.empty) { setLoading(false); return; }
       const activeSeason = { id: seasonsSnap.docs[0]!.id, label: seasonsSnap.docs[0]!.data().label as string };
@@ -88,7 +89,8 @@ export default function MembershipPage() {
           where('userId', '==', user.uid), where('seasonId', '==', activeSeason.id))),
         fetch(`/api/dancers/enrolled?seasonId=${activeSeason.id}`, {
           headers: { Authorization: `Bearer ${idToken}` },
-        }).then(r => r.json() as Promise<string[]>).catch(() => [] as string[]),
+        }).then(async r => { const d = await r.json(); return Array.isArray(d) ? d as string[] : []; })
+          .catch(() => [] as string[]),
       ]);
       setGlobalEnrolledIds(new Set(enrolledRes));
 
@@ -129,7 +131,11 @@ export default function MembershipPage() {
       );
       setMemberships(loadedMemberships);
       if (loadedMemberships.length === 0) setShowCreateForm(true);
-      setLoading(false);
+      } catch (err) {
+        console.error('Erreur chargement cotisation:', err);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [user]);
 
