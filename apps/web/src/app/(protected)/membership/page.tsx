@@ -55,8 +55,8 @@ export default function MembershipPage() {
   const [otherSearchResults, setOtherSearchResults] = useState<Dancer[]>([]);
   const otherSearchLoaded = useRef(false);
 
-  // Plan selection
-  const [selectedPlanId, setSelectedPlanId] = useState('');
+  // Plan selection (per dancer)
+  const [selectedPlanIds, setSelectedPlanIds] = useState<Record<string, string>>({});
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('cheque');
   const [submitting, setSubmitting] = useState(false);
 
@@ -212,22 +212,25 @@ export default function MembershipPage() {
     if (myDancers[0]) setSelectedDancerIds(new Set([myDancers[0].id]));
     setSelectedOtherDancers([]);
     setOtherSearch('');
-    setSelectedPlanId('');
+    setSelectedPlanIds({});
     setSelectedMethod('cheque');
   };
 
+  const allPlansFilled = dancersToCreate.length > 0 &&
+    dancersToCreate.every(d => Boolean(selectedPlanIds[d.id]));
+
   const handleCreate = async () => {
-    if (!user || !season || !selectedPlanId || dancersToCreate.length === 0) return;
-    const plan = plans.find(p => p.id === selectedPlanId);
-    if (!plan) return;
+    if (!user || !season || !allPlansFilled) return;
     setSubmitting(true);
     const newIds: string[] = [];
     for (const dancer of dancersToCreate) {
+      const planId = selectedPlanIds[dancer.id]!;
+      const plan = plans.find(p => p.id === planId)!;
       const ref = await addDoc(collection(db, 'memberships'), {
         userId: user.uid,
         dancerId: dancer.id,
         seasonId: season.id,
-        pricingPlanId: selectedPlanId,
+        pricingPlanId: planId,
         totalDue: plan.amount,
         totalPaid: 0,
         paymentMethod: selectedMethod,
@@ -409,39 +412,46 @@ export default function MembershipPage() {
                   </>
                 )}
 
-                {/* Step 1: Plan + method */}
+                {/* Step 1: Plan per dancer + method */}
                 {step === 'plan' && (
                   <>
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Danseurs concernés</p>
-                      <div className="flex flex-wrap gap-2">
-                        {dancersToCreate.map(d => (
-                          <span key={d.id} className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-1 rounded-full">
-                            {d.firstName} {d.lastName}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
                     {plans.length === 0 && (
                       <p className="text-sm text-gray-400">Aucun tarif disponible pour cette saison.</p>
                     )}
 
-                    <div className="space-y-2">
-                      {plans.map(p => (
-                        <label key={p.id} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedPlanId === p.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
-                          <input type="radio" name="plan" value={p.id} checked={selectedPlanId === p.id}
-                            onChange={() => setSelectedPlanId(p.id)} className="mt-0.5" />
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-900">{p.label}</p>
-                            <p className="text-sm font-semibold text-blue-700">{(p.amount / 100).toFixed(2)} €</p>
-                            {p.conditions && <p className="text-xs text-gray-500 mt-0.5">{p.conditions}</p>}
+                    <div className="space-y-5">
+                      {dancersToCreate.map(dancer => (
+                        <div key={dancer.id}>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                            {dancer.firstName} {dancer.lastName}
+                          </p>
+                          <div className="space-y-2">
+                            {plans.map(p => {
+                              const checked = selectedPlanIds[dancer.id] === p.id;
+                              return (
+                                <label key={p.id} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${checked ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                  <input
+                                    type="radio"
+                                    name={`plan-${dancer.id}`}
+                                    value={p.id}
+                                    checked={checked}
+                                    onChange={() => setSelectedPlanIds(prev => ({ ...prev, [dancer.id]: p.id }))}
+                                    className="mt-0.5"
+                                  />
+                                  <div className="flex-1">
+                                    <p className="font-medium text-gray-900">{p.label}</p>
+                                    <p className="text-sm font-semibold text-blue-700">{(p.amount / 100).toFixed(2)} €</p>
+                                    {p.conditions && <p className="text-xs text-gray-500 mt-0.5">{p.conditions}</p>}
+                                  </div>
+                                </label>
+                              );
+                            })}
                           </div>
-                        </label>
+                        </div>
                       ))}
                     </div>
 
-                    {selectedPlanId && (
+                    {allPlansFilled && (
                       <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Mode de paiement</p>
                         <div className="flex gap-2">
@@ -460,7 +470,7 @@ export default function MembershipPage() {
                         className="flex-1 bg-gray-100 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-200 text-sm transition-colors">
                         ← Retour
                       </button>
-                      <button onClick={handleCreate} disabled={!selectedPlanId || submitting}
+                      <button onClick={handleCreate} disabled={!allPlansFilled || submitting}
                         className="flex-[2] bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
                         {submitting ? 'Création…' : dancersToCreate.length > 1 ? `Créer les ${dancersToCreate.length} cotisations` : 'Créer la cotisation'}
                       </button>
