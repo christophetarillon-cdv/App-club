@@ -19,6 +19,7 @@ interface Dancer {
   isMinor?: boolean;
   memberNumber?: string;
   emergencyContact?: { name?: string; phone?: string };
+  photoUrl?: string;
 }
 interface Account {
   id: string;
@@ -124,6 +125,7 @@ export default function DancerDetailPage() {
           isMinor: d.isMinor,
           memberNumber: d.memberNumber,
           emergencyContact: d.emergencyContact,
+          photoUrl: d.photoUrl,
         };
         setDancer(dancerData);
 
@@ -283,11 +285,19 @@ export default function DancerDetailPage() {
       {/* Info card */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6">
         <div className="flex items-start justify-between mb-4">
-          <div>
-            <p className="text-lg font-semibold text-gray-900">{dancer.firstName} {dancer.lastName}</p>
-            {dancer.memberNumber && (
-              <p className="text-xs text-gray-400 mt-0.5">N° {dancer.memberNumber}</p>
-            )}
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-full overflow-hidden bg-blue-100 flex items-center justify-center flex-shrink-0">
+              {dancer.photoUrl
+                ? <img src={dancer.photoUrl} alt="Photo" className="w-full h-full object-cover" />
+                : <span className="text-blue-700 font-bold text-xl">{dancer.firstName[0]}{dancer.lastName[0]}</span>
+              }
+            </div>
+            <div>
+              <p className="text-lg font-semibold text-gray-900">{dancer.firstName} {dancer.lastName}</p>
+              {dancer.memberNumber && (
+                <p className="text-xs text-gray-400 mt-0.5">N° {dancer.memberNumber}</p>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {dancer.isMinor && (
