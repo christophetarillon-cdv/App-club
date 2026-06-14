@@ -14,21 +14,28 @@ export async function POST(req: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
+    // Use a Firebase Storage download token instead of a signed URL:
+    // - no IAM signBlob permission required (avoids 100+ second timeout)
+    // - URL never expires, works like a permanent download link
+    const token = crypto.randomUUID();
+    const filePath = `bank-deposits/${depositId}.pdf`;
+
     const bucket = getAdminBucket();
-    const storageFile = bucket.file(`bank-deposits/${depositId}.pdf`);
+    const storageFile = bucket.file(filePath);
 
     await storageFile.save(buffer, {
       contentType: 'application/pdf',
       metadata: {
         cacheControl: 'private, max-age=31536000',
+        metadata: {
+          firebaseStorageDownloadTokens: token,
+        },
       },
     });
 
-    // Generate a signed URL valid for 10 years (permanent for accounting purposes)
-    const [url] = await storageFile.getSignedUrl({
-      action: 'read',
-      expires: '2099-12-31',
-    });
+    const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+    const encodedPath = encodeURIComponent(filePath);
+    const url = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media&token=${token}`;
 
     return NextResponse.json({ url });
   } catch (err) {

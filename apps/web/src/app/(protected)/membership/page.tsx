@@ -96,7 +96,22 @@ export default function MembershipPage() {
         if (myDancersList[0]) setSelectedDancerIds(new Set([myDancersList[0].id]));
       }
 
-      const idToken = await user.getIdToken();
+      const fetchEnrolled = async (): Promise<string[]> => {
+        try {
+          const idToken = await user.getIdToken();
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 5000);
+          const r = await fetch(`/api/dancers/enrolled?seasonId=${activeSeason.id}`, {
+            headers: { Authorization: `Bearer ${idToken}` },
+            signal: ctrl.signal,
+          });
+          clearTimeout(timer);
+          const d = await r.json();
+          return Array.isArray(d) ? d as string[] : [];
+        } catch {
+          return [];
+        }
+      };
       const [plansSnap, membershipSnap, groupsSnap, enrolledRes] = await Promise.all([
         getDocs(query(collection(db, 'pricingPlans'),
           where('seasonId', '==', activeSeason.id), where('isActive', '==', true))),
@@ -104,10 +119,7 @@ export default function MembershipPage() {
           where('userId', '==', user.uid), where('seasonId', '==', activeSeason.id))),
         getDocs(query(collection(db, 'paymentGroups'),
           where('userId', '==', user.uid), where('seasonId', '==', activeSeason.id))),
-        fetch(`/api/dancers/enrolled?seasonId=${activeSeason.id}`, {
-          headers: { Authorization: `Bearer ${idToken}` },
-        }).then(async r => { const d = await r.json(); return Array.isArray(d) ? d as string[] : []; })
-          .catch(() => [] as string[]),
+        fetchEnrolled(),
       ]);
       setGlobalEnrolledIds(new Set(enrolledRes));
 
