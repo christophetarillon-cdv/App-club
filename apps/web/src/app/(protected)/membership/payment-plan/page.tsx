@@ -109,6 +109,8 @@ export default function PaymentPlanPage() {
   const totalDue = group?.totalDue ?? membership?.totalDue ?? 0;
   const paymentMethod = group?.paymentMethod ?? membership?.paymentMethod ?? '';
 
+  const maxInstallments = paymentMethod === 'cheque' ? 10 : 1;
+
   const totalCents = installments.reduce((sum, i) => {
     const v = parseFloat(i.amount);
     return sum + (isNaN(v) ? 0 : Math.round(v * 100));
@@ -119,6 +121,10 @@ export default function PaymentPlanPage() {
     if (!user || (!membership && !group)) return;
     setError(null);
 
+    if (installments.length > maxInstallments) {
+      setError(`Maximum ${maxInstallments} versement${maxInstallments > 1 ? 's' : ''} autorisé${maxInstallments > 1 ? 's' : ''} pour ce mode de paiement.`);
+      return;
+    }
     if (Math.abs(remaining) > 0) {
       setError(`Le total des versements (${(totalCents / 100).toFixed(2)} €) doit être égal au montant dû (${(totalDue / 100).toFixed(2)} €).`);
       return;
@@ -239,10 +245,17 @@ export default function PaymentPlanPage() {
             </div>
           ))}
 
-          <button type="button" onClick={() => setInstallments(prev => [...prev, emptyInstallment()])}
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium">
-            + Ajouter un versement
-          </button>
+          <div className="flex items-center justify-between">
+            <button type="button"
+              onClick={() => setInstallments(prev => [...prev, emptyInstallment()])}
+              disabled={installments.length >= maxInstallments}
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+              + Ajouter un versement
+            </button>
+            <span className="text-xs text-gray-400">
+              {installments.length}/{maxInstallments} versement{maxInstallments > 1 ? 's' : ''}
+            </span>
+          </div>
 
           <div className={`flex justify-between items-center text-sm font-semibold pt-2 border-t border-gray-100 ${Math.abs(remaining) > 0 ? 'text-orange-600' : 'text-green-700'}`}>
             <span>Total saisi</span>
