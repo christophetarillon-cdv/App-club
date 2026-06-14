@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-  collection, getDocs, query, where, doc, writeBatch, serverTimestamp,
+  collection, getDocs, query, where, doc, getDoc, writeBatch, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
@@ -64,9 +64,31 @@ export default function AdminCreatePaymentPlanPage() {
           id: d.id, label: d.data().label, amount: d.data().amount,
           conditions: d.data().conditions ?? '',
         })));
-        setEnrolledIds(new Set(
-          approvedSnap.docs.map(d => d.data().dancerId as string).filter(Boolean)
-        ));
+
+        // Build enrolled set with backward compat (old memberships without dancerId)
+        const enrolled = new Set<string>();
+        const userIdsToLookup: string[] = [];
+        for (const d of approvedSnap.docs) {
+          const dancerId = d.data().dancerId as string | undefined;
+          if (dancerId) {
+            enrolled.add(dancerId);
+          } else {
+            const userId = d.data().userId as string | undefined;
+            if (userId) userIdsToLookup.push(userId);
+          }
+        }
+        if (userIdsToLookup.length > 0) {
+          const accountDocs = await Promise.all(
+            userIdsToLookup.map(uid => getDoc(doc(db, 'accounts', uid)))
+          );
+          for (const acc of accountDocs) {
+            if (acc.exists()) {
+              const dancerIds: string[] = acc.data().dancerIds ?? [];
+              if (dancerIds[0]) enrolled.add(dancerIds[0]);
+            }
+          }
+        }
+        setEnrolledIds(enrolled);
       }
       setAllDancers(dancerSnap.docs.map(d => ({
         id: d.id,
@@ -86,12 +108,17 @@ export default function AdminCreatePaymentPlanPage() {
     if (searchQuery.length < 2) { setSearchResults([]); return; }
     const lower = searchQuery.toLowerCase();
     const selectedIds = new Set(selectedDancers.map(d => d.id));
-    setSearchResults(
-      allDancers
-        .filter(d => !selectedIds.has(d.id) &&
-          `${d.firstName} ${d.lastName}`.toLowerCase().includes(lower))
-        .slice(0, 8)
+    const matches = allDancers.filter(d =>
+      !selectedIds.has(d.id) &&
+      `${d.firstName} ${d.lastName}`.toLowerCase().includes(lower)
     );
+    // Non-inscrits en premier, inscrits grisés après
+    matches.sort((a, b) => {
+      const aE = enrolledIds.has(a.id);
+      const bE = enrolledIds.has(b.id);
+      return aE === bE ? 0 : aE ? 1 : -1;
+    });
+    setSearchResults(matches.slice(0, 8));
   }, [searchQuery, allDancers, selectedDancers, enrolledIds]);
 
   const addDancer = (dancer: Dancer) => {
