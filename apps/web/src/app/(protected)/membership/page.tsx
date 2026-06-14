@@ -12,6 +12,18 @@ import Link from 'next/link';
 interface Dancer { id: string; firstName: string; lastName: string; accountEmail?: string; }
 interface Season { id: string; label: string; }
 interface PricingPlan { id: string; label: string; amount: number; conditions: string; seasonId: string; }
+
+interface InstallmentDetail {
+  id: string;
+  amount: number;
+  expectedDate: string;
+  status: string;
+  method: string;
+  chequeNumber?: string;
+  draweeBank?: string;
+  draweeCity?: string;
+}
+
 interface MembershipEntry {
   id: string;
   dancerId?: string;
@@ -24,6 +36,7 @@ interface MembershipEntry {
   paymentMethod: string;
   paymentPlanStatus: string;
   installmentIds: string[];
+  installments: InstallmentDetail[];
   status: string;
 }
 
@@ -35,6 +48,7 @@ interface PaymentGroup {
   paymentMethod: string;
   paymentPlanStatus: string;
   installmentIds: string[];
+  installments: InstallmentDetail[];
   dancers: { name: string; planLabel: string }[];
 }
 
@@ -155,15 +169,14 @@ export default function MembershipPage() {
             pricingPlanId: data.pricingPlanId,
             totalDue: data.totalDue, totalPaid: data.totalPaid,
             paymentMethod: data.paymentMethod, paymentPlanStatus: data.paymentPlanStatus,
-            installmentIds: data.installmentIds ?? [], status: data.status,
+            installmentIds: data.installmentIds ?? [], installments: [],
+            status: data.status,
           };
         })
       );
-      setMemberships(loadedMemberships);
-
       // Build payment groups with enriched dancer info
       const membershipById = new Map(loadedMemberships.map(m => [m.id, m]));
-      const loadedGroups: PaymentGroup[] = groupsSnap.docs.map(gd => {
+      const loadedGroups: Omit<PaymentGroup, 'installments'>[] = groupsSnap.docs.map(gd => {
         const data = gd.data();
         const membershipIds: string[] = data.membershipIds ?? [];
         const dancers = membershipIds.map(mid => {
@@ -178,7 +191,38 @@ export default function MembershipPage() {
           dancers,
         };
       });
-      setPaymentGroups(loadedGroups);
+
+      // Load installment details for all memberships and groups
+      const allInstallmentIds = [
+        ...loadedMemberships.flatMap(m => m.installmentIds),
+        ...loadedGroups.flatMap(g => g.installmentIds),
+      ];
+      const uniqueIds = [...new Set(allInstallmentIds)];
+      const installmentMap = new Map<string, InstallmentDetail>();
+      if (uniqueIds.length > 0) {
+        const docs = await Promise.all(uniqueIds.map(id => getDoc(doc(db, 'paymentInstallments', id))));
+        docs.forEach(d => {
+          if (d.exists()) {
+            const dd = d.data();
+            installmentMap.set(d.id, {
+              id: d.id,
+              amount: dd.amount ?? 0,
+              expectedDate: dd.expectedDate ?? '',
+              status: dd.status ?? 'pending',
+              method: dd.method ?? '',
+              chequeNumber: dd.chequeNumber ?? undefined,
+              draweeBank: dd.draweeBank ?? undefined,
+              draweeCity: dd.draweeCity ?? undefined,
+            });
+          }
+        });
+      }
+
+      const toInstallments = (ids: string[]) =>
+        ids.map(id => installmentMap.get(id)).filter((x): x is InstallmentDetail => Boolean(x));
+
+      setMemberships(loadedMemberships.map(m => ({ ...m, installments: toInstallments(m.installmentIds) })));
+      setPaymentGroups(loadedGroups.map(g => ({ ...g, installments: toInstallments(g.installmentIds) })));
 
       const hasAnyMembership = loadedMemberships.length > 0 || loadedGroups.length > 0;
       if (!hasAnyMembership) setShowCreateForm(true);
@@ -675,6 +719,10 @@ function MembershipCard({ membership, season, onCancel }: {
         </div>
       </div>
 
+      {membership.installments.length > 0 && (
+        <InstallmentsTable installments={membership.installments} method={membership.paymentMethod} />
+      )}
+
       {membership.paymentPlanStatus === 'pending' && membership.installmentIds.length === 0 && (
         <div className="mt-4 flex gap-2">
           <Link href={`/membership/payment-plan?membershipId=${membership.id}`}
@@ -755,6 +803,10 @@ function GroupMembershipCard({ group, season, onCancel }: {
         </div>
       </div>
 
+      {group.installments.length > 0 && (
+        <InstallmentsTable installments={group.installments} method={group.paymentMethod} />
+      )}
+
       {group.paymentPlanStatus === 'pending' && group.installmentIds.length === 0 && (
         <div className="mt-4 flex gap-2">
           <Link href={`/membership/payment-plan?groupId=${group.id}`}
@@ -773,6 +825,48 @@ function GroupMembershipCard({ group, season, onCancel }: {
           Modifier le plan de paiement →
         </Link>
       )}
+    </div>
+  );
+}
+
+function InstallmentsTable({ installments, method }: { installments: InstallmentDetail[]; method: string }) {
+  const isCheque = method === 'cheque';
+  return (
+    <div className="mt-4 border-t border-gray-100 pt-4">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Échéancier</p>
+      <div className="space-y-2.5">
+        {installments.map((inst, i) => (
+          <div key={inst.id} className="flex items-start gap-2 text-xs">
+            <span className="text-gray-300 font-medium w-4 flex-shrink-0 pt-0.5">{i + 1}.</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-gray-600">
+                  {inst.expectedDate
+                    ? new Date(inst.expectedDate + 'T12:00:00').toLocaleDateString('fr-FR')
+                    : '—'}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-gray-900">{(inst.amount / 100).toFixed(2)} €</span>
+                  <span className={`px-1.5 py-0.5 rounded-full font-medium ${
+                    inst.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                  }`}>
+                    {inst.status === 'paid' ? 'Encaissé' : 'En attente'}
+                  </span>
+                </div>
+              </div>
+              {isCheque && (inst.chequeNumber || inst.draweeBank || inst.draweeCity) && (
+                <p className="text-gray-400 mt-0.5">
+                  {[
+                    inst.chequeNumber ? `N° ${inst.chequeNumber}` : null,
+                    inst.draweeBank,
+                    inst.draweeCity,
+                  ].filter(Boolean).join(' · ')}
+                </p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
