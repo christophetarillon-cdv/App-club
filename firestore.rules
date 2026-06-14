@@ -132,7 +132,7 @@ service cloud.firestore {
 
     match /memberships/{id} {
       allow read: if isAdmin() || isOwner(resource.data.userId);
-      allow create: if isAuth() && request.auth.uid == request.resource.data.userId;
+      allow create: if isAdmin() || (isAuth() && request.auth.uid == request.resource.data.userId);
       allow update: if isAdmin() || (
         isOwner(resource.data.userId) &&
         request.resource.data.diff(resource.data).affectedKeys()
@@ -148,7 +148,7 @@ service cloud.firestore {
 
     match /paymentGroups/{id} {
       allow read: if isAdmin() || isOwner(resource.data.userId);
-      allow create: if isAuth() && request.auth.uid == request.resource.data.userId;
+      allow create: if isAdmin() || (isAuth() && request.auth.uid == request.resource.data.userId);
       allow update: if isAdmin() || (
         isOwner(resource.data.userId) &&
         request.resource.data.diff(resource.data).affectedKeys()
@@ -168,7 +168,7 @@ service cloud.firestore {
 
     match /paymentInstallments/{id} {
       allow read: if isAdmin() || isOwner(resource.data.userId);
-      allow create: if isAuth() && request.auth.uid == request.resource.data.userId;
+      allow create: if isAdmin() || (isAuth() && request.auth.uid == request.resource.data.userId);
       allow update, delete: if isAdmin();
     }
 
