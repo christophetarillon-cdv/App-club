@@ -47,10 +47,10 @@ export default function TodayPaymentsPage() {
 
     (async () => {
       try {
+        // index on (status + expectedDate) may still be building — filter date client-side
         const instSnap = await getDocs(query(
           collection(db, 'paymentInstallments'),
           where('status', '==', 'pending'),
-          where('expectedDate', '<=', today),
         ));
 
         if (instSnap.empty) { setLoading(false); return; }
@@ -87,7 +87,8 @@ export default function TodayPaymentsPage() {
         };
 
         const dueRows: DueRow[] = instSnap.docs
-          .map(d => {
+          .filter(d => (d.data().expectedDate ?? '') <= today)
+          .reduce<DueRow[]>((acc, d) => {
             const data = d.data();
             const membershipId = data.membershipId as string | undefined;
             const paymentGroupId = data.paymentGroupId as string | undefined;
@@ -102,10 +103,10 @@ export default function TodayPaymentsPage() {
               planId = membershipId;
               planKind = 'solo';
             } else {
-              return null;
+              return acc;
             }
 
-            return {
+            acc.push({
               id: d.id,
               amount: data.amount ?? 0,
               expectedDate: data.expectedDate ?? '',
@@ -120,9 +121,9 @@ export default function TodayPaymentsPage() {
               saving: false,
               saved: false,
               error: null,
-            };
-          })
-          .filter((r): r is DueRow => r !== null)
+            });
+            return acc;
+          }, [])
           .sort((a, b) =>
             a.expectedDate.localeCompare(b.expectedDate) ||
             a.memberName.localeCompare(b.memberName, 'fr')
