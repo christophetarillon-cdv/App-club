@@ -41,6 +41,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <Link href="/admin/settings/welcome-qr" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">QR accueil</Link>
         <Link href="/admin/pricing-plans" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">Tarifs</Link>
         <Link href="/admin/payment-plans" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">Plans paiement</Link>
+        <Link href="/admin/payments/today" className="text-sm font-semibold text-orange-600 hover:text-orange-800 whitespace-nowrap">Encaissements</Link>
         <Link href="/admin/payments/new" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">Saisir paiement</Link>
         <Link href="/admin/payments/cheques" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">Chèques</Link>
         <Link href="/admin/payments/bank-deposits" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">Bordereaux</Link>
