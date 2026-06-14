@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
   const db = getAdminFirestore();
   const snap = await db.collection('memberships')
     .where('seasonId', '==', seasonId)
+    .where('paymentPlanStatus', '==', 'approved')
     .select('dancerId')
     .get();
 
