@@ -35,6 +35,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <Link href="/admin/courses" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">Cours</Link>
         <Link href="/admin/interruptions" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">Interruptions</Link>
         <Link href="/admin/public-holidays" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">Jours fériés</Link>
+        <Link href="/admin/dancers" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">Danseurs</Link>
         <Link href="/admin/trial" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">Danseurs essai</Link>
         <Link href="/admin/settings/trial" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">Essai</Link>
         <Link href="/admin/settings/welcome-qr" className="text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap">QR accueil</Link>

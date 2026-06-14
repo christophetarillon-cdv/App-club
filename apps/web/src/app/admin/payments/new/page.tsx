@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  collection, getDocs, query, where, doc, getDoc, setDoc, updateDoc, increment,
+  collection, getDocs, query, where, doc, getDoc, setDoc, increment,
   serverTimestamp, writeBatch,
 } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
@@ -11,16 +11,19 @@ import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 
 interface Account { id: string; displayName: string; email: string; dancerIds: string[]; dancerName: string; allDancerNames: string[]; }
-interface Membership {
+
+interface Plan {
   id: string;
-  pricingPlanId: string;
+  kind: 'solo' | 'group';
   totalDue: number;
   totalPaid: number;
   paymentMethod: string;
   seasonId: string;
   installmentIds: string[];
   paymentPlanStatus: string;
+  label: string;
 }
+
 interface Installment { id: string; expectedDate: string; amount: number; status: string; }
 interface Season { id: string; label: string; }
 
@@ -30,9 +33,9 @@ export default function AdminNewPaymentPage() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [search, setSearch] = useState('');
   const [selectedUserId, setSelectedUserId] = useState('');
-  const [memberships, setMemberships] = useState<Membership[]>([]);
-  const [selectedMembershipId, setSelectedMembershipId] = useState('');
-  const [selectedMembership, setSelectedMembership] = useState<Membership | null>(null);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [selectedInstallmentId, setSelectedInstallmentId] = useState('');
   const [amount, setAmount] = useState('');
@@ -82,28 +85,69 @@ export default function AdminNewPaymentPage() {
       })
     : [];
 
+  const seasonLabel = (id: string) => seasons.find(s => s.id === id)?.label ?? id;
+
   const handleSelectUser = async (acc: Account, matchedName?: string) => {
     setSelectedUserId(acc.id);
     setSearch(matchedName || acc.dancerName || acc.displayName || acc.email);
-    setSelectedMembershipId('');
-    setSelectedMembership(null);
+    setSelectedPlanId('');
+    setSelectedPlan(null);
     setInstallments([]);
     setAmount('');
 
-    const snap = await getDocs(query(collection(db, 'memberships'), where('userId', '==', acc.id)));
-    setMemberships(snap.docs.map(d => ({ id: d.id, ...d.data() as Omit<Membership, 'id'> })));
+    const [membershipSnap, groupSnap] = await Promise.all([
+      getDocs(query(collection(db, 'memberships'), where('userId', '==', acc.id))),
+      getDocs(query(collection(db, 'paymentGroups'), where('userId', '==', acc.id))),
+    ]);
+
+    const allPlans: Plan[] = [];
+
+    // Solo memberships (not part of a group)
+    membershipSnap.docs.forEach(d => {
+      if (d.data().paymentGroupId) return;
+      const data = d.data();
+      allPlans.push({
+        id: d.id,
+        kind: 'solo',
+        totalDue: data.totalDue ?? 0,
+        totalPaid: data.totalPaid ?? 0,
+        paymentMethod: data.paymentMethod ?? '',
+        seasonId: data.seasonId ?? '',
+        installmentIds: data.installmentIds ?? [],
+        paymentPlanStatus: data.paymentPlanStatus ?? '',
+        label: `${seasonLabel(data.seasonId)} — ${((data.totalDue ?? 0) / 100).toFixed(2)} € (encaissé : ${((data.totalPaid ?? 0) / 100).toFixed(2)} €)`,
+      });
+    });
+
+    // Group plans
+    groupSnap.docs.forEach(d => {
+      const data = d.data();
+      allPlans.push({
+        id: d.id,
+        kind: 'group',
+        totalDue: data.totalDue ?? 0,
+        totalPaid: data.totalPaid ?? 0,
+        paymentMethod: data.paymentMethod ?? '',
+        seasonId: data.seasonId ?? '',
+        installmentIds: data.installmentIds ?? [],
+        paymentPlanStatus: data.paymentPlanStatus ?? '',
+        label: `${seasonLabel(data.seasonId)} — Groupe — ${((data.totalDue ?? 0) / 100).toFixed(2)} € (encaissé : ${((data.totalPaid ?? 0) / 100).toFixed(2)} €)`,
+      });
+    });
+
+    setPlans(allPlans);
   };
 
-  const handleSelectMembership = async (mId: string) => {
-    setSelectedMembershipId(mId);
-    const m = memberships.find(m => m.id === mId);
-    setSelectedMembership(m ?? null);
+  const handleSelectPlan = async (planId: string) => {
+    setSelectedPlanId(planId);
+    const plan = plans.find(p => p.id === planId);
+    setSelectedPlan(plan ?? null);
     setInstallments([]);
     setSelectedInstallmentId('');
 
-    if (m && m.installmentIds.length > 0) {
+    if (plan && plan.installmentIds.length > 0) {
       const insts = await Promise.all(
-        m.installmentIds.map(async id => {
+        plan.installmentIds.map(async id => {
           const snap = await getDoc(doc(db, 'paymentInstallments', id));
           return snap.exists() ? { id, expectedDate: snap.data().expectedDate, amount: snap.data().amount, status: snap.data().status } : null;
         })
@@ -126,7 +170,7 @@ export default function AdminNewPaymentPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !selectedUserId || !selectedMembershipId) return;
+    if (!user || !selectedUserId || !selectedPlanId || !selectedPlan) return;
     setError(null);
     setSaving(true);
 
@@ -141,7 +185,6 @@ export default function AdminNewPaymentPage() {
         chequeImageId = newImageRef.id;
         const storageRef = ref(storage, `cheques/${chequeImageId}`);
         await uploadBytes(storageRef, chequeFile);
-        // setDoc with the pre-generated ID so the Cloud Function can find this document
         await setDoc(newImageRef, {
           installmentId: selectedInstallmentId || null,
           storagePath: `cheques/${chequeImageId}`,
@@ -155,6 +198,7 @@ export default function AdminNewPaymentPage() {
       }
 
       const batch = writeBatch(db);
+      const method = selectedPlan.paymentMethod;
 
       const paymentRef = doc(collection(db, 'payments'));
       batch.set(paymentRef, {
@@ -162,14 +206,15 @@ export default function AdminNewPaymentPage() {
         amount: amountCents,
         provider: 'manual',
         status: 'paid',
-        relatedMembershipId: selectedMembershipId,
+        ...(selectedPlan.kind === 'group'
+          ? { relatedGroupId: selectedPlanId }
+          : { relatedMembershipId: selectedPlanId }),
         notes: notes || null,
         recordedBy: user.uid,
         createdAt: serverTimestamp(),
       });
 
       if (selectedInstallmentId) {
-        const method = selectedMembership?.paymentMethod;
         batch.update(doc(db, 'paymentInstallments', selectedInstallmentId), {
           status: 'paid',
           actualDate: new Date().toISOString().slice(0, 10),
@@ -184,7 +229,8 @@ export default function AdminNewPaymentPage() {
         });
       }
 
-      batch.update(doc(db, 'memberships', selectedMembershipId), {
+      const targetCollection = selectedPlan.kind === 'group' ? 'paymentGroups' : 'memberships';
+      batch.update(doc(db, targetCollection, selectedPlanId), {
         totalPaid: increment(amountCents),
         updatedAt: serverTimestamp(),
       });
@@ -203,8 +249,6 @@ export default function AdminNewPaymentPage() {
       setSaving(false);
     }
   };
-
-  const seasonLabel = (id: string) => seasons.find(s => s.id === id)?.label ?? id;
 
   return (
     <div>
@@ -255,17 +299,15 @@ export default function AdminNewPaymentPage() {
           )}
         </div>
 
-        {/* Membership select */}
-        {memberships.length > 0 && (
+        {/* Plan select */}
+        {plans.length > 0 && (
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Cotisation</label>
-            <select value={selectedMembershipId} onChange={e => handleSelectMembership(e.target.value)} required
+            <select value={selectedPlanId} onChange={e => handleSelectPlan(e.target.value)} required
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50">
               <option value="">Choisir…</option>
-              {memberships.map(m => (
-                <option key={m.id} value={m.id}>
-                  {seasonLabel(m.seasonId)} — {(m.totalDue / 100).toFixed(2)} € (payé : {(m.totalPaid / 100).toFixed(2)} €)
-                </option>
+              {plans.map(p => (
+                <option key={p.id} value={p.id}>{p.label}</option>
               ))}
             </select>
           </div>
@@ -296,7 +338,7 @@ export default function AdminNewPaymentPage() {
         </div>
 
         {/* Cheque upload + infos */}
-        {selectedMembership?.paymentMethod === 'cheque' && (
+        {selectedPlan?.paymentMethod === 'cheque' && (
           <>
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Photo du chèque (optionnel)</label>
@@ -361,7 +403,7 @@ export default function AdminNewPaymentPage() {
         )}
 
         {/* Virement */}
-        {selectedMembership?.paymentMethod === 'transfer' && (
+        {selectedPlan?.paymentMethod === 'transfer' && (
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Référence virement <span className="normal-case font-normal text-gray-400">(optionnel)</span></label>
@@ -378,7 +420,7 @@ export default function AdminNewPaymentPage() {
         )}
 
         {/* Espèces */}
-        {selectedMembership?.paymentMethod === 'cash' && (
+        {selectedPlan?.paymentMethod === 'cash' && (
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">N° reçu <span className="normal-case font-normal text-gray-400">(optionnel)</span></label>
@@ -403,7 +445,7 @@ export default function AdminNewPaymentPage() {
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <button type="submit" disabled={saving || !selectedUserId || !selectedMembershipId}
+        <button type="submit" disabled={saving || !selectedUserId || !selectedPlanId}
           className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
           {saving ? 'Enregistrement…' : 'Enregistrer le paiement'}
         </button>
