@@ -10,6 +10,7 @@ import Link from 'next/link';
 interface Membership {
   id: string;
   userId: string;
+  dancerId?: string;
   seasonId: string;
   pricingPlanId: string;
   totalDue: number;
