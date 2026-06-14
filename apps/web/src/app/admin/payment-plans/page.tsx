@@ -85,8 +85,10 @@ export default function AdminPaymentPlansPage() {
       ]);
 
       let dancerName = '';
-      if (m.dancerId) {
-        const dancerSnap = await getDoc(doc(db, 'dancers', m.dancerId));
+      const dancerId = m.dancerId
+        ?? (accountSnap.exists() ? (accountSnap.data().dancerIds as string[] ?? [])[0] : undefined);
+      if (dancerId) {
+        const dancerSnap = await getDoc(doc(db, 'dancers', dancerId));
         if (dancerSnap.exists()) {
           dancerName = `${dancerSnap.data().firstName ?? ''} ${dancerSnap.data().lastName ?? ''}`.trim();
         }
