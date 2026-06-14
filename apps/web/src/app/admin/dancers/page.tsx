@@ -5,7 +5,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 
-interface Season { id: string; label: string; startDate: string; }
+interface Season { id: string; label: string; startDate: string; isActive: boolean; }
 interface Account { id: string; dancerIds: string[]; }
 
 interface MembershipInfo {
@@ -51,10 +51,12 @@ export default function AdminDancersPage() {
         id: d.id,
         label: d.data().label ?? d.id,
         startDate: d.data().startDate ?? '',
+        isActive: d.data().isActive === true,
       }));
       s.sort((a, b) => String(b.startDate ?? '').localeCompare(String(a.startDate ?? '')));
       setSeasons(s);
-      if (s.length > 0) setSelectedSeasonId(s[0].id);
+      const active = s.find(s => s.isActive);
+      setSelectedSeasonId(active ? active.id : (s[0]?.id ?? ''));
     });
   }, []);
 
