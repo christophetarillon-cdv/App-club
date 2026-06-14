@@ -31,6 +31,7 @@ interface Installment {
 interface Row extends Membership {
   displayName: string;
   email: string;
+  dancerName: string;
   seasonLabel: string;
   planLabel: string;
   installments: Installment[];
@@ -81,6 +82,15 @@ export default function AdminPaymentPlansPage() {
         getDoc(doc(db, 'seasons', m.seasonId)),
         getDoc(doc(db, 'pricingPlans', m.pricingPlanId)),
       ]);
+
+      let dancerName = '';
+      if (m.dancerId) {
+        const dancerSnap = await getDoc(doc(db, 'dancers', m.dancerId));
+        if (dancerSnap.exists()) {
+          dancerName = `${dancerSnap.data().firstName ?? ''} ${dancerSnap.data().lastName ?? ''}`.trim();
+        }
+      }
+
       const installments: Installment[] = await Promise.all(
         (m.installmentIds ?? []).map(async (id) => {
           const iSnap = await getDoc(doc(db, 'paymentInstallments', id));
@@ -89,10 +99,12 @@ export default function AdminPaymentPlansPage() {
             : { id, expectedDate: '', amount: 0, status: 'unknown' };
         })
       );
+
       return {
         ...m,
         displayName: accountSnap.exists() ? accountSnap.data().displayName : m.userId,
         email: accountSnap.exists() ? accountSnap.data().email : '—',
+        dancerName,
         seasonLabel: seasonSnap.exists() ? seasonSnap.data().label : m.seasonId,
         planLabel: planSnap.exists() ? planSnap.data().label : m.pricingPlanId,
         installments,
@@ -241,7 +253,8 @@ export default function AdminPaymentPlansPage() {
               <div className="px-5 py-4 flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-semibold text-gray-900">{row.displayName}</p>
+                    <p className="font-semibold text-gray-900">{row.dancerName || row.displayName}</p>
+                    {row.dancerName && <span className="text-xs text-gray-400">{row.displayName}</span>}
                     <span className="text-xs text-gray-400">{row.email}</span>
                   </div>
                   <p className="text-sm text-gray-500 mt-0.5">{row.planLabel} · {row.seasonLabel}</p>
