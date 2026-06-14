@@ -38,9 +38,7 @@ service cloud.firestore {
 
     // ── dancers ───────────────────────────────────────────────────────────────
     match /dancers/{dancerId} {
-      allow read: if isAuth() && (
-        resource.data.accountId == request.auth.uid || isAdmin()
-      );
+      allow read: if isAuth();
       // Le titulaire crée un danseur pour son compte ; roles limités à member/trial
       allow create: if isAuth() &&
         request.resource.data.accountId == request.auth.uid &&

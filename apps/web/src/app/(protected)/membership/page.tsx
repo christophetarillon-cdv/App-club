@@ -131,15 +131,7 @@ export default function MembershipPage() {
   const loadOtherDancers = async () => {
     if (otherSearchLoaded.current) return;
     otherSearchLoaded.current = true;
-    const [accSnap, dancerSnap] = await Promise.all([
-      getDocs(collection(db, 'accounts')),
-      getDocs(collection(db, 'dancers')),
-    ]);
-    const emailMap = new Map<string, string>();
-    accSnap.docs.forEach(d => {
-      const dancerIds: string[] = d.data().dancerIds ?? [];
-      dancerIds.forEach(did => emailMap.set(did, d.data().email ?? ''));
-    });
+    const dancerSnap = await getDocs(collection(db, 'dancers'));
     const myIds = new Set(myDancers.map(d => d.id));
     const others: Dancer[] = dancerSnap.docs
       .filter(d => !myIds.has(d.id))
@@ -147,7 +139,6 @@ export default function MembershipPage() {
         id: d.id,
         firstName: d.data().firstName ?? '',
         lastName: d.data().lastName ?? '',
-        accountEmail: emailMap.get(d.id),
       }));
     setAllOtherDancers(others);
   };
@@ -162,8 +153,7 @@ export default function MembershipPage() {
     setOtherSearchResults(
       allOtherDancers
         .filter(d => !alreadySelectedIds.has(d.id) &&
-          (`${d.firstName} ${d.lastName}`.toLowerCase().includes(lower) ||
-           d.accountEmail?.toLowerCase().includes(lower)))
+          `${d.firstName} ${d.lastName}`.toLowerCase().includes(lower))
         .slice(0, 6)
     );
   }, [otherSearch, allOtherDancers, payScope, selectedOtherDancers]);
@@ -377,7 +367,6 @@ export default function MembershipPage() {
                                   <button key={d.id} type="button" onClick={() => addOtherDancer(d)}
                                     className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50">
                                     <span className="font-medium text-gray-900">{d.firstName} {d.lastName}</span>
-                                    {d.accountEmail && <span className="text-gray-400 ml-2">{d.accountEmail}</span>}
                                   </button>
                                 ))}
                               </div>
