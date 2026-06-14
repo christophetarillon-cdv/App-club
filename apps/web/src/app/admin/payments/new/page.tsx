@@ -10,7 +10,7 @@ import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 
-interface Account { id: string; displayName: string; email: string; dancerIds: string[]; dancerName: string; }
+interface Account { id: string; displayName: string; email: string; dancerIds: string[]; dancerName: string; allDancerNames: string[]; }
 interface Membership {
   id: string;
   pricingPlanId: string;
@@ -64,21 +64,27 @@ export default function AdminNewPaymentPage() {
       setAccounts(accSnap.docs.map(d => {
         const data = d.data();
         const dancerIds: string[] = data.dancerIds ?? [];
-        const firstDancer = dancerIds.length > 0 ? dancerMap.get(dancerIds[0]!) : undefined;
-        const dancerName = firstDancer ? `${firstDancer.firstName} ${firstDancer.lastName}`.trim() : (data.displayName ?? '');
-        return { id: d.id, displayName: data.displayName, email: data.email, dancerIds, dancerName };
+        const allDancerNames = dancerIds.map(id => {
+          const dancer = dancerMap.get(id);
+          return dancer ? `${dancer.firstName} ${dancer.lastName}`.trim() : '';
+        }).filter(Boolean);
+        const dancerName = allDancerNames[0] ?? (data.displayName ?? '');
+        return { id: d.id, displayName: data.displayName, email: data.email, dancerIds, dancerName, allDancerNames };
       }));
       setSeasons(seasonSnap.docs.map(d => ({ id: d.id, label: d.data().label })));
     });
   }, []);
 
   const filteredAccounts = search.length >= 2
-    ? accounts.filter(a => a.dancerName?.toLowerCase().includes(search.toLowerCase()) || a.email?.toLowerCase().includes(search.toLowerCase()))
+    ? accounts.filter(a => {
+        const lower = search.toLowerCase();
+        return a.allDancerNames.some(n => n.toLowerCase().includes(lower)) || a.email?.toLowerCase().includes(lower);
+      })
     : [];
 
-  const handleSelectUser = async (acc: Account) => {
+  const handleSelectUser = async (acc: Account, matchedName?: string) => {
     setSelectedUserId(acc.id);
-    setSearch(acc.dancerName || acc.displayName || acc.email);
+    setSearch(matchedName || acc.dancerName || acc.displayName || acc.email);
     setSelectedMembershipId('');
     setSelectedMembership(null);
     setInstallments([]);
@@ -226,13 +232,25 @@ export default function AdminNewPaymentPage() {
           />
           {filteredAccounts.length > 0 && !selectedUserId && (
             <div className="absolute z-10 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-              {filteredAccounts.slice(0, 6).map(a => (
-                <button key={a.id} type="button" onClick={() => handleSelectUser(a)}
-                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50">
-                  <span className="font-medium text-gray-900">{a.dancerName || a.displayName}</span>
-                  <span className="text-gray-400 ml-2">{a.email}</span>
-                </button>
-              ))}
+              {filteredAccounts.slice(0, 10).map(a => {
+                const lower = search.toLowerCase();
+                const matchedName = a.allDancerNames.find(n => n.toLowerCase().includes(lower)) || a.dancerName || a.displayName;
+                return (
+                  <button key={a.id} type="button" onClick={() => handleSelectUser(a, matchedName)}
+                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50">
+                    <span className="font-medium text-gray-900">{matchedName}</span>
+                    {a.allDancerNames.length > 1 && (
+                      <span className="text-gray-400 ml-1.5 text-xs">({a.allDancerNames.join(', ')})</span>
+                    )}
+                    <span className="text-gray-400 ml-2">{a.email}</span>
+                  </button>
+                );
+              })}
+              {filteredAccounts.length > 10 && (
+                <div className="px-4 py-2 text-xs text-gray-400 bg-gray-50 border-t border-gray-100">
+                  {filteredAccounts.length - 10} résultat(s) masqué(s) — affinez la recherche
+                </div>
+              )}
             </div>
           )}
         </div>

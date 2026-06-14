@@ -642,7 +642,7 @@ function MembershipCard({ membership, season, onCancel }: {
           <p className="font-semibold text-gray-900">{(membership.totalDue / 100).toFixed(2)} €</p>
         </div>
         <div>
-          <p className="text-gray-400 text-xs">Total payé</p>
+          <p className="text-gray-400 text-xs">Total encaissé</p>
           <p className={`font-semibold ${membership.totalPaid >= membership.totalDue ? 'text-green-700' : 'text-gray-900'}`}>
             {(membership.totalPaid / 100).toFixed(2)} €
           </p>
@@ -725,7 +725,7 @@ function GroupMembershipCard({ group, season, onCancel }: {
           <p className="font-semibold text-gray-900">{(group.totalDue / 100).toFixed(2)} €</p>
         </div>
         <div>
-          <p className="text-gray-400 text-xs">Total payé</p>
+          <p className="text-gray-400 text-xs">Total encaissé</p>
           <p className={`font-semibold ${group.totalPaid >= group.totalDue ? 'text-green-700' : 'text-gray-900'}`}>
             {(group.totalPaid / 100).toFixed(2)} €
           </p>
