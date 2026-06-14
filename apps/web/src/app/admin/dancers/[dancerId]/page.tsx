@@ -195,7 +195,7 @@ export default function DancerDetailPage() {
         });
 
         for (const d of groupSnap.docs) {
-          const g = { id: d.id, ...d.data() };
+          const g = { id: d.id, ...d.data() } as any;
           const membershipIds: string[] = g.membershipIds ?? [];
           const myMembership = membershipIds.map(id => membershipById.get(id)).filter(Boolean).find(m => isThisDancer(m));
           if (!myMembership) continue;
