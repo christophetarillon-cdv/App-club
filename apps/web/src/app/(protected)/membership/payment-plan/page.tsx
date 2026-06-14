@@ -20,9 +20,20 @@ interface Membership {
   userId: string;
 }
 
+interface PaymentGroup {
+  id: string;
+  membershipIds: string[];
+  totalDue: number;
+  paymentMethod: string;
+  paymentPlanStatus: string;
+  installmentIds: string[];
+  userId: string;
+  dancers: { name: string; planLabel: string }[];
+}
+
 interface Installment {
   expectedDate: string;
-  amount: string; // string for form input
+  amount: string;
 }
 
 const emptyInstallment = (): Installment => ({ expectedDate: '', amount: '' });
@@ -31,7 +42,10 @@ export default function PaymentPlanPage() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const membershipId = searchParams.get('membershipId');
+  const groupId = searchParams.get('groupId');
+
   const [membership, setMembership] = useState<Membership | null>(null);
+  const [group, setGroup] = useState<PaymentGroup | null>(null);
   const [installments, setInstallments] = useState<Installment[]>([emptyInstallment()]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -40,7 +54,38 @@ export default function PaymentPlanPage() {
   useEffect(() => {
     if (!user) return;
     const load = async () => {
-      if (membershipId) {
+      if (groupId) {
+        const snap = await getDoc(doc(db, 'paymentGroups', groupId));
+        if (snap.exists()) {
+          const data = snap.data();
+          const membershipIds: string[] = data.membershipIds ?? [];
+          const dancers = await Promise.all(
+            membershipIds.map(async (mid) => {
+              const mSnap = await getDoc(doc(db, 'memberships', mid));
+              if (!mSnap.exists()) return { name: '—', planLabel: '—' };
+              const md = mSnap.data();
+              let name = '—';
+              if (md.dancerId) {
+                const dSnap = await getDoc(doc(db, 'dancers', md.dancerId));
+                if (dSnap.exists()) name = `${dSnap.data().firstName} ${dSnap.data().lastName}`.trim();
+              }
+              let planLabel = '—';
+              if (md.pricingPlanId) {
+                const pSnap = await getDoc(doc(db, 'pricingPlans', md.pricingPlanId));
+                if (pSnap.exists()) planLabel = pSnap.data().label;
+              }
+              return { name, planLabel };
+            })
+          );
+          setGroup({
+            id: snap.id, membershipIds,
+            totalDue: data.totalDue, paymentMethod: data.paymentMethod,
+            paymentPlanStatus: data.paymentPlanStatus,
+            installmentIds: data.installmentIds ?? [],
+            userId: data.userId, dancers,
+          });
+        }
+      } else if (membershipId) {
         const snap = await getDoc(doc(db, 'memberships', membershipId));
         if (snap.exists()) {
           setMembership({ id: snap.id, ...snap.data() as Omit<Membership, 'id'> });
@@ -59,18 +104,19 @@ export default function PaymentPlanPage() {
       setLoading(false);
     };
     load();
-  }, [user, membershipId]);
+  }, [user, membershipId, groupId]);
+
+  const totalDue = group?.totalDue ?? membership?.totalDue ?? 0;
+  const paymentMethod = group?.paymentMethod ?? membership?.paymentMethod ?? '';
 
   const totalCents = installments.reduce((sum, i) => {
     const v = parseFloat(i.amount);
     return sum + (isNaN(v) ? 0 : Math.round(v * 100));
   }, 0);
-
-  const totalDue = membership?.totalDue ?? 0;
   const remaining = totalDue - totalCents;
 
   const handleSubmit = async () => {
-    if (!user || !membership) return;
+    if (!user || (!membership && !group)) return;
     setError(null);
 
     if (Math.abs(remaining) > 0) {
@@ -88,23 +134,41 @@ export default function PaymentPlanPage() {
     const batch = writeBatch(db);
     const ids: string[] = [];
 
-    for (const i of installments) {
-      const ref = doc(collection(db, 'paymentInstallments'));
-      ids.push(ref.id);
-      batch.set(ref, {
-        membershipId: membership.id,
-        userId: user.uid,
-        amount: Math.round(parseFloat(i.amount) * 100),
-        method: membership.paymentMethod,
-        expectedDate: i.expectedDate,
-        status: 'pending',
+    if (group) {
+      for (const i of installments) {
+        const ref = doc(collection(db, 'paymentInstallments'));
+        ids.push(ref.id);
+        batch.set(ref, {
+          paymentGroupId: group.id,
+          userId: user.uid,
+          amount: Math.round(parseFloat(i.amount) * 100),
+          method: paymentMethod,
+          expectedDate: i.expectedDate,
+          status: 'pending',
+        });
+      }
+      batch.update(doc(db, 'paymentGroups', group.id), {
+        installmentIds: ids,
+        updatedAt: serverTimestamp(),
+      });
+    } else if (membership) {
+      for (const i of installments) {
+        const ref = doc(collection(db, 'paymentInstallments'));
+        ids.push(ref.id);
+        batch.set(ref, {
+          membershipId: membership.id,
+          userId: user.uid,
+          amount: Math.round(parseFloat(i.amount) * 100),
+          method: membership.paymentMethod,
+          expectedDate: i.expectedDate,
+          status: 'pending',
+        });
+      }
+      batch.update(doc(db, 'memberships', membership.id), {
+        installmentIds: ids,
+        updatedAt: serverTimestamp(),
       });
     }
-
-    batch.update(doc(db, 'memberships', membership.id), {
-      installmentIds: ids,
-      updatedAt: serverTimestamp(),
-    });
 
     await batch.commit();
     setSaving(false);
@@ -117,7 +181,7 @@ export default function PaymentPlanPage() {
     </div>
   );
 
-  if (!membership) return (
+  if (!membership && !group) return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-xl mx-auto px-4 py-10">
         <p className="text-gray-400">Aucune cotisation trouvée. <Link href="/membership" className="text-blue-600 underline">Créer une cotisation</Link></p>
@@ -133,6 +197,20 @@ export default function PaymentPlanPage() {
         <p className="text-sm text-gray-500 mb-6">
           Montant total : <span className="font-semibold text-gray-800">{(totalDue / 100).toFixed(2)} €</span>
         </p>
+
+        {group && (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Danseurs inclus</p>
+            <div className="space-y-1">
+              {group.dancers.map((d, i) => (
+                <div key={i} className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-gray-900">{d.name}</span>
+                  <span className="text-gray-500">{d.planLabel}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
           {installments.map((inst, idx) => (

@@ -49,6 +49,14 @@
       ]
     },
     {
+      "collectionGroup": "paymentGroups",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "seasonId", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "paymentInstallments",
       "queryScope": "COLLECTION",
       "fields": [
