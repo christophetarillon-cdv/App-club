@@ -38,6 +38,7 @@ export default function AdminCreatePaymentPlanPage() {
 
   const [installments, setInstallments] = useState<Installment[]>([emptyInstallment()]);
 
+  const [enrolledIds, setEnrolledIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -52,12 +53,20 @@ export default function AdminCreatePaymentPlanPage() {
       if (!seasonsSnap.empty) {
         const s = seasonsSnap.docs[0]!;
         setSeason({ id: s.id, label: s.data().label });
-        const plansSnap = await getDocs(query(collection(db, 'pricingPlans'),
-          where('seasonId', '==', s.id), where('isActive', '==', true)));
+
+        const [plansSnap, approvedSnap] = await Promise.all([
+          getDocs(query(collection(db, 'pricingPlans'),
+            where('seasonId', '==', s.id), where('isActive', '==', true))),
+          getDocs(query(collection(db, 'memberships'),
+            where('seasonId', '==', s.id), where('paymentPlanStatus', '==', 'approved'))),
+        ]);
         setPlans(plansSnap.docs.map(d => ({
           id: d.id, label: d.data().label, amount: d.data().amount,
           conditions: d.data().conditions ?? '',
         })));
+        setEnrolledIds(new Set(
+          approvedSnap.docs.map(d => d.data().dancerId as string).filter(Boolean)
+        ));
       }
       setAllDancers(dancerSnap.docs.map(d => ({
         id: d.id,
@@ -83,7 +92,7 @@ export default function AdminCreatePaymentPlanPage() {
           `${d.firstName} ${d.lastName}`.toLowerCase().includes(lower))
         .slice(0, 8)
     );
-  }, [searchQuery, allDancers, selectedDancers]);
+  }, [searchQuery, allDancers, selectedDancers, enrolledIds]);
 
   const addDancer = (dancer: Dancer) => {
     setSelectedDancers(prev => prev.find(d => d.id === dancer.id) ? prev : [...prev, dancer]);
@@ -298,11 +307,15 @@ export default function AdminCreatePaymentPlanPage() {
                   <div className="absolute z-10 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
                     {searchResults.map(d => {
                       const account = allAccounts.find(a => a.id === d.accountId);
+                      const enrolled = enrolledIds.has(d.id);
                       return (
-                        <button key={d.id} type="button" onClick={() => addDancer(d)}
-                          className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 border-b border-gray-50 last:border-0">
+                        <button key={d.id} type="button"
+                          onClick={() => !enrolled && addDancer(d)}
+                          disabled={enrolled}
+                          className={`w-full text-left px-4 py-2.5 text-sm border-b border-gray-50 last:border-0 ${enrolled ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'hover:bg-gray-50'}`}>
                           <span className="font-medium text-gray-900">{d.firstName} {d.lastName}</span>
                           {account && <span className="text-gray-400 ml-2 text-xs">{account.email}</span>}
+                          {enrolled && <span className="ml-2 text-xs text-green-600 font-medium">Déjà inscrit(e)</span>}
                         </button>
                       );
                     })}
