@@ -420,7 +420,7 @@ export default function DancerDetailPage() {
                 )}
                 <div>
                   <p className="text-xs text-gray-400">Mode de paiement</p>
-                  <p className="text-sm font-medium text-gray-800">{METHOD_LABEL[entry.paymentMethod] ?? entry.paymentMethod || '—'}</p>
+                  <p className="text-sm font-medium text-gray-800">{METHOD_LABEL[entry.paymentMethod] ?? (entry.paymentMethod || '—')}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-400">Total dû</p>
