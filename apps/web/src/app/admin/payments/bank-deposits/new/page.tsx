@@ -79,17 +79,38 @@ export default function NewBankDepositPage() {
         let draweeBank: string | undefined = data.draweeBank ?? undefined;
         let draweeCity: string | undefined = data.draweeCity ?? undefined;
 
-        const accSnap = await getDoc(doc(db, 'accounts', data.userId));
-        if (accSnap.exists()) {
-          const dancerIds: string[] = accSnap.data().dancerIds ?? [];
-          if (dancerIds.length > 0) {
-            const dancerSnap = await getDoc(doc(db, 'dancers', dancerIds[0]!));
-            if (dancerSnap.exists()) {
-              const dn = dancerSnap.data();
-              memberName = `${dn.firstName} ${dn.lastName}`;
+        // For group installments, show all dancers in the group
+        if (data.paymentGroupId) {
+          const groupSnap = await getDoc(doc(db, 'paymentGroups', data.paymentGroupId));
+          if (groupSnap.exists()) {
+            const membershipIds: string[] = groupSnap.data().membershipIds ?? [];
+            const membershipSnaps = await Promise.all(membershipIds.map(id => getDoc(doc(db, 'memberships', id))));
+            const names: string[] = [];
+            for (const ms of membershipSnaps) {
+              if (!ms.exists()) continue;
+              const dancerId = ms.data().dancerId as string | undefined;
+              if (dancerId) {
+                const ds = await getDoc(doc(db, 'dancers', dancerId));
+                if (ds.exists()) names.push(`${ds.data().firstName} ${ds.data().lastName}`.trim());
+              }
             }
+            if (names.length > 0) memberName = names.join(' & ');
           }
-          if (!memberName) memberName = accSnap.data().displayName;
+        }
+
+        if (!memberName) {
+          const accSnap = await getDoc(doc(db, 'accounts', data.userId));
+          if (accSnap.exists()) {
+            const dancerIds: string[] = accSnap.data().dancerIds ?? [];
+            if (dancerIds.length > 0) {
+              const dancerSnap = await getDoc(doc(db, 'dancers', dancerIds[0]!));
+              if (dancerSnap.exists()) {
+                const dn = dancerSnap.data();
+                memberName = `${dn.firstName} ${dn.lastName}`;
+              }
+            }
+            if (!memberName) memberName = accSnap.data().displayName;
+          }
         }
 
         if (data.chequeImageId && (!chequeNumber || !draweeBank || !draweeCity)) {
