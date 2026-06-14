@@ -41,6 +41,10 @@ export default function AdminNewPaymentPage() {
   const [chequeNumber, setChequeNumber] = useState('');
   const [draweeBank, setDraweeBank] = useState('');
   const [draweeCity, setDraweeCity] = useState('');
+  const [transferRef, setTransferRef] = useState('');
+  const [transferDate, setTransferDate] = useState('');
+  const [cashReceiptRef, setCashReceiptRef] = useState('');
+  const [cashDate, setCashDate] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -159,13 +163,18 @@ export default function AdminNewPaymentPage() {
       });
 
       if (selectedInstallmentId) {
+        const method = selectedMembership?.paymentMethod;
         batch.update(doc(db, 'paymentInstallments', selectedInstallmentId), {
           status: 'paid',
           actualDate: new Date().toISOString().slice(0, 10),
-          ...(chequeImageId ? { chequeImageId } : {}),
-          ...(chequeNumber ? { chequeNumber } : {}),
-          ...(draweeBank ? { draweeBank } : {}),
-          ...(draweeCity ? { draweeCity } : {}),
+          ...(method === 'cheque' && chequeImageId ? { chequeImageId } : {}),
+          ...(method === 'cheque' && chequeNumber ? { chequeNumber } : {}),
+          ...(method === 'cheque' && draweeBank ? { draweeBank } : {}),
+          ...(method === 'cheque' && draweeCity ? { draweeCity } : {}),
+          ...(method === 'transfer' && transferRef ? { transferRef } : {}),
+          ...(method === 'transfer' && transferDate ? { transferDate } : {}),
+          ...(method === 'cash' && cashReceiptRef ? { cashReceiptRef } : {}),
+          ...(method === 'cash' && cashDate ? { cashDate } : {}),
         });
       }
 
@@ -177,7 +186,8 @@ export default function AdminNewPaymentPage() {
       await batch.commit();
 
       setSuccess(true);
-      setAmount(''); setChequeFile(null); setChequeNumber(''); setDraweeBank(''); setDraweeCity(''); setNotes('');
+      setAmount(''); setChequeFile(null); setChequeNumber(''); setDraweeBank(''); setDraweeCity('');
+      setTransferRef(''); setTransferDate(''); setCashReceiptRef(''); setCashDate(''); setNotes('');
       if (chequePreviewUrl) URL.revokeObjectURL(chequePreviewUrl);
       setChequePreviewUrl(null);
       if (fileRef.current) fileRef.current.value = '';
@@ -330,6 +340,40 @@ export default function AdminNewPaymentPage() {
               </div>
             </div>
           </>
+        )}
+
+        {/* Virement */}
+        {selectedMembership?.paymentMethod === 'transfer' && (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Référence virement <span className="normal-case font-normal text-gray-400">(optionnel)</span></label>
+              <input type="text" value={transferRef} onChange={e => setTransferRef(e.target.value)}
+                placeholder="ex : VIR-2026-001"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Date de réception <span className="normal-case font-normal text-gray-400">(optionnel)</span></label>
+              <input type="date" value={transferDate} onChange={e => setTransferDate(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            </div>
+          </div>
+        )}
+
+        {/* Espèces */}
+        {selectedMembership?.paymentMethod === 'cash' && (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">N° reçu <span className="normal-case font-normal text-gray-400">(optionnel)</span></label>
+              <input type="text" value={cashReceiptRef} onChange={e => setCashReceiptRef(e.target.value)}
+                placeholder="ex : RECU-001"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Date de remise <span className="normal-case font-normal text-gray-400">(optionnel)</span></label>
+              <input type="date" value={cashDate} onChange={e => setCashDate(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            </div>
+          </div>
         )}
 
         {/* Notes */}
