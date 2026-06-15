@@ -255,6 +255,7 @@ export default function ProfilePage() {
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Accès rapide</h2>
           {[
             { href: '/profile/card', label: 'Ma carte de membre' },
+            { href: '/my-card', label: 'Mon QR code de présence' },
           { href: '/my-courses', label: 'Mes cours' },
             { href: '/membership', label: 'Ma cotisation' },
             { href: '/profile/levels', label: 'Mes niveaux par style' },
