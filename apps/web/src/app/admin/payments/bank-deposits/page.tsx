@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
+import { type PaymentMethod, METHOD_LABEL_PLURAL as METHOD_LABEL, METHOD_COLOR, ITEM_LABEL } from '@/lib/payment-constants';
 
 interface Season {
   id: string;
@@ -14,20 +15,6 @@ interface Season {
   endDate: string;
   isActive: boolean;
 }
-
-type PaymentMethod = 'cheque' | 'transfer' | 'cash';
-
-const METHOD_LABEL: Record<string, string> = {
-  cheque: 'Chèques', transfer: 'Virements', cash: 'Espèces',
-};
-const METHOD_COLOR: Record<string, string> = {
-  cheque: 'bg-blue-100 text-blue-700',
-  transfer: 'bg-purple-100 text-purple-700',
-  cash: 'bg-green-100 text-green-700',
-};
-const ITEM_LABEL: Record<string, string> = {
-  cheque: 'chèque', transfer: 'virement', cash: 'règlement espèces',
-};
 
 interface DepositRow {
   memberName: string;

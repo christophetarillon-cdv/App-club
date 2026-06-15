@@ -6,21 +6,14 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
+import { type PaymentMethod, type Installment, METHOD_LABEL, emptyInstallment, MAX_INSTALLMENTS, chequeFields } from '@/lib/payment-constants';
 
 interface Account { id: string; displayName: string; email: string; }
 interface Dancer { id: string; firstName: string; lastName: string; accountId: string; }
 interface Season { id: string; label: string; }
 interface PricingPlan { id: string; label: string; amount: number; conditions: string; }
-interface Installment { expectedDate: string; amount: string; }
 
-type PaymentMethod = 'cheque' | 'transfer' | 'cash';
 type Step = 'who' | 'plan' | 'schedule';
-
-const METHOD_LABEL: Record<PaymentMethod, string> = {
-  cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces',
-};
-
-const emptyInstallment = (): Installment => ({ expectedDate: '', amount: '' });
 
 export default function AdminCreatePaymentPlanPage() {
   const [step, setStep] = useState<Step>('who');
@@ -167,13 +160,15 @@ export default function AdminCreatePaymentPlanPage() {
         const mRef = doc(collection(db, 'memberships'));
 
         for (let i = 0; i < installments.length; i++) {
+          const inst = installments[i]!;
           batch.set(installmentRefs[i]!, {
             membershipId: mRef.id,
             userId: targetUserId,
-            amount: Math.round(parseFloat(installments[i]!.amount) * 100),
+            amount: Math.round(parseFloat(inst.amount) * 100),
             method: selectedMethod,
-            expectedDate: installments[i]!.expectedDate,
+            expectedDate: inst.expectedDate,
             status: 'pending',
+            ...chequeFields(selectedMethod, inst),
           });
         }
 
@@ -217,13 +212,15 @@ export default function AdminCreatePaymentPlanPage() {
         }
 
         for (let i = 0; i < installments.length; i++) {
+          const inst = installments[i]!;
           batch.set(installmentRefs[i]!, {
             paymentGroupId: groupRef.id,
             userId: targetUserId,
-            amount: Math.round(parseFloat(installments[i]!.amount) * 100),
+            amount: Math.round(parseFloat(inst.amount) * 100),
             method: selectedMethod,
-            expectedDate: installments[i]!.expectedDate,
+            expectedDate: inst.expectedDate,
             status: 'pending',
+            ...chequeFields(selectedMethod, inst),
           });
         }
 
@@ -449,32 +446,62 @@ export default function AdminCreatePaymentPlanPage() {
 
             <div className="space-y-3">
               {installments.map((inst, idx) => (
-                <div key={idx} className="flex items-center gap-3">
-                  <span className="text-xs font-semibold text-gray-400 w-6">{idx + 1}.</span>
-                  <input type="date" value={inst.expectedDate}
-                    onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, expectedDate: e.target.value } : x))}
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  />
-                  <div className="relative w-32">
-                    <input type="number" step="0.01" min="0" value={inst.amount}
-                      onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))}
-                      placeholder="0.00"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 pr-7"
+                <div key={idx} className="space-y-2 pb-3 border-b border-gray-50 last:border-0">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-semibold text-gray-400 w-6">{idx + 1}.</span>
+                    <input type="date" value={inst.expectedDate}
+                      onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, expectedDate: e.target.value } : x))}
+                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                     />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">€</span>
+                    <div className="relative w-32">
+                      <input type="number" step="0.01" min="0" value={inst.amount}
+                        onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))}
+                        placeholder="0.00"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 pr-7"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">€</span>
+                    </div>
+                    {installments.length > 1 && (
+                      <button type="button" onClick={() => setInstallments(prev => prev.filter((_, i) => i !== idx))}
+                        className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                    )}
                   </div>
-                  {installments.length > 1 && (
-                    <button type="button" onClick={() => setInstallments(prev => prev.filter((_, i) => i !== idx))}
-                      className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                  {selectedMethod === 'cheque' && (
+                    <div className="ml-8 grid grid-cols-3 gap-2">
+                      <input
+                        type="text" placeholder="N° chèque"
+                        value={inst.chequeNumber ?? ''}
+                        onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, chequeNumber: e.target.value } : x))}
+                        className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      />
+                      <input
+                        type="text" placeholder="Banque"
+                        value={inst.draweeBank ?? ''}
+                        onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, draweeBank: e.target.value } : x))}
+                        className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      />
+                      <input
+                        type="text" placeholder="Ville"
+                        value={inst.draweeCity ?? ''}
+                        onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, draweeCity: e.target.value } : x))}
+                        className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      />
+                    </div>
                   )}
                 </div>
               ))}
             </div>
 
-            <button type="button" onClick={() => setInstallments(prev => [...prev, emptyInstallment()])}
-              className="text-sm text-blue-600 hover:text-blue-800 font-medium">
-              + Ajouter un versement
-            </button>
+            {(() => { const maxInst = MAX_INSTALLMENTS[selectedMethod]; return (
+              <div className="flex items-center justify-between">
+                <button type="button" onClick={() => setInstallments(prev => [...prev, emptyInstallment()])}
+                  disabled={installments.length >= maxInst}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+                  + Ajouter un versement
+                </button>
+                <span className="text-xs text-gray-400">{installments.length}/{maxInst} versement{maxInst > 1 ? 's' : ''}</span>
+              </div>
+            ); })()}
 
             <div className={`flex justify-between items-center text-sm font-semibold pt-2 border-t border-gray-100 ${Math.abs(remaining) > 0 ? 'text-orange-600' : 'text-green-700'}`}>
               <span>Total saisi</span>

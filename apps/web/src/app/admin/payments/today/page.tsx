@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { METHOD_LABEL, METHOD_COLOR } from '@/lib/payment-constants';
 import Link from 'next/link';
 
 interface DueRow {
@@ -25,15 +26,6 @@ interface DueRow {
   saved: boolean;
   error: string | null;
 }
-
-const METHOD_LABEL: Record<string, string> = {
-  cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces',
-};
-const METHOD_COLOR: Record<string, string> = {
-  cheque: 'bg-blue-100 text-blue-700',
-  transfer: 'bg-purple-100 text-purple-700',
-  cash: 'bg-green-100 text-green-700',
-};
 
 export default function TodayPaymentsPage() {
   const { user } = useAuth();
@@ -79,6 +71,15 @@ export default function TodayPaymentsPage() {
         const validMemberships = new Set(membershipDocs.filter(d => d.exists()).map(d => d.id));
         const validGroups = new Set(groupDocs.filter(d => d.exists()).map(d => d.id));
 
+        // membershipId → dancerId (for solo plans: show only the relevant dancer)
+        const membershipDancerMap = new Map<string, string>();
+        membershipDocs.forEach(d => {
+          if (d.exists()) {
+            const dancerId = d.data().dancerId as string | undefined;
+            if (dancerId) membershipDancerMap.set(d.id, dancerId);
+          }
+        });
+
         const getMemberName = (userId: string): string => {
           const acc = accountMap.get(userId);
           if (!acc) return userId;
@@ -95,13 +96,19 @@ export default function TodayPaymentsPage() {
 
             let planId: string;
             let planKind: 'solo' | 'group';
+            let memberName: string;
 
             if (paymentGroupId && validGroups.has(paymentGroupId)) {
               planId = paymentGroupId;
               planKind = 'group';
+              memberName = getMemberName(data.userId ?? '');
             } else if (membershipId && validMemberships.has(membershipId)) {
               planId = membershipId;
               planKind = 'solo';
+              const dancerId = membershipDancerMap.get(membershipId);
+              memberName = (dancerId && dancerMap.get(dancerId))
+                ? dancerMap.get(dancerId)!
+                : getMemberName(data.userId ?? '');
             } else {
               return acc;
             }
@@ -114,7 +121,7 @@ export default function TodayPaymentsPage() {
               planId,
               planKind,
               userId: data.userId ?? '',
-              memberName: getMemberName(data.userId ?? ''),
+              memberName,
               chequeNumber: data.chequeNumber ?? '',
               draweeBank: data.draweeBank ?? '',
               draweeCity: data.draweeCity ?? '',
@@ -239,8 +246,8 @@ export default function TodayPaymentsPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${METHOD_COLOR[row.method] ?? 'bg-gray-100 text-gray-500'}`}>
-                        {METHOD_LABEL[row.method] ?? row.method}
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${METHOD_COLOR[row.method as keyof typeof METHOD_COLOR] ?? 'bg-gray-100 text-gray-500'}`}>
+                        {METHOD_LABEL[row.method as keyof typeof METHOD_LABEL] ?? row.method}
                       </span>
                       <span className="text-lg font-bold text-gray-900">{(row.amount / 100).toFixed(2)} €</span>
                     </div>

@@ -8,6 +8,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { type Installment, emptyInstallment, MAX_INSTALLMENTS, chequeFields, type PaymentMethod } from '@/lib/payment-constants';
 
 interface Membership {
   id: string;
@@ -30,13 +31,6 @@ interface PaymentGroup {
   userId: string;
   dancers: { name: string; planLabel: string }[];
 }
-
-interface Installment {
-  expectedDate: string;
-  amount: string;
-}
-
-const emptyInstallment = (): Installment => ({ expectedDate: '', amount: '' });
 
 export default function PaymentPlanPage() {
   const { user } = useAuth();
@@ -109,7 +103,7 @@ export default function PaymentPlanPage() {
   const totalDue = group?.totalDue ?? membership?.totalDue ?? 0;
   const paymentMethod = group?.paymentMethod ?? membership?.paymentMethod ?? '';
 
-  const maxInstallments = paymentMethod === 'cheque' ? 10 : 1;
+  const maxInstallments = MAX_INSTALLMENTS[(paymentMethod as PaymentMethod)] ?? 1;
 
   const totalCents = installments.reduce((sum, i) => {
     const v = parseFloat(i.amount);
@@ -151,6 +145,7 @@ export default function PaymentPlanPage() {
           method: paymentMethod,
           expectedDate: i.expectedDate,
           status: 'pending',
+          ...chequeFields(paymentMethod as PaymentMethod, i),
         });
       }
       batch.update(doc(db, 'paymentGroups', group.id), {
@@ -165,9 +160,10 @@ export default function PaymentPlanPage() {
           membershipId: membership.id,
           userId: user.uid,
           amount: Math.round(parseFloat(i.amount) * 100),
-          method: membership.paymentMethod,
+          method: paymentMethod,
           expectedDate: i.expectedDate,
           status: 'pending',
+          ...chequeFields(paymentMethod as PaymentMethod, i),
         });
       }
       batch.update(doc(db, 'memberships', membership.id), {
@@ -220,27 +216,51 @@ export default function PaymentPlanPage() {
 
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
           {installments.map((inst, idx) => (
-            <div key={idx} className="flex items-center gap-3">
-              <span className="text-xs font-semibold text-gray-400 w-6">{idx + 1}.</span>
-              <input
-                type="date"
-                value={inst.expectedDate}
-                onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, expectedDate: e.target.value } : x))}
-                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-              />
-              <div className="relative w-32">
+            <div key={idx} className="space-y-2 pb-3 border-b border-gray-50 last:border-0">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-semibold text-gray-400 w-6">{idx + 1}.</span>
                 <input
-                  type="number" step="0.01" min="0"
-                  value={inst.amount}
-                  onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))}
-                  placeholder="0.00"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 pr-7"
+                  type="date"
+                  value={inst.expectedDate}
+                  onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, expectedDate: e.target.value } : x))}
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                 />
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">€</span>
+                <div className="relative w-32">
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={inst.amount}
+                    onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))}
+                    placeholder="0.00"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 pr-7"
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">€</span>
+                </div>
+                {installments.length > 1 && (
+                  <button type="button" onClick={() => setInstallments(prev => prev.filter((_, i) => i !== idx))}
+                    className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                )}
               </div>
-              {installments.length > 1 && (
-                <button type="button" onClick={() => setInstallments(prev => prev.filter((_, i) => i !== idx))}
-                  className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+              {paymentMethod === 'cheque' && (
+                <div className="ml-8 grid grid-cols-3 gap-2">
+                  <input
+                    type="text" placeholder="N° chèque"
+                    value={inst.chequeNumber ?? ''}
+                    onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, chequeNumber: e.target.value } : x))}
+                    className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                  <input
+                    type="text" placeholder="Banque"
+                    value={inst.draweeBank ?? ''}
+                    onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, draweeBank: e.target.value } : x))}
+                    className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                  <input
+                    type="text" placeholder="Ville"
+                    value={inst.draweeCity ?? ''}
+                    onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, draweeCity: e.target.value } : x))}
+                    className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </div>
               )}
             </div>
           ))}

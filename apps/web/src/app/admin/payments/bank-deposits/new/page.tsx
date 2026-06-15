@@ -6,9 +6,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { type PaymentMethod, METHOD_TABS, PDF_TITLE } from '@/lib/payment-constants';
 import Link from 'next/link';
-
-type PaymentMethod = 'cheque' | 'transfer' | 'cash';
 
 interface InstallmentRow {
   id: string;
@@ -37,18 +36,6 @@ interface BankAccount {
   holder: string;
   label: string;
 }
-
-const METHOD_TABS: { key: PaymentMethod; label: string }[] = [
-  { key: 'cheque', label: 'Chèques' },
-  { key: 'transfer', label: 'Virements' },
-  { key: 'cash', label: 'Espèces' },
-];
-
-const PDF_TITLE: Record<PaymentMethod, string> = {
-  cheque: 'Bordereau de remise de chèques',
-  transfer: 'Récapitulatif des virements reçus',
-  cash: 'Bordereau de remise d\'espèces',
-};
 
 export default function NewBankDepositPage() {
   const { user } = useAuth();
@@ -117,6 +104,17 @@ export default function NewBankDepositPage() {
           }
         }
 
+        // Solo membership: use the specific dancer from the membership (not all account dancers)
+        if (!memberName && data.membershipId) {
+          const msSnap = await getDoc(doc(db, 'memberships', data.membershipId));
+          if (msSnap.exists()) {
+            const dancerId = msSnap.data().dancerId as string | undefined;
+            if (dancerId) {
+              const ds = await getDoc(doc(db, 'dancers', dancerId));
+              if (ds.exists()) memberName = `${ds.data().firstName} ${ds.data().lastName}`.trim();
+            }
+          }
+        }
         if (!memberName) {
           const accSnap = await getDoc(doc(db, 'accounts', data.userId));
           if (accSnap.exists()) {
@@ -147,6 +145,7 @@ export default function NewBankDepositPage() {
       }));
 
       setRows(loadedRows);
+      setSelected(new Set(loadedRows.map(r => r.id)));
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
