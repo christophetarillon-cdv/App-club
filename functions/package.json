@@ -4,7 +4,7 @@
   "private": true,
   "main": "lib/index.js",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --external:firebase-admin --external:firebase-functions --external:nodemailer --outfile=lib/index.js",
+    "build": "npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --external:firebase-admin --external:firebase-functions --external:nodemailer --outfile=lib/index.js",
     "type-check": "tsc --noEmit",
     "lint": "eslint src/"
   },

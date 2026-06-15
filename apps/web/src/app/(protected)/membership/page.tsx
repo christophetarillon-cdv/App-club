@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getApp } from 'firebase/app';
 import {
   collection, getDocs, query, where, addDoc, doc, getDoc,
   deleteDoc, writeBatch, serverTimestamp,
@@ -52,16 +55,19 @@ interface PaymentGroup {
   dancers: { name: string; planLabel: string }[];
 }
 
-type PaymentMethod = 'cheque' | 'transfer' | 'cash';
+type PaymentMethod = 'cheque' | 'transfer' | 'cash' | 'helloasso';
 type PayScope = 'me' | 'myAccount' | 'otherAccount';
 type Step = 'who' | 'plan';
 
 const METHOD_LABEL: Record<PaymentMethod, string> = {
-  cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces',
+  cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', helloasso: 'En ligne',
 };
 
 export default function MembershipPage() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+  const onlineStatus = searchParams.get('status');
+  const [payingOnlineId, setPayingOnlineId] = useState<string | null>(null);
   const [season, setSeason] = useState<Season | null>(null);
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [memberships, setMemberships] = useState<MembershipEntry[]>([]);
@@ -234,6 +240,27 @@ export default function MembershipPage() {
     })();
   }, [user]);
 
+  const handlePayOnline = async (membershipId: string | null, groupId: string | null, amount: number) => {
+    const id = (membershipId ?? groupId)!;
+    setPayingOnlineId(id);
+    try {
+      const functions = getFunctions(getApp(), 'europe-west3');
+      const createCheckout = httpsCallable<
+        { membershipId?: string; groupId?: string; amount: number },
+        { redirectUrl: string }
+      >(functions, 'createHelloAssoCheckout');
+      const result = await createCheckout({
+        ...(membershipId ? { membershipId } : { groupId: groupId! }),
+        amount,
+      });
+      window.location.href = result.data.redirectUrl;
+    } catch (err) {
+      console.error('Erreur paiement en ligne:', err);
+      alert('Erreur lors de la création du paiement. Veuillez réessayer.');
+      setPayingOnlineId(null);
+    }
+  };
+
   // Load all other dancers when "autre compte" is selected
   const loadOtherDancers = async () => {
     if (otherSearchLoaded.current) return;
@@ -337,7 +364,11 @@ export default function MembershipPage() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        window.location.href = `/membership/payment-plan?membershipId=${ref.id}`;
+        if (selectedMethod === 'helloasso') {
+          await handlePayOnline(ref.id, null, plan.amount);
+        } else {
+          window.location.href = `/membership/payment-plan?membershipId=${ref.id}`;
+        }
       } else {
         // Pre-generate group ref so memberships can include paymentGroupId at create time
         const groupRef = doc(collection(db, 'paymentGroups'));
@@ -385,7 +416,11 @@ export default function MembershipPage() {
         });
 
         await batch.commit();
-        window.location.href = `/membership/payment-plan?groupId=${groupRef.id}`;
+        if (selectedMethod === 'helloasso') {
+          await handlePayOnline(null, groupRef.id, totalDue);
+        } else {
+          window.location.href = `/membership/payment-plan?groupId=${groupRef.id}`;
+        }
       }
     } catch (err: unknown) {
       console.error('Erreur création cotisation:', err);
@@ -407,6 +442,17 @@ export default function MembershipPage() {
         <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-700 mb-6 inline-block">← Profil</Link>
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Ma cotisation</h1>
 
+        {onlineStatus === 'success' && (
+          <div className="mb-4 bg-green-50 border border-green-200 rounded-2xl p-4 text-green-800 text-sm font-medium">
+            Paiement en ligne reçu. Votre cotisation sera mise à jour sous quelques instants.
+          </div>
+        )}
+        {onlineStatus === 'error' && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-2xl p-4 text-red-800 text-sm font-medium">
+            Le paiement n'a pas pu être traité. Veuillez réessayer ou contacter le club.
+          </div>
+        )}
+
         {!season && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-12 text-center">
             <p className="text-gray-400">Aucune saison active pour le moment.</p>
@@ -421,6 +467,8 @@ export default function MembershipPage() {
                 key={m.id}
                 membership={m}
                 season={season}
+                payingOnline={payingOnlineId === m.id}
+                onPayOnline={(amount) => handlePayOnline(m.id, null, amount)}
                 onCancel={async () => {
                   if (!confirm('Annuler cette cotisation ? Cette action est irréversible.')) return;
                   await deleteDoc(doc(db, 'memberships', m.id));
@@ -435,6 +483,8 @@ export default function MembershipPage() {
                 key={group.id}
                 group={group}
                 season={season}
+                payingOnline={payingOnlineId === group.id}
+                onPayOnline={(amount) => handlePayOnline(null, group.id, amount)}
                 onCancel={async () => {
                   if (!confirm('Annuler toutes les cotisations de ce groupe ? Cette action est irréversible.')) return;
                   const batch = writeBatch(db);
@@ -629,13 +679,17 @@ export default function MembershipPage() {
                     {allPlansFilled && (
                       <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Mode de paiement</p>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           {(['cheque', 'transfer', 'cash'] as PaymentMethod[]).map(m => (
                             <button key={m} type="button" onClick={() => setSelectedMethod(m)}
                               className={`text-sm px-4 py-2 rounded-lg font-medium border transition-colors ${selectedMethod === m ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
                               {METHOD_LABEL[m]}
                             </button>
                           ))}
+                          <button type="button" onClick={() => setSelectedMethod('helloasso')}
+                            className={`text-sm px-4 py-2 rounded-lg font-medium border transition-colors ${selectedMethod === 'helloasso' ? 'bg-green-700 text-white border-green-700' : 'bg-white text-green-700 border-green-400 hover:bg-green-50'}`}>
+                            En ligne ↗
+                          </button>
                         </div>
                       </div>
                     )}
@@ -665,9 +719,11 @@ export default function MembershipPage() {
   );
 }
 
-function MembershipCard({ membership, season, onCancel }: {
+function MembershipCard({ membership, season, payingOnline, onPayOnline, onCancel }: {
   membership: MembershipEntry;
   season: Season;
+  payingOnline: boolean;
+  onPayOnline: (amount: number) => void;
   onCancel: () => Promise<void>;
 }) {
   const METHOD_LABEL: Record<string, string> = {
@@ -724,15 +780,26 @@ function MembershipCard({ membership, season, onCancel }: {
       )}
 
       {membership.paymentPlanStatus === 'pending' && membership.installmentIds.length === 0 && (
-        <div className="mt-4 flex gap-2">
-          <Link href={`/membership/payment-plan?membershipId=${membership.id}`}
-            className="flex-[3] block text-center bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 text-sm transition-colors">
-            Proposer un plan de paiement →
-          </Link>
-          <button onClick={onCancel}
-            className="flex-1 text-sm font-medium text-red-500 border border-red-200 rounded-lg py-2.5 hover:bg-red-50 transition-colors">
-            Annuler
-          </button>
+        <div className="mt-4 space-y-2">
+          {membership.totalDue > membership.totalPaid && (
+            <button
+              onClick={() => onPayOnline(membership.totalDue - membership.totalPaid)}
+              disabled={payingOnline}
+              className="w-full bg-green-600 text-white font-semibold py-2.5 rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm transition-colors"
+            >
+              {payingOnline ? 'Redirection…' : 'Payer en ligne ↗'}
+            </button>
+          )}
+          <div className="flex gap-2">
+            <Link href={`/membership/payment-plan?membershipId=${membership.id}`}
+              className="flex-[3] block text-center bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 text-sm transition-colors">
+              Proposer un plan de paiement →
+            </Link>
+            <button onClick={onCancel}
+              className="flex-1 text-sm font-medium text-red-500 border border-red-200 rounded-lg py-2.5 hover:bg-red-50 transition-colors">
+              Annuler
+            </button>
+          </div>
         </div>
       )}
       {membership.paymentPlanStatus === 'rejected' && (
@@ -745,9 +812,11 @@ function MembershipCard({ membership, season, onCancel }: {
   );
 }
 
-function GroupMembershipCard({ group, season, onCancel }: {
+function GroupMembershipCard({ group, season, payingOnline, onPayOnline, onCancel }: {
   group: PaymentGroup;
   season: Season;
+  payingOnline: boolean;
+  onPayOnline: (amount: number) => void;
   onCancel: () => Promise<void>;
 }) {
   const METHOD_LABEL: Record<string, string> = {
@@ -808,15 +877,26 @@ function GroupMembershipCard({ group, season, onCancel }: {
       )}
 
       {group.paymentPlanStatus === 'pending' && group.installmentIds.length === 0 && (
-        <div className="mt-4 flex gap-2">
-          <Link href={`/membership/payment-plan?groupId=${group.id}`}
-            className="flex-[3] block text-center bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 text-sm transition-colors">
-            Proposer un plan de paiement →
-          </Link>
-          <button onClick={onCancel}
-            className="flex-1 text-sm font-medium text-red-500 border border-red-200 rounded-lg py-2.5 hover:bg-red-50 transition-colors">
-            Annuler
-          </button>
+        <div className="mt-4 space-y-2">
+          {group.totalDue > group.totalPaid && (
+            <button
+              onClick={() => onPayOnline(group.totalDue - group.totalPaid)}
+              disabled={payingOnline}
+              className="w-full bg-green-600 text-white font-semibold py-2.5 rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm transition-colors"
+            >
+              {payingOnline ? 'Redirection…' : 'Payer en ligne ↗'}
+            </button>
+          )}
+          <div className="flex gap-2">
+            <Link href={`/membership/payment-plan?groupId=${group.id}`}
+              className="flex-[3] block text-center bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 text-sm transition-colors">
+              Proposer un plan de paiement →
+            </Link>
+            <button onClick={onCancel}
+              className="flex-1 text-sm font-medium text-red-500 border border-red-200 rounded-lg py-2.5 hover:bg-red-50 transition-colors">
+              Annuler
+            </button>
+          </div>
         </div>
       )}
       {group.paymentPlanStatus === 'rejected' && (

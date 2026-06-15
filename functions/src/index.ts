@@ -1,8 +1,12 @@
 import { onDocumentCreated, onDocumentWritten, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { onObjectFinalized } from 'firebase-functions/v2/storage';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { onRequest } from 'firebase-functions/v2/https';
+import { onRequest, onCall, HttpsError } from 'firebase-functions/v2/https';
+import { defineSecret } from 'firebase-functions/params';
 import * as admin from 'firebase-admin';
+
+const helloassoClientId = defineSecret('HELLOASSO_CLIENT_ID');
+const helloassoClientSecret = defineSecret('HELLOASSO_CLIENT_SECRET');
 
 admin.initializeApp();
 
@@ -508,5 +512,186 @@ export const scheduledChequeImageDeletion = onSchedule(
       }
       await docSnap.ref.delete();
     }));
+  },
+);
+
+// ── createHelloAssoCheckout — crée un intent de paiement HelloAsso ────────────
+export const createHelloAssoCheckout = onCall(
+  { region: 'europe-west3', secrets: [helloassoClientId, helloassoClientSecret] },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'auth_required');
+
+    const { membershipId, groupId, amount } = request.data as {
+      membershipId?: string; groupId?: string; amount: number;
+    };
+
+    if (!membershipId && !groupId) throw new HttpsError('invalid-argument', 'membershipId_or_groupId_required');
+    if (!amount || amount <= 0) throw new HttpsError('invalid-argument', 'amount_required');
+
+    const clientId = helloassoClientId.value().trim();
+    const clientSecret = helloassoClientSecret.value().trim();
+    const orgSlug = process.env.HELLOASSO_ORG_SLUG!;
+    const apiUrl = process.env.HELLOASSO_API_URL ?? 'https://api.helloasso.com';
+    const appUrl = process.env.APP_URL ?? 'https://app-club-web.vercel.app';
+
+    // Pré-crée le doc Firestore pour avoir un ID à passer en metadata
+    const db = getDb();
+    const paymentRef = db.collection('helloassoPayments').doc();
+
+    // Obtient le token OAuth HelloAsso (client_credentials)
+    const tokenRes = await fetch(`${apiUrl}/oauth2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: clientSecret,
+      }).toString(),
+    });
+    if (!tokenRes.ok) {
+      const err = await tokenRes.text();
+      console.error('[createHelloAssoCheckout] Token error:', err);
+      throw new HttpsError('internal', 'helloasso_token_failed');
+    }
+    const tokenData = await tokenRes.json() as { access_token: string };
+
+    // Crée l'intent de paiement HelloAsso
+    const returnBase = `${appUrl}/membership`;
+    const checkoutRes = await fetch(`${apiUrl}/v5/organizations/${orgSlug}/checkout-intents`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        totalAmount: amount,
+        initialAmount: amount,
+        itemName: 'Cotisation CDV',
+        backUrl: returnBase,
+        errorUrl: `${returnBase}?status=error`,
+        returnUrl: `${returnBase}?status=success`,
+        containsDonation: false,
+        metadata: { paymentId: paymentRef.id },
+      }),
+    });
+    if (!checkoutRes.ok) {
+      const err = await checkoutRes.text();
+      console.error('[createHelloAssoCheckout] Checkout error:', err);
+      throw new HttpsError('internal', 'helloasso_checkout_failed');
+    }
+    const checkout = await checkoutRes.json() as { id: string; redirectUrl: string };
+
+    await paymentRef.set({
+      userId: request.auth.uid,
+      membershipId: membershipId ?? null,
+      groupId: groupId ?? null,
+      amount,
+      status: 'pending',
+      checkoutIntentId: checkout.id,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log(`[createHelloAssoCheckout] intent=${checkout.id} paymentRef=${paymentRef.id} amount=${amount}`);
+    return { redirectUrl: checkout.redirectUrl };
+  },
+);
+
+// ── webhookHelloAsso — reçoit les notifications de paiement HelloAsso ─────────
+export const webhookHelloAsso = onRequest(
+  { region: 'europe-west3', secrets: [helloassoClientSecret] },
+  async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).end(); return; }
+
+    // Vérifie la signature HMAC-SHA256
+    const signature = req.headers['x-helloasso-signature'] as string | undefined;
+    if (!signature) { res.status(400).json({ error: 'missing_signature' }); return; }
+
+    const secret = helloassoClientSecret.value().trim();
+    const rawBody = (req as any).rawBody?.toString('utf-8') ?? JSON.stringify(req.body);
+    const crypto = await import('crypto');
+    const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('base64');
+
+    if (signature !== expected) {
+      console.warn('[webhookHelloAsso] Invalid signature received');
+      res.status(401).json({ error: 'invalid_signature' });
+      return;
+    }
+
+    const payload = req.body as any;
+    const eventType: string = payload.eventType ?? '';
+    const data = payload.data ?? {};
+
+    if (eventType === 'Order' && (data.state === 'Processed' || data.state === 'Authorized')) {
+      const db = getDb();
+
+      // Cherche le paiement via la metadata paymentId
+      const metaPaymentId: string | undefined = data.meta?.paymentId ?? data.metadata?.paymentId;
+
+      let paymentSnap: admin.firestore.DocumentSnapshot | null = null;
+
+      if (metaPaymentId) {
+        paymentSnap = await db.doc(`helloassoPayments/${metaPaymentId}`).get();
+        if (!paymentSnap.exists || paymentSnap.data()?.status !== 'pending') paymentSnap = null;
+      }
+
+      if (!paymentSnap) {
+        // Fallback : recherche par checkoutIntentId
+        const checkoutId = data.checkoutIntentId?.toString() ?? data.formSlug ?? data.id?.toString();
+        if (checkoutId) {
+          const q = await db.collection('helloassoPayments')
+            .where('checkoutIntentId', '==', checkoutId)
+            .where('status', '==', 'pending')
+            .limit(1)
+            .get();
+          if (!q.empty) paymentSnap = q.docs[0]!;
+        }
+      }
+
+      if (!paymentSnap) {
+        console.warn('[webhookHelloAsso] No matching pending payment for event', JSON.stringify(data).slice(0, 200));
+        res.status(200).json({ ok: true });
+        return;
+      }
+
+      const payment = paymentSnap.data()!;
+      const totalAmount: number = data.totalAmount ?? payment.amount;
+
+      const batch = db.batch();
+
+      batch.update(paymentSnap.ref, {
+        status: 'authorized',
+        helloassoOrderId: data.id ?? null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Crée un paymentInstallment pour conserver la trace
+      const installRef = db.collection('paymentInstallments').doc();
+      batch.set(installRef, {
+        membershipId: payment.membershipId ?? null,
+        groupId: payment.groupId ?? null,
+        userId: payment.userId,
+        amount: totalAmount,
+        method: 'helloasso',
+        status: 'paid',
+        expectedDate: new Date().toISOString().slice(0, 10),
+        paidAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      if (payment.membershipId) {
+        batch.update(db.doc(`memberships/${payment.membershipId}`), {
+          totalPaid: admin.firestore.FieldValue.increment(totalAmount),
+        });
+      } else if (payment.groupId) {
+        batch.update(db.doc(`paymentGroups/${payment.groupId}`), {
+          totalPaid: admin.firestore.FieldValue.increment(totalAmount),
+        });
+      }
+
+      await batch.commit();
+      console.log(`[webhookHelloAsso] Payment authorized: ${paymentSnap.id}, amount=${totalAmount}`);
+    }
+
+    res.status(200).json({ ok: true });
   },
 );
