@@ -23,31 +23,39 @@ export default function AdminTrialPage() {
   const [loading, setLoading] = useState(true);
   const [converting, setConverting] = useState<string | null>(null);
   const [incrementing, setIncrementing] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
-    const [settingsSnap, dancersSnap] = await Promise.all([
-      getDoc(doc(db, 'appSettings', 'main')),
-      getDocs(query(collection(db, 'dancers'), where('roles', 'array-contains', 'trial'), orderBy('createdAt', 'desc'))),
-    ]);
+    setError(null);
+    try {
+      const [settingsSnap, dancersSnap] = await Promise.all([
+        getDoc(doc(db, 'appSettings', 'main')),
+        getDocs(query(collection(db, 'dancers'), where('roles', 'array-contains', 'trial'), orderBy('createdAt', 'desc'))),
+      ]);
 
-    if (settingsSnap.exists()) {
-      setMaxTrialSessions(settingsSnap.data().trialMaxSessions ?? 3);
+      if (settingsSnap.exists()) {
+        setMaxTrialSessions(settingsSnap.data().trialMaxSessions ?? 3);
+      }
+
+      const list: TrialDancer[] = await Promise.all(
+        dancersSnap.docs.map(async d => {
+          const dancer = { id: d.id, ...d.data() } as TrialDancer;
+          try {
+            const accountSnap = await getDoc(doc(db, 'accounts', dancer.accountId));
+            if (accountSnap.exists()) dancer.accountEmail = accountSnap.data().email;
+          } catch { /* ignore */ }
+          return dancer;
+        })
+      );
+
+      setDancers(list);
+    } catch (e: any) {
+      console.error('[AdminTrialPage] load error:', e);
+      setError(e?.message ?? 'Erreur de chargement');
+    } finally {
+      setLoading(false);
     }
-
-    const list: TrialDancer[] = await Promise.all(
-      dancersSnap.docs.map(async d => {
-        const dancer = { id: d.id, ...d.data() } as TrialDancer;
-        try {
-          const accountSnap = await getDoc(doc(db, 'accounts', dancer.accountId));
-          if (accountSnap.exists()) dancer.accountEmail = accountSnap.data().email;
-        } catch { /* ignore */ }
-        return dancer;
-      })
-    );
-
-    setDancers(list);
-    setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
@@ -85,7 +93,8 @@ export default function AdminTrialPage() {
     }
   };
 
-  if (loading) return <p className="text-gray-500 text-sm">Chargement…</p>;
+  if (loading) return <p className="text-gray-500 text-sm p-6">Chargement…</p>;
+  if (error) return <p className="text-red-600 text-sm p-6">Erreur : {error}</p>;
 
   return (
     <div>
