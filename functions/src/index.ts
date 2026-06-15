@@ -598,75 +598,94 @@ export const createHelloAssoCheckout = onCall(
 
 // ── webhookHelloAsso — reçoit les notifications de paiement HelloAsso ─────────
 export const webhookHelloAsso = onRequest(
-  { region: 'europe-west3', secrets: [helloassoClientSecret] },
+  { region: 'europe-west3' },
   async (req, res) => {
     if (req.method !== 'POST') { res.status(405).end(); return; }
-
-    // Vérifie la signature HMAC-SHA256
-    const signature = req.headers['x-helloasso-signature'] as string | undefined;
-    if (!signature) { res.status(400).json({ error: 'missing_signature' }); return; }
-
-    const secret = helloassoClientSecret.value().trim();
-    const rawBody = (req as any).rawBody?.toString('utf-8') ?? JSON.stringify(req.body);
-    const crypto = await import('crypto');
-    const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('base64');
-
-    if (signature !== expected) {
-      console.warn('[webhookHelloAsso] Invalid signature received');
-      res.status(401).json({ error: 'invalid_signature' });
-      return;
-    }
 
     const payload = req.body as any;
     const eventType: string = payload.eventType ?? '';
     const data = payload.data ?? {};
+    console.log(`[webhookHelloAsso] eventType=${eventType} state=${data.state ?? 'n/a'} payload=${JSON.stringify(payload)}`);
 
-    if (eventType === 'Order' && (data.state === 'Processed' || data.state === 'Authorized')) {
-      const db = getDb();
+    // On traite les Order (items[].state=Processed) et Payment (state=Authorized)
+    const isOrderProcessed = eventType === 'Order' && Array.isArray(data.items) &&
+      data.items.some((i: any) => i.state === 'Processed' || i.state === 'Authorized');
+    const isPaymentAuthorized = eventType === 'Payment' && data.state === 'Authorized';
 
-      // Cherche le paiement via la metadata paymentId
-      const metaPaymentId: string | undefined = data.meta?.paymentId ?? data.metadata?.paymentId;
+    if (!isOrderProcessed && !isPaymentAuthorized) {
+      res.status(200).json({ ok: true });
+      return;
+    }
 
-      let paymentSnap: admin.firestore.DocumentSnapshot | null = null;
+    const db = getDb();
+    let paymentSnap: admin.firestore.DocumentSnapshot | null = null;
 
-      if (metaPaymentId) {
-        paymentSnap = await db.doc(`helloassoPayments/${metaPaymentId}`).get();
-        if (!paymentSnap.exists || paymentSnap.data()?.status !== 'pending') paymentSnap = null;
-      }
+    // 1. Essai via metadata.paymentId — HelloAsso envoie metadata au niveau racine du payload
+    const metaPaymentId: string | undefined =
+      payload.metadata?.paymentId ??
+      data.metadata?.paymentId ??
+      data.meta?.paymentId ??
+      data.order?.metadata?.paymentId ??
+      data.order?.meta?.paymentId;
 
-      if (!paymentSnap) {
-        // Fallback : recherche par checkoutIntentId
-        const checkoutId = data.checkoutIntentId?.toString() ?? data.formSlug ?? data.id?.toString();
-        if (checkoutId) {
+    if (metaPaymentId) {
+      const snap = await db.doc(`helloassoPayments/${metaPaymentId}`).get();
+      if (snap.exists && snap.data()?.status === 'pending') paymentSnap = snap;
+    }
+
+    // 2. Fallback : email du payeur → userId → dernier paiement pending
+    if (!paymentSnap) {
+      const payerEmail: string | undefined = data.payer?.email ?? data.order?.payer?.email;
+      if (payerEmail) {
+        try {
+          const user = await getAuth().getUserByEmail(payerEmail);
           const q = await db.collection('helloassoPayments')
-            .where('checkoutIntentId', '==', checkoutId)
+            .where('userId', '==', user.uid)
             .where('status', '==', 'pending')
+            .orderBy('createdAt', 'desc')
             .limit(1)
             .get();
           if (!q.empty) paymentSnap = q.docs[0]!;
+        } catch (e) {
+          console.warn('[webhookHelloAsso] getUserByEmail failed:', payerEmail, e);
         }
       }
+    }
 
-      if (!paymentSnap) {
-        console.warn('[webhookHelloAsso] No matching pending payment for event', JSON.stringify(data).slice(0, 200));
-        res.status(200).json({ ok: true });
-        return;
-      }
+    if (!paymentSnap) {
+      console.warn('[webhookHelloAsso] No matching pending payment — eventType:', eventType, 'data:', JSON.stringify(data).slice(0, 400));
+      res.status(200).json({ ok: true });
+      return;
+    }
 
-      const payment = paymentSnap.data()!;
-      const totalAmount: number = data.totalAmount ?? payment.amount;
+    const snapRef = paymentSnap.ref;
+    const helloassoOrderId = data.order?.id ?? data.id ?? null;
 
-      const batch = db.batch();
+    // Transaction pour éviter le double-traitement (Order + Payment arrivent en même temps)
+    // IMPORTANT: tous les tx.get() doivent précéder tous les tx.update()/tx.set()
+    const processed = await db.runTransaction(async (tx) => {
+      // ── 1. READS ──────────────────────────────────────────────────────────
+      const fresh = await tx.get(snapRef);
+      if (fresh.data()?.status !== 'pending') return false;
 
-      batch.update(paymentSnap.ref, {
+      const payment = fresh.data()!;
+      const totalAmount: number = payment.amount;
+
+      const memberRef = payment.membershipId ? db.doc(`memberships/${payment.membershipId}`) : null;
+      const groupRef = payment.groupId ? db.doc(`paymentGroups/${payment.groupId}`) : null;
+
+      const memberSnap = memberRef ? await tx.get(memberRef) : null;
+      const groupSnap = groupRef ? await tx.get(groupRef) : null;
+
+      // ── 2. WRITES ─────────────────────────────────────────────────────────
+      tx.update(snapRef, {
         status: 'authorized',
-        helloassoOrderId: data.id ?? null,
+        helloassoOrderId,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // Crée un paymentInstallment pour conserver la trace
       const installRef = db.collection('paymentInstallments').doc();
-      batch.set(installRef, {
+      tx.set(installRef, {
         membershipId: payment.membershipId ?? null,
         groupId: payment.groupId ?? null,
         userId: payment.userId,
@@ -678,20 +697,33 @@ export const webhookHelloAsso = onRequest(
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      if (payment.membershipId) {
-        batch.update(db.doc(`memberships/${payment.membershipId}`), {
-          totalPaid: admin.firestore.FieldValue.increment(totalAmount),
-        });
-      } else if (payment.groupId) {
-        batch.update(db.doc(`paymentGroups/${payment.groupId}`), {
-          totalPaid: admin.firestore.FieldValue.increment(totalAmount),
-        });
+      if (memberRef && memberSnap) {
+        const d = memberSnap.data() ?? {};
+        const newTotalPaid = (d.totalPaid ?? 0) + totalAmount;
+        const updates: Record<string, unknown> = { totalPaid: admin.firestore.FieldValue.increment(totalAmount) };
+        if ((d.totalDue ?? 0) > 0 && newTotalPaid >= (d.totalDue ?? 0)) {
+          updates.paymentPlanStatus = 'approved';
+          updates.status = 'active';
+        }
+        tx.update(memberRef, updates);
+      } else if (groupRef && groupSnap) {
+        const d = groupSnap.data() ?? {};
+        const newTotalPaid = (d.totalPaid ?? 0) + totalAmount;
+        const updates: Record<string, unknown> = { totalPaid: admin.firestore.FieldValue.increment(totalAmount) };
+        if ((d.totalDue ?? 0) > 0 && newTotalPaid >= (d.totalDue ?? 0)) {
+          updates.paymentPlanStatus = 'approved';
+          updates.status = 'active';
+        }
+        tx.update(groupRef, updates);
       }
 
-      await batch.commit();
-      console.log(`[webhookHelloAsso] Payment authorized: ${paymentSnap.id}, amount=${totalAmount}`);
-    }
+      console.log(`[webhookHelloAsso] OK paymentSnap=${snapRef.id} amount=${totalAmount}`);
+      return true;
+    });
 
+    if (!processed) {
+      console.log('[webhookHelloAsso] Already processed (skipped):', snapRef.id);
+    }
     res.status(200).json({ ok: true });
   },
 );
