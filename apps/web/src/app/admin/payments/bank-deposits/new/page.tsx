@@ -226,6 +226,10 @@ export default function NewBankDepositPage() {
         page.drawText('Référence', { x: 260, y, size: 10, font: fontBold });
         page.drawText('Date', { x: 390, y, size: 10, font: fontBold });
         page.drawText('Montant', { x: 460, y, size: 10, font: fontBold });
+      } else if (paymentMethod === 'helloasso') {
+        page.drawText('Prénom Nom', { x: 50, y, size: 10, font: fontBold });
+        page.drawText('Date paiement', { x: 310, y, size: 10, font: fontBold });
+        page.drawText('Montant', { x: 460, y, size: 10, font: fontBold });
       } else {
         page.drawText('Prénom Nom', { x: 50, y, size: 10, font: fontBold });
         page.drawText('N° reçu', { x: 310, y, size: 10, font: fontBold });
@@ -247,6 +251,11 @@ export default function NewBankDepositPage() {
         } else if (paymentMethod === 'transfer') {
           if (row.transferRef) page.drawText(row.transferRef.slice(0, 18), { x: 260, y, size: 9, font });
           if (row.transferDate) page.drawText(new Date(row.transferDate + 'T12:00:00').toLocaleDateString('fr-FR'), { x: 390, y, size: 9, font });
+        } else if (paymentMethod === 'helloasso') {
+          const datePaid = row.expectedDate
+            ? new Date(row.expectedDate + 'T12:00:00').toLocaleDateString('fr-FR')
+            : '—';
+          page.drawText(datePaid, { x: 310, y, size: 9, font });
         } else {
           if (row.cashReceiptRef) page.drawText(row.cashReceiptRef.slice(0, 18), { x: 310, y, size: 9, font });
         }
@@ -344,6 +353,7 @@ export default function NewBankDepositPage() {
     cheque: 'Aucun chèque à remettre en banque.',
     transfer: 'Aucun virement à récapituler.',
     cash: 'Aucune remise en espèces à traiter.',
+    helloasso: 'Aucun paiement en ligne à récapituler.',
   };
 
   return (
