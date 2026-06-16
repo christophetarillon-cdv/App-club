@@ -77,10 +77,18 @@ export default function KioskScanPage() {
     let reader: any;
     let stopped = false;
 
+    const stopCamera = () => {
+      const video = videoRef.current;
+      if (video?.srcObject) {
+        (video.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+        video.srcObject = null;
+      }
+    };
+
     import('@zxing/browser').then(({ BrowserMultiFormatReader }) => {
       if (stopped) return;
       reader = new BrowserMultiFormatReader();
-      reader.decodeFromVideoDevice(undefined, videoRef.current!, (result: any, err: any) => {
+      reader.decodeFromVideoDevice(undefined, videoRef.current!, (result: any) => {
         if (stopped) return;
         if (result && !scanningRef.current && !processing) {
           handleScan(result.getText());
@@ -92,9 +100,8 @@ export default function KioskScanPage() {
 
     return () => {
       stopped = true;
-      if (reader) {
-        try { reader.reset(); } catch {}
-      }
+      try { reader?.reset(); } catch {}
+      stopCamera();
     };
   }, [kioskActive, handleScan]);
 
