@@ -8,4 +8,5 @@ export interface Session {
   endTime: string;
   status: SessionStatus;
   cancellationReason?: string;
+  actualAttendees?: number;
 }

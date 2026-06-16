@@ -18,3 +18,5 @@ export * from './payment';
 export * from './paymentInstallment';
 export * from './chequeImage';
 export * from './bankDeposit';
+export * from './attendance';
+export * from './kioskSession';

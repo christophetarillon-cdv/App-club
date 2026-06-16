@@ -727,3 +727,169 @@ export const webhookHelloAsso = onRequest(
     res.status(200).json({ ok: true });
   },
 );
+
+// ── recordAttendance — enregistre la présence depuis le kiosque ───────────────
+export const recordAttendance = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    const db = getDb();
+    const { qrUid, dancerId, kioskSessionId } = (request.data ?? {}) as {
+      qrUid?: string;
+      dancerId?: string;
+      kioskSessionId: string;
+    };
+
+    if (!kioskSessionId) throw new HttpsError('invalid-argument', 'kioskSessionId requis');
+    if (!qrUid && !dancerId) throw new HttpsError('invalid-argument', 'qrUid ou dancerId requis');
+
+    // 1. Vérifier le kiosque
+    const kioskRef = db.doc(`kioskSessions/${kioskSessionId}`);
+    const kioskSnap = await kioskRef.get();
+    if (!kioskSnap.exists) throw new HttpsError('not-found', 'Session kiosque introuvable');
+    const kiosk = kioskSnap.data()!;
+    if (kiosk.status !== 'active') throw new HttpsError('failed-precondition', 'Session kiosque fermée');
+
+    const sessionId: string = kiosk.sessionId;
+    const courseId: string = kiosk.courseId;
+
+    // 2. Trouver le danseur
+    let dancer: admin.firestore.DocumentData | null = null;
+    let dancerRef: admin.firestore.DocumentReference | null = null;
+
+    if (qrUid) {
+      const q = await db.collection('dancers').where('accountId', '==', qrUid).where('isActive', '==', true).limit(1).get();
+      if (q.empty) throw new HttpsError('not-found', 'Danseur introuvable pour ce QR code');
+      dancerRef = q.docs[0].ref;
+      dancer = q.docs[0].data();
+    } else {
+      dancerRef = db.doc(`dancers/${dancerId}`);
+      const snap = await dancerRef.get();
+      if (!snap.exists) throw new HttpsError('not-found', 'Danseur introuvable');
+      dancer = snap.data()!;
+      if (!dancer.isActive) throw new HttpsError('failed-precondition', 'Compte danseur inactif');
+    }
+
+    const resolvedDancerId = dancerRef.id;
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 3. Vérifier doublon (même danseur, même séance aujourd'hui)
+    const dupQ = await db.collection('attendances')
+      .where('dancerId', '==', resolvedDancerId)
+      .where('sessionId', '==', sessionId)
+      .where('date', '==', today)
+      .limit(1)
+      .get();
+    if (!dupQ.empty) {
+      return {
+        status: 'already_registered',
+        dancerName: `${dancer.firstName} ${dancer.lastName}`,
+        memberNumber: dancer.memberNumber ?? null,
+      };
+    }
+
+    // 4. Vérifier limites essai
+    const isTrial = (dancer.roles as string[])?.includes('trial');
+    if (isTrial) {
+      const settingsSnap = await db.doc('appSettings/main').get();
+      const maxTrialSessions: number = (settingsSnap.data()?.trialMaxSessions as number) ?? 3;
+      const used: number = (dancer.trialSessionsUsed as number) ?? 0;
+      if (used >= maxTrialSessions) {
+        throw new HttpsError('permission-denied', 'Nombre de séances d\'essai épuisé');
+      }
+      const expiresAt = dancer.trialExpiresAt as admin.firestore.Timestamp | undefined;
+      if (expiresAt && expiresAt.toDate() < new Date()) {
+        throw new HttpsError('permission-denied', 'Période d\'essai expirée');
+      }
+    }
+
+    // 5. Déterminer le statut de présence
+    const regQ = await db.collection('registrations')
+      .where('userId', '==', dancer.accountId)
+      .where('courseId', '==', courseId)
+      .where('status', '==', 'active')
+      .limit(1)
+      .get();
+    const attendanceStatus = regQ.empty ? 'walk-in' : 'registered';
+
+    // 6. Transaction : créer présence + incrémenter compteurs
+    const attendanceRef = db.collection('attendances').doc();
+    await db.runTransaction(async (tx) => {
+      const kioskFresh = await tx.get(kioskRef);
+      if (kioskFresh.data()?.status !== 'active') {
+        throw new HttpsError('failed-precondition', 'Session kiosque fermée');
+      }
+      const sessionRef = db.doc(`sessions/${sessionId}`);
+
+      tx.set(attendanceRef, {
+        dancerId: resolvedDancerId,
+        sessionId,
+        date: today,
+        scannedAt: admin.firestore.FieldValue.serverTimestamp(),
+        method: qrUid ? 'qr' : 'manual',
+        status: attendanceStatus,
+      });
+
+      tx.update(sessionRef, {
+        actualAttendees: admin.firestore.FieldValue.increment(1),
+      });
+
+      tx.update(kioskRef, {
+        lastActivityAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      if (isTrial) {
+        tx.update(dancerRef!, {
+          trialSessionsUsed: admin.firestore.FieldValue.increment(1),
+        });
+      }
+    });
+
+    // 7. Notification push (best-effort)
+    try {
+      const accountSnap = await db.doc(`accounts/${dancer.accountId}`).get();
+      const fcmToken: string | undefined = accountSnap.data()?.fcmToken as string | undefined;
+      if (fcmToken) {
+        await admin.messaging().send({
+          token: fcmToken,
+          notification: {
+            title: 'Présence enregistrée',
+            body: `Bonne séance, ${dancer.firstName} !`,
+          },
+        });
+      }
+    } catch { /* notification non bloquante */ }
+
+    return {
+      status: attendanceStatus,
+      isTrial,
+      dancerName: `${dancer.firstName} ${dancer.lastName}`,
+      memberNumber: dancer.memberNumber ?? null,
+    };
+  },
+);
+
+// ── detectIdleKiosks — ferme automatiquement les kiosques inactifs ─────────────
+export const detectIdleKiosks = onSchedule(
+  { schedule: 'every 15 minutes', region: 'europe-west3' },
+  async () => {
+    const db = getDb();
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+    const idleQ = await db.collection('kioskSessions')
+      .where('status', '==', 'active')
+      .where('lastActivityAt', '<', twoHoursAgo)
+      .get();
+
+    if (idleQ.empty) return;
+
+    const batch = db.batch();
+    idleQ.docs.forEach((doc) => {
+      batch.update(doc.ref, {
+        status: 'closed',
+        closedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    await batch.commit();
+    console.log(`[detectIdleKiosks] Fermé ${idleQ.size} kiosque(s) inactif(s)`);
+  },
+);

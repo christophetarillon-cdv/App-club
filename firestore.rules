@@ -15,6 +15,13 @@ service cloud.firestore {
       return isAuth() && request.auth.uid == uid;
     }
 
+    function isInstructor() {
+      return isAuth() && (
+        isAdmin() ||
+        get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.roles.hasAny(['instructor'])
+      );
+    }
+
     function cannotChangeProtectedFields() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['roles', 'isActive']);
     }
@@ -182,6 +189,19 @@ service cloud.firestore {
 
     match /bankAccounts/{id} {
       allow read, write: if isAdmin();
+    }
+
+    match /attendances/{id} {
+      allow read: if isAdmin() || isInstructor();
+      allow create: if false; // Cloud Function uniquement
+      allow update, delete: if isAdmin();
+    }
+
+    match /kioskSessions/{id} {
+      allow read: if isAuth();
+      allow create: if isAdmin() || isInstructor();
+      allow update: if isAdmin() || isInstructor();
+      allow delete: if isAdmin();
     }
   }
 }

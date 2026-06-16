@@ -271,6 +271,20 @@ export default function ProfilePage() {
           ))}
         </div>
 
+        {/* Moniteur */}
+        {dancers.some(d => d.roles.includes('instructor') && !d.roles.includes('admin')) && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-3">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Moniteur</h2>
+            <Link href="/kiosk/setup"
+              className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+              <span className="text-sm font-medium text-gray-800">Ouvrir le kiosque de pointage</span>
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          </div>
+        )}
+
         {/* Administration */}
         {(account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin'))) && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-3">
@@ -293,6 +307,7 @@ export default function ProfilePage() {
                 { href: '/admin/settings/planning', label: 'Paramètres planning' },
                 { href: '/admin/settings/trial', label: 'Paramètres essai' },
                 { href: '/admin/settings/welcome-qr', label: "QR d'accueil" },
+                { href: '/kiosk/setup', label: 'Ouvrir le kiosque de pointage' },
               ].map(({ href, label }) => (
                 <Link key={href} href={href}
                   className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
