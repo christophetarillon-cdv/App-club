@@ -757,10 +757,18 @@ export const recordAttendance = onCall(
     let dancerRef: admin.firestore.DocumentReference | null = null;
 
     if (qrUid) {
-      const q = await db.collection('dancers').where('accountId', '==', qrUid).where('isActive', '==', true).limit(1).get();
-      if (q.empty) throw new HttpsError('not-found', 'Danseur introuvable pour ce QR code');
-      dancerRef = q.docs[0].ref;
-      dancer = q.docs[0].data();
+      // Nouveau format : QR encode dancer.id directement
+      const directSnap = await db.doc(`dancers/${qrUid}`).get();
+      if (directSnap.exists && directSnap.data()?.isActive !== false) {
+        dancerRef = directSnap.ref;
+        dancer = directSnap.data()!;
+      } else {
+        // Ancien format (compat) : QR encodait accountId
+        const q = await db.collection('dancers').where('accountId', '==', qrUid).where('isActive', '==', true).limit(1).get();
+        if (q.empty) throw new HttpsError('not-found', 'Danseur introuvable pour ce QR code');
+        dancerRef = q.docs[0].ref;
+        dancer = q.docs[0].data();
+      }
     } else {
       dancerRef = db.doc(`dancers/${dancerId}`);
       const snap = await dancerRef.get();
