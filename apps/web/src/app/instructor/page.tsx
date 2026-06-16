@@ -22,9 +22,10 @@ export default function InstructorPage() {
   const [sessions, setSessions] = useState<SessionWithCourse[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const isAdmin = account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin'));
-
   useEffect(() => {
+    const isAdmin = account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin'));
+    setLoading(true);
+
     const load = async () => {
       const today = new Date();
       const from = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -83,7 +84,7 @@ export default function InstructorPage() {
     };
 
     load().catch(() => setLoading(false));
-  }, [dancers, isAdmin]);
+  }, [account, dancers]);
 
   if (loading) {
     return <p className="text-center text-gray-500 py-16">Chargement…</p>;
