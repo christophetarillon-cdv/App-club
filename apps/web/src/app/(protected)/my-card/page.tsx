@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import QRCode from 'react-qr-code';
+import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function MyCardPage() {
@@ -26,6 +27,17 @@ export default function MyCardPage() {
 
   return (
     <div className={`min-h-screen flex flex-col items-center justify-center transition-colors duration-200 ${bgColor}`}>
+
+      {/* Bouton retour */}
+      <Link
+        href="/profile"
+        className={`absolute top-4 left-4 flex items-center gap-1 text-sm font-medium ${bright ? 'text-gray-500 hover:text-gray-800' : 'text-white/60 hover:text-white'} transition-colors`}
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+        Retour
+      </Link>
 
       {/* Luminosité */}
       <p
