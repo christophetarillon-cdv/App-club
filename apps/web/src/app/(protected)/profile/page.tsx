@@ -296,6 +296,7 @@ export default function ProfilePage() {
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Administration</h2>
             <div className="space-y-2">
               {[
+                { href: '/instructor', label: 'Séances & présences (vue moniteur)' },
                 { href: '/admin/club-settings', label: 'Paramètres du club' },
                 { href: '/admin/seasons', label: 'Saisons' },
                 { href: '/admin/dance-styles', label: 'Styles de danse' },
