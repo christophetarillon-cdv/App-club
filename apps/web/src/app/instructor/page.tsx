@@ -18,34 +18,41 @@ function formatDate(dateStr: string) {
 }
 
 export default function InstructorPage() {
-  const { dancers } = useAuth();
+  const { account, dancers } = useAuth();
   const [sessions, setSessions] = useState<SessionWithCourse[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const isAdmin = account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin'));
+
   useEffect(() => {
-    const myDancerIds = dancers
-      .filter(d => d.roles.includes('instructor') || d.roles.includes('admin'))
-      .map(d => d.id);
-
-    if (myDancerIds.length === 0) { setLoading(false); return; }
-
     const load = async () => {
-      // Courses where I'm instructor
-      const courseSnaps = await Promise.all(
-        myDancerIds.map(id =>
-          getDocs(query(collection(db, 'courses'), where('instructorId', '==', id)))
-        )
-      );
-      const courses = new Map<string, string>();
-      courseSnaps.forEach(snap =>
-        snap.docs.forEach(d => courses.set(d.id, (d.data() as Course).name))
-      );
-
-      if (courses.size === 0) { setLoading(false); return; }
-
       const today = new Date();
       const from = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const to = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+      const courses = new Map<string, string>();
+
+      if (isAdmin) {
+        // Admin : tous les cours
+        const snap = await getDocs(collection(db, 'courses'));
+        snap.docs.forEach(d => courses.set(d.id, (d.data() as Course).name));
+      } else {
+        // Moniteur : uniquement ses cours
+        const myDancerIds = dancers
+          .filter(d => d.roles.includes('instructor'))
+          .map(d => d.id);
+        if (myDancerIds.length === 0) { setLoading(false); return; }
+        const courseSnaps = await Promise.all(
+          myDancerIds.map(id =>
+            getDocs(query(collection(db, 'courses'), where('instructorId', '==', id)))
+          )
+        );
+        courseSnaps.forEach(snap =>
+          snap.docs.forEach(d => courses.set(d.id, (d.data() as Course).name))
+        );
+      }
+
+      if (courses.size === 0) { setLoading(false); return; }
 
       const courseIds = [...courses.keys()];
       // Firestore 'in' accepts up to 30 items
@@ -76,7 +83,7 @@ export default function InstructorPage() {
     };
 
     load().catch(() => setLoading(false));
-  }, [dancers]);
+  }, [dancers, isAdmin]);
 
   if (loading) {
     return <p className="text-center text-gray-500 py-16">Chargement…</p>;
