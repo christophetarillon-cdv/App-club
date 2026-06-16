@@ -71,35 +71,55 @@ export default function KioskScanPage() {
     }
   }, [kioskSessionId, processing, resetScan]);
 
+  // Ref stable vers handleScan pour éviter de redémarrer la caméra à chaque scan
+  const handleScanRef = useRef(handleScan);
+  useEffect(() => { handleScanRef.current = handleScan; }, [handleScan]);
+
   // Initialiser le scanner de QR code
   useEffect(() => {
     if (!kioskActive || !videoRef.current) return;
     let reader: any;
     let stopped = false;
+    let localStream: MediaStream | null = null;
 
-    import('@zxing/browser').then(({ BrowserMultiFormatReader }) => {
-      if (stopped) return;
-      reader = new BrowserMultiFormatReader();
-      reader.decodeFromVideoDevice(undefined, videoRef.current!, (result: any) => {
+    const start = async () => {
+      try {
+        // On gère le stream nous-mêmes pour en garder la référence
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+        });
+        if (stopped) { stream.getTracks().forEach(t => t.stop()); return; }
+        localStream = stream;
+
+        const video = videoRef.current;
+        if (!video) { stream.getTracks().forEach(t => t.stop()); return; }
+        video.srcObject = stream;
+        await video.play().catch(() => {});
+
+        const { BrowserMultiFormatReader } = await import('@zxing/browser');
         if (stopped) return;
-        if (result && !scanningRef.current && !processing) {
-          handleScan(result.getText());
-        }
-      });
-    }).catch(() => {
-      setCameraError("Impossible d'accéder à la caméra.");
-    });
+        reader = new BrowserMultiFormatReader();
+        reader.decodeFromVideoElement(video, (result: any) => {
+          if (stopped) return;
+          if (result && !scanningRef.current) {
+            handleScanRef.current(result.getText());
+          }
+        });
+      } catch {
+        setCameraError("Impossible d'accéder à la caméra.");
+      }
+    };
+
+    start();
 
     return () => {
       stopped = true;
-      // Capturer le stream AVANT que reader.reset() ne le libère
-      const video = videoRef.current;
-      const stream = video?.srcObject as MediaStream | null;
       try { reader?.reset(); } catch {}
-      stream?.getTracks().forEach(t => t.stop());
-      if (video) video.srcObject = null;
+      localStream?.getTracks().forEach(t => t.stop());
+      localStream = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
     };
-  }, [kioskActive, handleScan]);
+  }, [kioskActive]);
 
   // Plein écran sur tablette
   useEffect(() => {
