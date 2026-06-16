@@ -77,14 +77,6 @@ export default function KioskScanPage() {
     let reader: any;
     let stopped = false;
 
-    const stopCamera = () => {
-      const video = videoRef.current;
-      if (video?.srcObject) {
-        (video.srcObject as MediaStream).getTracks().forEach(t => t.stop());
-        video.srcObject = null;
-      }
-    };
-
     import('@zxing/browser').then(({ BrowserMultiFormatReader }) => {
       if (stopped) return;
       reader = new BrowserMultiFormatReader();
@@ -100,8 +92,12 @@ export default function KioskScanPage() {
 
     return () => {
       stopped = true;
+      // Capturer le stream AVANT que reader.reset() ne le libère
+      const video = videoRef.current;
+      const stream = video?.srcObject as MediaStream | null;
       try { reader?.reset(); } catch {}
-      stopCamera();
+      stream?.getTracks().forEach(t => t.stop());
+      if (video) video.srcObject = null;
     };
   }, [kioskActive, handleScan]);
 
