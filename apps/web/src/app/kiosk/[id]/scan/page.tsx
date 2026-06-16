@@ -29,6 +29,7 @@ export default function KioskScanPage() {
   const [processing, setProcessing] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [courseName, setCourseName] = useState('');
+  const [mirrored, setMirrored] = useState(false);
 
   // Charger info kiosque
   useEffect(() => {
@@ -90,6 +91,10 @@ export default function KioskScanPage() {
         });
         if (stopped) { stream.getTracks().forEach(t => t.stop()); return; }
         localStream = stream;
+
+        // Miroir si caméra frontale ou webcam (pas de facingMode = desktop)
+        const facingMode = stream.getVideoTracks()[0]?.getSettings().facingMode;
+        setMirrored(facingMode !== 'environment');
 
         const video = videoRef.current;
         if (!video) { stream.getTracks().forEach(t => t.stop()); return; }
@@ -179,7 +184,7 @@ export default function KioskScanPage() {
           <>
             <video
               ref={videoRef}
-              className={`w-full max-w-sm rounded-2xl object-cover aspect-square bg-black ${scanResult ? 'opacity-30' : 'opacity-100'} transition-opacity`}
+              className={`w-full max-w-sm rounded-2xl object-cover aspect-square bg-black ${scanResult ? 'opacity-30' : 'opacity-100'} transition-opacity ${mirrored ? 'scale-x-[-1]' : ''}`}
               autoPlay
               muted
               playsInline
