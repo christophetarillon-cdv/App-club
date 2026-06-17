@@ -240,9 +240,13 @@ export default function KioskSearchPage() {
             disabled={recording}
             className="w-full flex items-center gap-4 px-4 py-3 bg-gray-800 rounded-xl hover:bg-gray-700 transition-colors disabled:opacity-50 text-left"
           >
-            <div className="w-10 h-10 rounded-full bg-blue-800 flex items-center justify-center text-blue-200 font-bold text-sm shrink-0">
-              {dancer.firstName[0]}{dancer.lastName[0]}
-            </div>
+            {dancer.photoUrl ? (
+              <img src={dancer.photoUrl} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-blue-800 flex items-center justify-center text-blue-200 font-bold text-sm shrink-0">
+                {dancer.firstName[0]}{dancer.lastName[0]}
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-white">{dancer.firstName} {dancer.lastName}</p>
               {dancer.memberNumber && (
