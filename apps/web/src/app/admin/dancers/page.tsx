@@ -20,6 +20,7 @@ interface DancerRow {
   id: string;
   firstName: string;
   lastName: string;
+  photoUrl?: string;
   roles: string[];
   isActive: boolean;
   info?: MembershipInfo;
@@ -127,6 +128,7 @@ export default function AdminDancersPage() {
         id: d.id,
         firstName: d.data().firstName ?? '',
         lastName: d.data().lastName ?? '',
+        photoUrl: d.data().photoUrl,
         roles: d.data().roles ?? [],
         isActive: d.data().isActive !== false,
         info: infoByDancer.get(d.id),
@@ -176,6 +178,7 @@ export default function AdminDancersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="px-4 py-3 w-10"></th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Nom</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Prénom</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Plan</th>
@@ -187,6 +190,15 @@ export default function AdminDancersPage() {
             <tbody className="divide-y divide-gray-50">
               {filtered.map(row => (
                 <tr key={row.id} className="hover:bg-gray-50/50">
+                  <td className="px-4 py-2">
+                    {row.photoUrl ? (
+                      <img src={row.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs">
+                        {row.firstName[0]}{row.lastName[0]}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 font-medium text-gray-900">{row.lastName}</td>
                   <td className="px-4 py-3 text-gray-700">{row.firstName}</td>
                   <td className="px-4 py-3 text-gray-600 hidden sm:table-cell">
