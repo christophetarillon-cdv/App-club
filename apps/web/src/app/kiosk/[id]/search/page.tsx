@@ -29,10 +29,53 @@ export default function KioskSearchPage() {
   const [selected, setSelected] = useState<Dancer | null>(null);
   const [recording, setRecording] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [courseName, setCourseName] = useState('');
+  const [sessionDate, setSessionDate] = useState('');
+  const [sessionTime, setSessionTime] = useState('');
+  const [danceStyle, setDanceStyle] = useState('');
+  const [level, setLevel] = useState('');
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    const load = async () => {
+      const { getDoc, onSnapshot } = await import('firebase/firestore');
+      const unsub = onSnapshot(doc(db, 'kioskSessions', kioskSessionId), async (snap) => {
+        if (!snap.exists() || snap.data()?.status !== 'active') return;
+        const { sessionId, courseId } = snap.data() as { sessionId: string; courseId: string };
+
+        const [courseSnap, sessionSnap] = await Promise.all([
+          getDoc(doc(db, 'courses', courseId)),
+          getDoc(doc(db, 'sessions', sessionId)),
+        ]);
+
+        if (courseSnap.exists()) {
+          const c = courseSnap.data()!;
+          setCourseName(c.name ?? '');
+          const [styleSnap, levelSnap] = await Promise.all([
+            c.danceStyleId ? getDoc(doc(db, 'danceStyles', c.danceStyleId)) : Promise.resolve(null),
+            c.levelId      ? getDoc(doc(db, 'levels',      c.levelId))      : Promise.resolve(null),
+          ]);
+          if (styleSnap?.exists()) setDanceStyle(styleSnap.data()?.name ?? '');
+          if (levelSnap?.exists()) setLevel(levelSnap.data()?.name ?? '');
+        }
+
+        if (sessionSnap.exists()) {
+          const s = sessionSnap.data()!;
+          const MONTHS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+          const d = new Date(s.date + 'T12:00:00');
+          setSessionDate(`${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`);
+          setSessionTime(`${s.startTime} – ${s.endTime}`);
+        }
+      });
+      return unsub;
+    };
+    let cleanup: (() => void) | undefined;
+    load().then(unsub => { cleanup = unsub; });
+    return () => { cleanup?.(); };
+  }, [kioskSessionId]);
 
   useEffect(() => {
     const trimmed = search.trim().toLowerCase();
@@ -152,6 +195,19 @@ export default function KioskSearchPage() {
         </Link>
         <h1 className="font-semibold text-white">Recherche manuelle</h1>
         <div className="w-16" />
+      </div>
+
+      {/* Infos séance */}
+      <div className="text-center px-6 pt-5 pb-3 bg-gray-900">
+        {sessionDate && <p className="text-3xl font-bold text-white">{sessionDate}</p>}
+        <p className="text-2xl font-semibold text-white mt-1">{courseName || '…'}</p>
+        <div className="flex items-center justify-center gap-3 mt-1 flex-wrap">
+          {danceStyle && <p className="text-xl text-blue-300 font-medium">{danceStyle}</p>}
+          {danceStyle && level && <span className="text-gray-500">·</span>}
+          {level && <p className="text-xl text-blue-300 font-medium">{level}</p>}
+          {sessionTime && <span className="text-gray-500">·</span>}
+          {sessionTime && <p className="text-xl text-gray-300">{sessionTime}</p>}
+        </div>
       </div>
 
       {/* Champ de recherche */}
