@@ -13,7 +13,7 @@ type AttendanceRow = {
   method: 'qr' | 'manual';
   status: 'registered' | 'walk-in';
   scannedAt: { toDate: () => Date } | null;
-  dancer: Pick<Dancer, 'firstName' | 'lastName' | 'memberNumber' | 'roles'> | null;
+  dancer: Pick<Dancer, 'firstName' | 'lastName' | 'memberNumber' | 'roles' | 'photoUrl'> | null;
 };
 
 const DAYS_FR = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
@@ -124,6 +124,13 @@ export default function SessionAttendancePage() {
             return (
               <div key={a.id} className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3">
                 <span className="text-sm font-mono text-gray-300 w-6 text-right">{i + 1}</span>
+                {a.dancer?.photoUrl ? (
+                  <img src={a.dancer.photoUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs shrink-0">
+                    {a.dancer ? `${a.dancer.firstName[0]}${a.dancer.lastName[0]}` : '?'}
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-800 truncate">
                     {a.dancer ? `${a.dancer.firstName} ${a.dancer.lastName}` : a.dancerId}
