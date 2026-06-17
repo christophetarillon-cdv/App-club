@@ -94,9 +94,13 @@ function DancerCard({
     <div className="border border-gray-200 rounded-xl p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm">
-            {dancer.firstName[0]}{dancer.lastName[0]}
-          </div>
+          {dancer.photoUrl ? (
+            <img src={dancer.photoUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+          ) : (
+            <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm">
+              {dancer.firstName[0]}{dancer.lastName[0]}
+            </div>
+          )}
           <div>
             <p className="font-medium text-gray-900 text-sm">{dancer.firstName} {dancer.lastName}</p>
             <div className="flex gap-1 mt-0.5">
