@@ -29,6 +29,10 @@ export default function KioskScanPage() {
   const [processing, setProcessing] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [courseName, setCourseName] = useState('');
+  const [sessionDate, setSessionDate] = useState('');
+  const [sessionTime, setSessionTime] = useState('');
+  const [danceStyle, setDanceStyle] = useState('');
+  const [level, setLevel] = useState('');
   const [mirrored, setMirrored] = useState(false);
 
   // Charger info kiosque
@@ -38,11 +42,32 @@ export default function KioskScanPage() {
         setKioskActive(false);
         return;
       }
-      const courseId = snap.data()?.courseId as string;
-      if (courseId) {
-        const { getDoc } = await import('firebase/firestore');
-        const courseSnap = await getDoc(doc(db, 'courses', courseId));
-        if (courseSnap.exists()) setCourseName(courseSnap.data()?.name ?? '');
+      const { sessionId, courseId } = snap.data() as { sessionId: string; courseId: string };
+      const { getDoc } = await import('firebase/firestore');
+
+      const [courseSnap, sessionSnap] = await Promise.all([
+        getDoc(doc(db, 'courses', courseId)),
+        getDoc(doc(db, 'sessions', sessionId)),
+      ]);
+
+      if (courseSnap.exists()) {
+        const c = courseSnap.data()!;
+        setCourseName(c.name ?? '');
+
+        const [styleSnap, levelSnap] = await Promise.all([
+          c.danceStyleId ? getDoc(doc(db, 'danceStyles', c.danceStyleId)) : Promise.resolve(null),
+          c.levelId      ? getDoc(doc(db, 'levels',      c.levelId))      : Promise.resolve(null),
+        ]);
+        if (styleSnap?.exists()) setDanceStyle(styleSnap.data()?.name ?? '');
+        if (levelSnap?.exists()) setLevel(levelSnap.data()?.name ?? '');
+      }
+
+      if (sessionSnap.exists()) {
+        const s = sessionSnap.data()!;
+        const MONTHS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+        const d = new Date(s.date + 'T12:00:00');
+        setSessionDate(`${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`);
+        setSessionTime(`${s.startTime} – ${s.endTime}`);
       }
     });
     return () => unsub();
@@ -167,6 +192,21 @@ export default function KioskScanPage() {
             className="px-4 py-2 bg-red-800/60 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors text-red-300">
             Fermer
           </button>
+        </div>
+      </div>
+
+      {/* Infos séance */}
+      <div className="text-center px-6 pt-6 pb-2">
+        {sessionDate && (
+          <p className="text-3xl font-bold text-white">{sessionDate}</p>
+        )}
+        <p className="text-2xl font-semibold text-white mt-1">{courseName || '…'}</p>
+        <div className="flex items-center justify-center gap-3 mt-1 flex-wrap">
+          {danceStyle && <p className="text-xl text-blue-300 font-medium">{danceStyle}</p>}
+          {danceStyle && level && <span className="text-gray-500">·</span>}
+          {level && <p className="text-xl text-blue-300 font-medium">{level}</p>}
+          {sessionTime && <span className="text-gray-500">·</span>}
+          {sessionTime && <p className="text-xl text-gray-300">{sessionTime}</p>}
         </div>
       </div>
 
