@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, query, where, getDocs, orderBy, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
@@ -55,28 +55,24 @@ export default function InstructorPage() {
 
       if (courses.size === 0) { setLoading(false); return; }
 
-      const courseIds = [...courses.keys()];
-      // Firestore 'in' accepts up to 30 items
-      const chunks: string[][] = [];
-      for (let i = 0; i < courseIds.length; i += 30) chunks.push(courseIds.slice(i, i + 30));
+      const courseIds = new Set(courses.keys());
 
-      const allSessionDocs = (await Promise.all(
-        chunks.map(ids =>
-          getDocs(query(
-            collection(db, 'sessions'),
-            where('courseId', 'in', ids),
-            where('date', '>=', from),
-            where('date', '<=', to),
-            orderBy('date', 'desc'),
-          ))
-        )
-      )).flatMap(s => s.docs);
+      // Filtre par date uniquement dans Firestore (évite index composite),
+      // puis filtre par courseId côté client
+      const sessionSnap = await getDocs(query(
+        collection(db, 'sessions'),
+        where('date', '>=', from),
+        where('date', '<=', to),
+        orderBy('date', 'desc'),
+      ));
 
-      const result: SessionWithCourse[] = allSessionDocs.map(d => ({
-        id: d.id,
-        ...(d.data() as Omit<Session, 'id'>),
-        courseName: courses.get(d.data().courseId) ?? '',
-      }));
+      const result: SessionWithCourse[] = sessionSnap.docs
+        .filter(d => courseIds.has(d.data().courseId))
+        .map(d => ({
+          id: d.id,
+          ...(d.data() as Omit<Session, 'id'>),
+          courseName: courses.get(d.data().courseId) ?? '',
+        }));
 
       result.sort((a, b) => b.date.localeCompare(a.date));
       setSessions(result);
