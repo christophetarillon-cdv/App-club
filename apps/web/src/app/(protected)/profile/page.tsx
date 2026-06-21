@@ -12,6 +12,7 @@ import { useRoles } from '@/hooks/useRoles';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Dancer } from '@cdv/types';
+import { ADMIN_NAV } from '@/lib/admin-nav';
 
 // ── Formulaire danseur (ajout / édition) ──────────────────────────────────────
 
@@ -174,6 +175,7 @@ export default function ProfilePage() {
   const router = useRouter();
 
   const [fieldConfig, setFieldConfig] = useState<ProfileFieldsConfig>(DEFAULT_PROFILE_FIELDS);
+  const [pagePermissions, setPagePermissions] = useState<Record<string, string[]>>({});
   const [accountForm, setAccountForm] = useState({
     displayName: '', phone: '', marketingConsent: false, imageRightsConsent: false,
   });
@@ -216,7 +218,10 @@ export default function ProfilePage() {
 
   useEffect(() => {
     getDoc(doc(db, 'appSettings', 'main')).then(snap => {
-      if (snap.exists()) setFieldConfig(mergeWithDefaults(snap.data().profileFields));
+      if (snap.exists()) {
+        setFieldConfig(mergeWithDefaults(snap.data().profileFields));
+        setPagePermissions((snap.data().pagePermissions ?? {}) as Record<string, string[]>);
+      }
     });
   }, []);
 
@@ -421,46 +426,32 @@ export default function ProfilePage() {
         )}
 
         {/* Administration */}
-        {(account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin'))) && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-3">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Administration</h2>
-            <div className="space-y-2">
-              {[
-                { href: '/instructor', label: 'Séances & présences (vue moniteur)' },
-                { href: '/admin/club-settings', label: 'Paramètres du club' },
-                { href: '/admin/seasons', label: 'Saisons' },
-                { href: '/admin/dance-styles', label: 'Styles de danse' },
-                { href: '/admin/levels', label: 'Niveaux' },
-                { href: '/admin/rooms', label: 'Salles' },
-                { href: '/admin/courses', label: 'Cours' },
-                { href: '/admin/interruptions', label: 'Interruptions' },
-                { href: '/admin/public-holidays', label: 'Jours fériés' },
-                { href: '/admin/pricing-plans', label: 'Tarifs' },
-                { href: '/admin/payment-plans', label: 'Plans de paiement' },
-                { href: '/admin/payments/new', label: 'Saisir un paiement' },
-                { href: '/admin/payments/cheques', label: 'Chèques' },
-                { href: '/admin/payments/bank-deposits/new', label: 'Bordereau de remise' },
-                { href: '/admin/settings/planning', label: 'Paramètres planning' },
-                { href: '/admin/settings/trial', label: 'Paramètres essai' },
-                { href: '/admin/settings/welcome-qr', label: "QR d'accueil" },
-                { href: '/kiosk/setup', label: 'Ouvrir le kiosque de pointage' },
-                { href: '/admin/media', label: 'Médiathèque (admin)' },
-                { href: '/admin/notification-channels', label: 'Canaux de notification' },
-                { href: '/admin/notifications/send', label: 'Envoyer une notification' },
-                { href: '/admin/chat-channels', label: 'Canaux de chat' },
-                { href: '/admin/private-messages', label: 'Messages privés' },
-              ].map(({ href, label }) => (
-                <Link key={href} href={href}
-                  className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                  <span className="text-sm font-medium text-gray-800">{label}</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
-              ))}
+        {(() => {
+          const userRoles = [...(account?.roles ?? []), ...dancers.flatMap(d => d.roles)];
+          const isAdmin = userRoles.includes('admin');
+          const adminItems = ADMIN_NAV.flatMap(g => g.items).filter(item => {
+            if (isAdmin) return true;
+            const allowed = pagePermissions[item.href] ?? ['admin'];
+            return userRoles.some(r => allowed.includes(r));
+          });
+          if (adminItems.length === 0) return null;
+          return (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-3">
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Administration</h2>
+              <div className="space-y-2">
+                {adminItems.map(({ href, label }) => (
+                  <Link key={href} href={href}
+                    className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+                    <span className="text-sm font-medium text-gray-800">{label}</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </Link>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         <button onClick={handleLogout}
           className="w-full border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-50 transition-colors text-sm">
