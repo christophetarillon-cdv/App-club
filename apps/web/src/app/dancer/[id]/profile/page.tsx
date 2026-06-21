@@ -173,7 +173,7 @@ function CustomFieldInput({
 
 export default function DancerPersonalProfilePage() {
   const { id } = useParams<{ id: string }>();
-  const { dancers, loading: authLoading } = useAuth();
+  const { dancers, account, loading: authLoading } = useAuth();
   const router = useRouter();
 
   const dancer: Dancer | undefined = dancers.find(d => d.id === id);
