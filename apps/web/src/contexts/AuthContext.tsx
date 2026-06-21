@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { onSnapshot, doc, query, collection, where } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+import { useFCMToken } from '@/hooks/useFCMToken';
 import type { Account, Dancer } from '@cdv/types';
 
 interface AuthContextValue {
@@ -25,6 +26,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [dancers, setDancers] = useState<Dancer[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useFCMToken(user);
 
   useEffect(() => {
     let unsubAccount: (() => void) | null = null;

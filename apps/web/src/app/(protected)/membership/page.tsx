@@ -10,6 +10,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDancer } from '@/contexts/DancerContext';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 interface Dancer { id: string; firstName: string; lastName: string; accountEmail?: string; }
@@ -65,6 +67,8 @@ const METHOD_LABEL: Record<PaymentMethod, string> = {
 
 export default function MembershipPage() {
   const { user } = useAuth();
+  const { selectedDancer } = useDancer();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const onlineStatus = searchParams.get('status');
   const [payingOnlineId, setPayingOnlineId] = useState<string | null>(null);
@@ -439,7 +443,7 @@ export default function MembershipPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-xl mx-auto px-4 py-10">
-        <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-700 mb-6 inline-block">← Profil</Link>
+        <Link href={selectedDancer ? `/dancer/${selectedDancer.id}/profile` : '/select-dancer'} className="text-sm text-gray-400 hover:text-gray-700 mb-6 inline-block">← Retour</Link>
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Ma cotisation</h1>
 
         {onlineStatus === 'success' && (

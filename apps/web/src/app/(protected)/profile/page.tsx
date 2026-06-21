@@ -1,23 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { doc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { db, auth } from '@/lib/firebase';
+import type { ProfileFieldsConfig } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { logout, createDancer, updateDancer, deleteDancer } from '@/lib/auth';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { Dancer, ProfileFieldKey } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
-
-function mergeWithDefaults(saved?: Record<string, any>): Record<ProfileFieldKey, { enabled: boolean; required: boolean }> {
-  const result = { ...DEFAULT_PROFILE_FIELDS } as Record<ProfileFieldKey, { enabled: boolean; required: boolean }>;
-  if (!saved) return result;
-  for (const key of Object.keys(saved) as ProfileFieldKey[]) {
-    if (saved[key]) result[key] = { ...result[key], ...saved[key] };
-  }
-  return result;
-}
+import type { Dancer } from '@cdv/types';
 
 // ── Formulaire danseur (ajout / édition) ──────────────────────────────────────
 
@@ -123,9 +116,9 @@ function DancerCard({
           </div>
         </div>
         <div className="flex gap-2">
-          <Link href={`/profile/dancer/${dancer.id}`}
+          <Link href={`/dancer/${dancer.id}`}
             className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50">
-            Profil
+            Espace perso
           </Link>
           <button onClick={() => { setEditing(e => !e); setConfirmDelete(false); }}
             className="text-xs text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100">
@@ -167,35 +160,77 @@ function DancerCard({
 
 // ── Page principale ───────────────────────────────────────────────────────────
 
+function mergeWithDefaults(saved: Partial<ProfileFieldsConfig> | undefined): ProfileFieldsConfig {
+  const result = { ...DEFAULT_PROFILE_FIELDS };
+  if (saved) {
+    for (const key of Object.keys(DEFAULT_PROFILE_FIELDS) as (keyof ProfileFieldsConfig)[]) {
+      if (saved[key]) result[key] = { ...DEFAULT_PROFILE_FIELDS[key], ...saved[key] };
+    }
+  }
+  return result;
+}
+
 export default function ProfilePage() {
   const { user, account, dancers } = useAuth();
   const router = useRouter();
 
-  const [accountForm, setAccountForm] = useState({ displayName: '', phone: '' });
-  const [marketingConsent, setMarketingConsent] = useState(false);
-  const [imageRightsConsent, setImageRightsConsent] = useState(false);
-  const [fieldConfig, setFieldConfig] = useState(mergeWithDefaults());
+  const [fieldConfig, setFieldConfig] = useState<ProfileFieldsConfig>(DEFAULT_PROFILE_FIELDS);
+  const [accountForm, setAccountForm] = useState({
+    displayName: '', phone: '', marketingConsent: false, imageRightsConsent: false,
+  });
   const [savingAccount, setSavingAccount] = useState(false);
   const [savedAccount, setSavedAccount] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
 
   const [showAddDancer, setShowAddDancer] = useState(false);
 
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
+  const [savingPw, setSavingPw] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSaved, setPwSaved] = useState(false);
+
+  const hasEmailProvider = user?.providerData.some(p => p.providerId === 'password') ?? false;
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pwForm.next !== pwForm.confirm) { setPwError('Les mots de passe ne correspondent pas.'); return; }
+    if (pwForm.next.length < 6) { setPwError('Le mot de passe doit faire au moins 6 caractères.'); return; }
+    if (!user?.email) return;
+    setSavingPw(true); setPwError(null); setPwSaved(false);
+    try {
+      const credential = EmailAuthProvider.credential(user.email, pwForm.current);
+      await reauthenticateWithCredential(auth.currentUser!, credential);
+      await updatePassword(auth.currentUser!, pwForm.next);
+      setPwForm({ current: '', next: '', confirm: '' });
+      setPwSaved(true);
+      setTimeout(() => setPwSaved(false), 3000);
+    } catch (err: any) {
+      setPwError(
+        err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential'
+          ? 'Mot de passe actuel incorrect.'
+          : 'Erreur lors du changement de mot de passe.'
+      );
+    } finally {
+      setSavingPw(false);
+    }
+  };
+
   useEffect(() => {
     getDoc(doc(db, 'appSettings', 'main')).then(snap => {
-      if (snap.exists() && snap.data().profileFields) {
-        setFieldConfig(mergeWithDefaults(snap.data().profileFields));
-      }
+      if (snap.exists()) setFieldConfig(mergeWithDefaults(snap.data().profileFields));
     });
   }, []);
 
   useEffect(() => {
     if (account) {
-      setAccountForm({ displayName: account.displayName, phone: account.phone ?? '' });
-      setMarketingConsent(account.marketingConsent ?? false);
-      setImageRightsConsent(account.imageRightsConsent ?? false);
+      setAccountForm({
+        displayName: account.displayName,
+        phone: account.phone ?? '',
+        marketingConsent: account.marketingConsent ?? false,
+        imageRightsConsent: account.imageRightsConsent ?? false,
+      });
     }
-  }, [account]);
+  }, [account?.uid]);
 
   const handleAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -206,9 +241,9 @@ export default function ProfilePage() {
         displayName: accountForm.displayName.trim(),
         updatedAt: serverTimestamp(),
       };
-      if (fieldConfig.phone?.enabled) updates.phone = accountForm.phone.trim();
-      if (fieldConfig.marketingConsent?.enabled) updates.marketingConsent = marketingConsent;
-      if (fieldConfig.imageRightsConsent?.enabled) updates.imageRightsConsent = imageRightsConsent;
+      if (fieldConfig.phone.enabled) updates.phone = accountForm.phone.trim();
+      if (fieldConfig.marketingConsent.enabled) updates.marketingConsent = accountForm.marketingConsent;
+      if (fieldConfig.imageRightsConsent.enabled) updates.imageRightsConsent = accountForm.imageRightsConsent;
       await updateDoc(doc(db, 'accounts', user.uid), updates);
       setSavedAccount(true);
     } catch { setAccountError('Erreur lors de la sauvegarde.'); }
@@ -227,7 +262,34 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-md mx-auto pt-8 space-y-4">
 
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">Mon profil</h1>
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-2xl font-bold text-gray-900">Paramètres du compte</h1>
+          <Link
+            href={dancers.length === 1 ? `/dancer/${dancers[0]!.id}` : '/select-dancer'}
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium">
+            Espace danseur →
+          </Link>
+        </div>
+
+        {/* Bandeau photo manquante */}
+        {dancers.some(d => !d.photoUrl) && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
+            <svg className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+            </svg>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-amber-800">Ajoutez une photo pour faciliter votre émargement</p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                Votre photo s'affiche lors du pointage au kiosque.{' '}
+                {dancers.filter(d => !d.photoUrl).map((d, i) => (
+                  <Link key={d.id} href={`/dancer/${d.id}/profile`} className="underline font-medium">
+                    {i > 0 ? ', ' : ''}{d.firstName}
+                  </Link>
+                ))}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Compte */}
         <form onSubmit={handleAccountSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-4">
@@ -238,10 +300,10 @@ export default function ProfilePage() {
               onChange={e => setAccountForm(p => ({ ...p, displayName: e.target.value }))} required
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
           </div>
-          {fieldConfig.phone?.enabled && (
+          {fieldConfig.phone.enabled && (
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                Téléphone{fieldConfig.phone.required ? ' *' : ''}
+                Téléphone{fieldConfig.phone.required && ' *'}
               </label>
               <input type="tel" value={accountForm.phone}
                 onChange={e => setAccountForm(p => ({ ...p, phone: e.target.value }))}
@@ -254,23 +316,28 @@ export default function ProfilePage() {
             <input type="email" value={account?.email ?? ''} disabled
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-400 cursor-not-allowed" />
           </div>
-          {(fieldConfig.marketingConsent?.enabled || fieldConfig.imageRightsConsent?.enabled) && (
-            <div className="space-y-2 pt-2 border-t border-gray-100">
-              {fieldConfig.marketingConsent?.enabled && (
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input type="checkbox" checked={marketingConsent} onChange={e => setMarketingConsent(e.target.checked)}
-                    className="mt-0.5 rounded border-gray-300" />
-                  <span className="text-xs text-gray-600">
-                    J'accepte de recevoir des communications du club (newsletters, événements…)
+          {(fieldConfig.marketingConsent.enabled || fieldConfig.imageRightsConsent.enabled) && (
+            <div className="space-y-3 pt-2 border-t border-gray-100">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Consentements</p>
+              {fieldConfig.marketingConsent.enabled && (
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={accountForm.marketingConsent}
+                    onChange={e => setAccountForm(p => ({ ...p, marketingConsent: e.target.checked }))}
+                    className="mt-0.5 w-4 h-4 rounded flex-shrink-0" />
+                  <span className="text-sm text-gray-700">
+                    Consentement marketing
+                    {fieldConfig.marketingConsent.required && <span className="text-red-500 ml-0.5">*</span>}
                   </span>
                 </label>
               )}
-              {fieldConfig.imageRightsConsent?.enabled && (
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input type="checkbox" checked={imageRightsConsent} onChange={e => setImageRightsConsent(e.target.checked)}
-                    className="mt-0.5 rounded border-gray-300" />
-                  <span className="text-xs text-gray-600">
-                    J'autorise l'utilisation de mon image (photos, vidéos) par le club
+              {fieldConfig.imageRightsConsent.enabled && (
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={accountForm.imageRightsConsent}
+                    onChange={e => setAccountForm(p => ({ ...p, imageRightsConsent: e.target.checked }))}
+                    className="mt-0.5 w-4 h-4 rounded flex-shrink-0" />
+                  <span className="text-sm text-gray-700">
+                    Droits à l'image
+                    {fieldConfig.imageRightsConsent.required && <span className="text-red-500 ml-0.5">*</span>}
                   </span>
                 </label>
               )}
@@ -283,6 +350,34 @@ export default function ProfilePage() {
             {savingAccount ? 'Sauvegarde…' : 'Enregistrer'}
           </button>
         </form>
+
+        {/* Mot de passe */}
+        {hasEmailProvider && (
+          <form onSubmit={handlePasswordSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-4">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Mot de passe</h2>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Mot de passe actuel</label>
+              <input type="password" value={pwForm.current} onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))} required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Nouveau mot de passe</label>
+              <input type="password" value={pwForm.next} onChange={e => setPwForm(p => ({ ...p, next: e.target.value }))} required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Confirmer le mot de passe</label>
+              <input type="password" value={pwForm.confirm} onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))} required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            </div>
+            {pwError && <p className="text-red-600 text-sm">{pwError}</p>}
+            {pwSaved && <p className="text-green-600 text-sm">Mot de passe mis à jour.</p>}
+            <button type="submit" disabled={savingPw}
+              className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm">
+              {savingPw ? 'Mise à jour…' : 'Changer le mot de passe'}
+            </button>
+          </form>
+        )}
 
         {/* Danseurs */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-3">
@@ -304,27 +399,6 @@ export default function ProfilePage() {
 
           {dancers.map(dancer => (
             <DancerCard key={dancer.id} dancer={dancer} accountId={user?.uid ?? ''} />
-          ))}
-        </div>
-
-        {/* Accès rapide */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Accès rapide</h2>
-          {[
-            { href: '/profile/card', label: 'Ma carte de membre' },
-            { href: '/my-card', label: 'Mon QR code de présence' },
-          { href: '/my-courses', label: 'Mes cours' },
-            { href: '/membership', label: 'Ma cotisation' },
-            { href: '/profile/levels', label: 'Mes niveaux par style' },
-            { href: '/planning', label: 'Planning des cours' },
-          ].map(({ href, label }) => (
-            <Link key={href} href={href}
-              className="flex items-center justify-between w-full px-4 py-3 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors">
-              <span className="text-sm font-medium text-blue-800">{label}</span>
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
           ))}
         </div>
 
@@ -371,6 +445,11 @@ export default function ProfilePage() {
                 { href: '/admin/settings/trial', label: 'Paramètres essai' },
                 { href: '/admin/settings/welcome-qr', label: "QR d'accueil" },
                 { href: '/kiosk/setup', label: 'Ouvrir le kiosque de pointage' },
+                { href: '/admin/media', label: 'Médiathèque (admin)' },
+                { href: '/admin/notification-channels', label: 'Canaux de notification' },
+                { href: '/admin/notifications/send', label: 'Envoyer une notification' },
+                { href: '/admin/chat-channels', label: 'Canaux de chat' },
+                { href: '/admin/private-messages', label: 'Messages privés' },
               ].map(({ href, label }) => (
                 <Link key={href} href={href}
                   className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">

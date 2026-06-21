@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '@/lib/firebase';
 
 interface Address {
   street: string;
@@ -22,6 +23,11 @@ interface FormData {
   logoUrl: string;
   primaryColor: string;
   shortDescription: string;
+  siret: string;
+  apeCode: string;
+  associationNumber: string;
+  presidentName: string;
+  presidentSignatureUrl: string;
 }
 
 const emptyForm: FormData = {
@@ -35,6 +41,11 @@ const emptyForm: FormData = {
   logoUrl: '',
   primaryColor: '#1B3A6B',
   shortDescription: '',
+  siret: '',
+  apeCode: '',
+  associationNumber: '',
+  presidentName: '',
+  presidentSignatureUrl: '',
 };
 
 export default function ClubSettingsPage() {
@@ -43,6 +54,9 @@ export default function ClubSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signatureFile, setSignatureFile] = useState<File | null>(null);
+  const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
+  const [uploadingSignature, setUploadingSignature] = useState(false);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -51,7 +65,7 @@ export default function ClubSettingsPage() {
     }, 8000);
 
     getDoc(doc(db, 'clubProfile', 'main'))
-      .then((snap) => { if (snap.exists()) setForm(snap.data() as FormData); })
+      .then((snap) => { if (snap.exists()) setForm({ ...emptyForm, ...snap.data() as FormData }); })
       .catch(() => setError('Impossible de charger le profil du club.'))
       .finally(() => { clearTimeout(timeout); setLoading(false); });
 
@@ -69,6 +83,29 @@ export default function ClubSettingsPage() {
       headquartersAddress: { ...prev.headquartersAddress, [field]: value },
     }));
     setSaved(false);
+  };
+
+  const handleSignatureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSignatureFile(file);
+    setSignaturePreview(URL.createObjectURL(file));
+    setSaved(false);
+  };
+
+  const handleUploadSignature = async () => {
+    if (!signatureFile) return;
+    setUploadingSignature(true);
+    try {
+      const sRef = storageRef(storage, `club/president-signature`);
+      await uploadBytes(sRef, signatureFile, { contentType: signatureFile.type });
+      const url = await getDownloadURL(sRef);
+      setForm(prev => ({ ...prev, presidentSignatureUrl: url }));
+      setSignatureFile(null);
+      setSignaturePreview(null);
+    } finally {
+      setUploadingSignature(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -102,6 +139,42 @@ export default function ClubSettingsPage() {
           <Field label="Nom court" value={form.shortName} onChange={(v) => handleChange('shortName', v)} required />
           <Field label="Statut juridique" value={form.legalStatus} onChange={(v) => handleChange('legalStatus', v)} placeholder="ex : Association loi 1901" />
           <Field label="Description courte" value={form.shortDescription} onChange={(v) => handleChange('shortDescription', v)} multiline />
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Informations légales</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Numéro SIRET" value={form.siret} onChange={(v) => handleChange('siret', v)} placeholder="ex : 123 456 789 00012" />
+            <Field label="Code APE" value={form.apeCode} onChange={(v) => handleChange('apeCode', v)} placeholder="ex : 9312Z" />
+          </div>
+          <Field label="N° d'association" value={form.associationNumber} onChange={(v) => handleChange('associationNumber', v)} placeholder="ex : W382000123" />
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Président·e</h2>
+          <Field label="Nom du/de la président·e" value={form.presidentName} onChange={(v) => handleChange('presidentName', v)} />
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Signature</label>
+            {(signaturePreview || form.presidentSignatureUrl) && (
+              <div className="mb-3 p-3 bg-gray-50 rounded-lg inline-block">
+                <img
+                  src={signaturePreview ?? form.presidentSignatureUrl}
+                  alt="Signature"
+                  className="h-16 object-contain"
+                />
+              </div>
+            )}
+            <input type="file" accept="image/*" onChange={handleSignatureChange}
+              className="block text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+            <p className="text-xs text-gray-400 mt-1">PNG avec fond transparent recommandé</p>
+            {signatureFile && (
+              <button type="button" onClick={handleUploadSignature} disabled={uploadingSignature}
+                className="mt-2 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                {uploadingSignature ? 'Upload…' : 'Enregistrer la signature'}
+              </button>
+            )}
+          </div>
         </section>
 
         <section className="space-y-4">

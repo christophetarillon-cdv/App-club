@@ -19,7 +19,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await loginWithEmail(email.trim(), password);
-      router.replace('/profile');
+      router.replace('/select-dancer');
     } catch (err: any) {
       setError(
         err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password'
@@ -38,7 +38,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await loginWithGoogle();
-      router.replace('/profile');
+      router.replace('/select-dancer');
     } catch {
       setError('Connexion Google annulée ou échouée.');
     } finally {

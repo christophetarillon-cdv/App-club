@@ -1,12 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import type { CustomField, ProfileFieldKey } from '@cdv/types';
+import type { ProfileFieldsConfig, CustomField } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+
+function mergeWithDefaults(saved: Partial<ProfileFieldsConfig> | undefined): ProfileFieldsConfig {
+  const result = { ...DEFAULT_PROFILE_FIELDS };
+  if (saved) {
+    for (const key of Object.keys(DEFAULT_PROFILE_FIELDS) as (keyof ProfileFieldsConfig)[]) {
+      if (saved[key]) result[key] = { ...DEFAULT_PROFILE_FIELDS[key], ...saved[key] };
+    }
+  }
+  return result;
+}
 
 interface Dancer {
   id: string;
@@ -34,23 +44,6 @@ interface Account {
   displayName: string;
   dancerIds: string[];
   phone?: string;
-  marketingConsent?: boolean;
-  imageRightsConsent?: boolean;
-}
-
-function mergeWithDefaults(saved?: Record<string, any>): Record<ProfileFieldKey, { enabled: boolean; required: boolean }> {
-  const result = { ...DEFAULT_PROFILE_FIELDS } as Record<ProfileFieldKey, { enabled: boolean; required: boolean }>;
-  if (!saved) return result;
-  for (const key of Object.keys(saved) as ProfileFieldKey[]) {
-    if (saved[key]) result[key] = { ...result[key], ...saved[key] };
-  }
-  return result;
-}
-
-function DisabledBadge() {
-  return (
-    <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded font-medium ml-1">Champ désactivé</span>
-  );
 }
 interface Installment { id: string; expectedDate: string; amount: number; status: string; method?: string; chequeNumber?: string; draweeBank?: string; draweeCity?: string; }
 interface Entry {
@@ -110,11 +103,22 @@ function formatDate(ts: any): string {
   } catch { return ''; }
 }
 
-function InfoRow({ label, value }: { label: string; value?: string | null }) {
+function DisabledBadge() {
+  return (
+    <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 font-medium">
+      Champ désactivé
+    </span>
+  );
+}
+
+function InfoRow({ label, value, disabled }: { label: string; value?: string | null; disabled?: boolean }) {
+  if (!value && !disabled) return null;
   if (!value) return null;
   return (
     <div>
-      <p className="text-xs text-gray-400">{label}</p>
+      <p className="text-xs text-gray-400 flex items-center gap-1">
+        {label}{disabled && <DisabledBadge />}
+      </p>
       <p className="text-sm text-gray-800">{value}</p>
     </div>
   );
@@ -126,16 +130,53 @@ export default function DancerDetailPage() {
   const [account, setAccount] = useState<Account | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [courses, setCourses] = useState<CourseRow[]>([]);
-  const [customFields, setCustomFields] = useState<CustomField[]>([]);
-  const [fieldConfig, setFieldConfig] = useState(mergeWithDefaults());
   const [loading, setLoading] = useState(true);
+  const [fieldConfig, setFieldConfig] = useState<ProfileFieldsConfig>(DEFAULT_PROFILE_FIELDS);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [editingRoles, setEditingRoles] = useState(false);
+  const [pendingRoles, setPendingRoles] = useState<string[]>([]);
+  const [pendingActive, setPendingActive] = useState(true);
+  const [savingRoles, setSavingRoles] = useState(false);
+
+  const ALL_ROLES = [
+    { value: 'member', label: 'Membre' },
+    { value: 'trial', label: 'Essai' },
+    { value: 'instructor', label: 'Professeur' },
+    { value: 'bureau', label: 'Bureau' },
+    { value: 'admin', label: 'Admin' },
+  ];
+
+  const handleSaveRoles = async () => {
+    if (!dancerId) return;
+    setSavingRoles(true);
+    await updateDoc(doc(db, 'dancers', dancerId), { roles: pendingRoles, isActive: pendingActive });
+    setDancer(prev => prev ? { ...prev, roles: pendingRoles, isActive: pendingActive } : prev);
+    setSavingRoles(false);
+    setEditingRoles(false);
+  };
 
   useEffect(() => {
     if (!dancerId) return;
     (async () => {
       setLoading(true);
       try {
-        const dancerSnap = await getDoc(doc(db, 'dancers', dancerId));
+        const [dancerSnap, settingsSnap] = await Promise.all([
+          getDoc(doc(db, 'dancers', dancerId)),
+          getDoc(doc(db, 'appSettings', 'main')),
+        ]);
+        if (settingsSnap.exists()) setFieldConfig(mergeWithDefaults(settingsSnap.data().profileFields));
+
+        // Charge les champs custom
+        const schemaSnap = await getDocs(
+          query(collection(db, 'profileSchemas'), where('isActive', '==', true), limit(1))
+        );
+        if (!schemaSnap.empty) {
+          const sid = schemaSnap.docs[0].id;
+          const cfSnap = await getDocs(
+            query(collection(db, 'profileSchemas', sid, 'fields'), orderBy('displayOrder'))
+          );
+          setCustomFields(cfSnap.docs.map(d => ({ id: d.id, ...d.data() } as CustomField)));
+        }
         if (!dancerSnap.exists()) return;
         const d = dancerSnap.data();
         const dancerData: Dancer = {
@@ -167,29 +208,8 @@ export default function DancerDetailPage() {
           displayName: accountSnap.data().displayName ?? '',
           dancerIds: accountSnap.data().dancerIds ?? [],
           phone: accountSnap.data().phone,
-          marketingConsent: accountSnap.data().marketingConsent,
-          imageRightsConsent: accountSnap.data().imageRightsConsent,
         } : null;
         setAccount(accountData);
-
-        // Load appSettings + custom schema
-        const [settingsSnap, schemaSnap] = await Promise.all([
-          getDoc(doc(db, 'appSettings', 'main')),
-          getDocs(query(collection(db, 'profileSchemas'), where('isActive', '==', true))),
-        ]);
-        if (settingsSnap.exists() && settingsSnap.data().profileFields) {
-          setFieldConfig(mergeWithDefaults(settingsSnap.data().profileFields));
-        }
-        if (!schemaSnap.empty) {
-          const schemaId = schemaSnap.docs[0].id;
-          const fieldsSnap = await getDocs(
-            query(collection(db, 'profileSchemas', schemaId, 'fields'))
-          );
-          const fields = fieldsSnap.docs
-            .map(s => ({ id: s.id, ...s.data() } as CustomField))
-            .sort((a, b) => a.displayOrder - b.displayOrder);
-          setCustomFields(fields);
-        }
 
         const [membershipSnap, groupSnap, seasonSnap, planSnap, allDancerSnap, regSnap, styleSnap, levelSnap] = await Promise.all([
           getDocs(query(collection(db, 'memberships'), where('userId', '==', dancerData.accountId))),
@@ -357,119 +377,88 @@ export default function DancerDetailPage() {
             {dancer.isMinor && (
               <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">Mineur</span>
             )}
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${dancer.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
-              {dancer.isActive ? 'Actif' : 'Inactif'}
-            </span>
           </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <InfoRow label="Email" value={account?.email} />
-          <InfoRow label="Téléphone" value={phone} />
-          <InfoRow label="Date de naissance" value={formatDate(dancer.birthDate)} />
-          <InfoRow label="Adresse" value={dancer.address} />
-          {dancer.roles.length > 0 && (
-            <div>
-              <p className="text-xs text-gray-400">Rôle</p>
-              <div className="flex gap-1.5 mt-0.5 flex-wrap">
-                {dancer.roles.map(r => (
-                  <span key={r} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">
-                    {r === 'member' ? 'Membre' : r === 'trial' ? 'Essai' : r}
-                  </span>
-                ))}
-              </div>
+          <InfoRow label="Téléphone" value={phone} disabled={!fieldConfig.phone.enabled && !!phone} />
+          <InfoRow label="Date de naissance" value={formatDate(dancer.birthDate)} disabled={!fieldConfig.birthDate.enabled && !!dancer.birthDate} />
+          <InfoRow label="Genre" value={dancer.gender} disabled={!fieldConfig.gender.enabled && !!dancer.gender} />
+          <InfoRow label="Adresse" value={dancer.address} disabled={!fieldConfig.address.enabled && !!dancer.address} />
+          <InfoRow label="Profession" value={dancer.profession} disabled={!fieldConfig.profession.enabled && !!dancer.profession} />
+          <InfoRow label="Notes médicales" value={dancer.medicalNotes} disabled={!fieldConfig.medicalNotes.enabled && !!dancer.medicalNotes} />
+          <div className="col-span-2 sm:col-span-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-gray-400">Rôles & statut</p>
+              {!editingRoles ? (
+                <button onClick={() => { setPendingRoles(dancer.roles); setPendingActive(dancer.isActive); setEditingRoles(true); }}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium">Modifier</button>
+              ) : (
+                <div className="flex gap-2">
+                  <button onClick={handleSaveRoles} disabled={savingRoles}
+                    className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                    {savingRoles ? 'Enregistrement…' : 'Enregistrer'}
+                  </button>
+                  <button onClick={() => setEditingRoles(false)}
+                    className="text-xs text-gray-500 hover:text-gray-700">Annuler</button>
+                </div>
+              )}
             </div>
-          )}
+            {!editingRoles ? (
+              <div className="flex gap-1.5 flex-wrap">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${dancer.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+                  {dancer.isActive ? 'Actif' : 'Inactif'}
+                </span>
+                {dancer.roles.map(r => {
+                  const label = ALL_ROLES.find(x => x.value === r)?.label ?? r;
+                  return <span key={r} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{label}</span>;
+                })}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={pendingActive} onChange={e => setPendingActive(e.target.checked)}
+                    className="w-4 h-4 rounded" />
+                  <span className="text-sm text-gray-700">Compte actif</span>
+                </label>
+                <div className="border-t border-gray-100 pt-2 grid grid-cols-2 gap-2">
+                  {ALL_ROLES.map(role => (
+                    <label key={role.value} className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox"
+                        checked={pendingRoles.includes(role.value)}
+                        onChange={e => setPendingRoles(prev =>
+                          e.target.checked ? [...prev, role.value] : prev.filter(r => r !== role.value)
+                        )}
+                        className="w-4 h-4 rounded" />
+                      <span className="text-sm text-gray-700">{role.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {dancer.emergencyContact && (dancer.emergencyContact.name || dancer.emergencyContact.phone) && (
           <div className="mt-4 pt-4 border-t border-gray-100">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Contact d'urgence</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center">
+              Contact d'urgence
+              {!fieldConfig.emergencyContact.enabled && <DisabledBadge />}
+            </p>
             <div className="flex gap-6">
               <InfoRow label="Nom" value={dancer.emergencyContact.name} />
               <InfoRow label="Téléphone" value={dancer.emergencyContact.phone} />
             </div>
           </div>
         )}
-
-        {/* Champs prédéfinis optionnels */}
-        {(dancer.gender || dancer.profession || dancer.medicalNotes || dancer.healthCertificate !== undefined ||
-          account?.marketingConsent !== undefined || account?.imageRightsConsent !== undefined) && (
+        {dancer.healthCertificate && (
           <div className="mt-4 pt-4 border-t border-gray-100">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Informations complémentaires</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {dancer.gender && (
-                <div>
-                  <p className="text-xs text-gray-400 flex items-center gap-1">
-                    Genre{!fieldConfig.gender?.enabled && <DisabledBadge />}
-                  </p>
-                  <p className="text-sm text-gray-800">{dancer.gender}</p>
-                </div>
-              )}
-              {dancer.profession && (
-                <div>
-                  <p className="text-xs text-gray-400 flex items-center gap-1">
-                    Profession{!fieldConfig.profession?.enabled && <DisabledBadge />}
-                  </p>
-                  <p className="text-sm text-gray-800">{dancer.profession}</p>
-                </div>
-              )}
-              {dancer.healthCertificate !== undefined && (
-                <div>
-                  <p className="text-xs text-gray-400 flex items-center gap-1">
-                    Certificat médical{!fieldConfig.healthCertificate?.enabled && <DisabledBadge />}
-                  </p>
-                  <p className="text-sm text-gray-800">{dancer.healthCertificate ? 'Fourni' : 'Non fourni'}</p>
-                </div>
-              )}
-              {account?.marketingConsent !== undefined && (
-                <div>
-                  <p className="text-xs text-gray-400 flex items-center gap-1">
-                    Comm. marketing{!fieldConfig.marketingConsent?.enabled && <DisabledBadge />}
-                  </p>
-                  <p className="text-sm text-gray-800">{account.marketingConsent ? 'Accepté' : 'Refusé'}</p>
-                </div>
-              )}
-              {account?.imageRightsConsent !== undefined && (
-                <div>
-                  <p className="text-xs text-gray-400 flex items-center gap-1">
-                    Droit à l'image{!fieldConfig.imageRightsConsent?.enabled && <DisabledBadge />}
-                  </p>
-                  <p className="text-sm text-gray-800">{account.imageRightsConsent ? 'Accepté' : 'Refusé'}</p>
-                </div>
-              )}
-            </div>
-            {dancer.medicalNotes && (
-              <div className="mt-3">
-                <p className="text-xs text-gray-400 flex items-center gap-1">
-                  Notes médicales{!fieldConfig.medicalNotes?.enabled && <DisabledBadge />}
-                </p>
-                <p className="text-sm text-gray-800 mt-0.5 whitespace-pre-line">{dancer.medicalNotes}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Champs custom */}
-        {customFields.length > 0 && dancer.customFields && Object.keys(dancer.customFields).length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Champs personnalisés</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {customFields.map(field => {
-                const val = dancer.customFields?.[field.key];
-                if (val === undefined || val === null || val === '') return null;
-                let display = '';
-                if (Array.isArray(val)) display = val.join(', ');
-                else if (typeof val === 'boolean') display = val ? 'Oui' : 'Non';
-                else display = String(val);
-                return (
-                  <div key={field.id} className={field.type === 'long_text' ? 'col-span-2 sm:col-span-3' : ''}>
-                    <p className="text-xs text-gray-400">{field.label}</p>
-                    <p className="text-sm text-gray-800 mt-0.5 whitespace-pre-line">{display}</p>
-                  </div>
-                );
-              })}
-            </div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 flex items-center">
+              Certificat médical
+              {!fieldConfig.healthCertificate.enabled && <DisabledBadge />}
+            </p>
+            <p className="text-sm text-green-700">Fourni</p>
           </div>
         )}
       </div>
@@ -612,6 +601,66 @@ export default function DancerDetailPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Champs personnalisés */}
+      {customFields.length > 0 && (
+        <>
+          <h2 className="text-base font-semibold text-gray-900 mt-6 mb-3">Informations complémentaires</h2>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            {(() => {
+              const dancerCustom = dancer.customFields ?? {};
+              const byCategory = customFields.reduce<Record<string, CustomField[]>>((acc, f) => {
+                const cat = f.category ?? '';
+                if (!acc[cat]) acc[cat] = [];
+                acc[cat].push(f);
+                return acc;
+              }, {});
+
+              return Object.entries(byCategory).map(([cat, fields]) => (
+                <div key={cat} className="mb-4 last:mb-0">
+                  {cat && (
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">{cat}</p>
+                  )}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {fields.map(field => {
+                      const val = dancerCustom[field.key];
+                      const hasValue = val !== undefined && val !== null && val !== '' &&
+                        !(Array.isArray(val) && val.length === 0);
+                      if (!hasValue) return (
+                        <div key={field.id}>
+                          <p className="text-xs text-gray-400">{field.label}</p>
+                          <p className="text-sm text-gray-300">—</p>
+                        </div>
+                      );
+                      return (
+                        <div key={field.id}>
+                          <p className="text-xs text-gray-400">{field.label}</p>
+                          {field.type === 'checkbox' ? (
+                            <p className="text-sm text-gray-800">{val ? '✓ Oui' : '✗ Non'}</p>
+                          ) : field.type === 'multiselect' ? (
+                            <div className="flex flex-wrap gap-1 mt-0.5">
+                              {(val as string[]).map(v => (
+                                <span key={v} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">{v}</span>
+                              ))}
+                            </div>
+                          ) : field.type === 'file' ? (
+                            <a href={val as string} target="_blank" rel="noopener noreferrer"
+                              className="text-sm text-blue-600 hover:text-blue-800">
+                              Voir le fichier ↗
+                            </a>
+                          ) : (
+                            <p className="text-sm text-gray-800">{String(val)}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        </>
       )}
     </div>
   );

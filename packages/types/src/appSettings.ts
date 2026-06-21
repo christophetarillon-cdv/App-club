@@ -1,20 +1,11 @@
 import type { WithTimestamps } from './common';
 
 export type ProfileFieldKey =
-  | 'phone'
-  | 'address'
-  | 'birthDate'
-  | 'isMinor'
-  | 'photoUrl'
-  | 'memberNumber'
-  | 'emergencyContact'
-  | 'levelsByStyle'
-  | 'gender'
-  | 'profession'
-  | 'medicalNotes'
-  | 'healthCertificate'
-  | 'marketingConsent'
-  | 'imageRightsConsent';
+  | 'firstName' | 'lastName' | 'email'
+  | 'birthDate' | 'gender' | 'phone'
+  | 'address' | 'emergencyContact' | 'photo'
+  | 'profession' | 'medicalNotes' | 'healthCertificate'
+  | 'marketingConsent' | 'imageRightsConsent';
 
 export interface ProfileFieldConfig {
   enabled: boolean;
@@ -22,23 +13,23 @@ export interface ProfileFieldConfig {
   lockedByDefault?: boolean;
 }
 
-export type ProfileFieldsConfig = Partial<Record<ProfileFieldKey, ProfileFieldConfig>>;
+export type ProfileFieldsConfig = Record<ProfileFieldKey, ProfileFieldConfig>;
 
-export const DEFAULT_PROFILE_FIELDS: Record<ProfileFieldKey, ProfileFieldConfig> = {
-  phone: { enabled: true, required: false },
-  address: { enabled: true, required: false },
-  birthDate: { enabled: true, required: false },
-  isMinor: { enabled: true, required: false },
-  photoUrl: { enabled: true, required: false },
-  memberNumber: { enabled: true, required: false, lockedByDefault: true },
-  emergencyContact: { enabled: true, required: false },
-  levelsByStyle: { enabled: true, required: false, lockedByDefault: true },
-  gender: { enabled: false, required: false },
-  profession: { enabled: false, required: false },
-  medicalNotes: { enabled: false, required: false },
-  healthCertificate: { enabled: false, required: false },
-  marketingConsent: { enabled: false, required: false },
-  imageRightsConsent: { enabled: false, required: false },
+export const DEFAULT_PROFILE_FIELDS: ProfileFieldsConfig = {
+  firstName:          { enabled: true,  required: true,  lockedByDefault: true },
+  lastName:           { enabled: true,  required: true,  lockedByDefault: true },
+  email:              { enabled: true,  required: true,  lockedByDefault: true },
+  birthDate:          { enabled: true,  required: false },
+  gender:             { enabled: false, required: false },
+  phone:              { enabled: true,  required: true },
+  address:            { enabled: true,  required: false },
+  emergencyContact:   { enabled: true,  required: false },
+  photo:              { enabled: true,  required: false },
+  profession:         { enabled: false, required: false },
+  medicalNotes:       { enabled: false, required: false },
+  healthCertificate:  { enabled: false, required: false },
+  marketingConsent:   { enabled: true,  required: false },
+  imageRightsConsent: { enabled: true,  required: false },
 };
 
 export interface AppSettings extends WithTimestamps {

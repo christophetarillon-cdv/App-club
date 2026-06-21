@@ -18,7 +18,7 @@ interface Course {
   activeRegistrationCount?: number;
 }
 interface Session { id: string; date: string; startTime: string; endTime: string; status: string; }
-interface Registrant { id: string; userId: string; displayName: string; email: string; phone?: string; status: 'active' | 'waitlist'; registeredAt: string; }
+interface Registrant { id: string; userId: string; displayName: string; email: string; phone?: string; status: 'active' | 'waitlist'; registeredAt: string; photoUrl?: string; }
 
 const DAY_LABELS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 const MONTH_FR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
@@ -373,11 +373,24 @@ export default function CourseDetailPage() {
                   const accSnap = await getDocs(query(collection(db, 'accounts'), where(documentId(), 'in', batch)));
                   accSnap.docs.forEach(d => accountMap.set(d.id, { displayName: d.data().displayName, email: d.data().email, phone: d.data().phone }));
                 }
+                // Photos depuis les dancers (accountId == userId)
+                const photoMap = new Map<string, string>();
+                for (let i = 0; i < userIds.length; i += 30) {
+                  const batch = userIds.slice(i, i + 30);
+                  const dSnap = await getDocs(query(collection(db, 'dancers'), where('accountId', 'in', batch)));
+                  dSnap.docs.forEach(d => {
+                    if (d.data().photoUrl && !photoMap.has(d.data().accountId)) {
+                      photoMap.set(d.data().accountId, d.data().photoUrl);
+                    }
+                  });
+                }
+
                 const rows: Registrant[] = regs.map(r => ({
                   ...r,
                   displayName: accountMap.get(r.userId)?.displayName ?? r.userId,
                   email: accountMap.get(r.userId)?.email ?? '—',
                   phone: accountMap.get(r.userId)?.phone,
+                  photoUrl: photoMap.get(r.userId),
                 }));
                 rows.sort((a, b) => a.status === b.status ? a.registeredAt.localeCompare(b.registeredAt) : a.status === 'active' ? -1 : 1);
                 setRegistrants(sessionDate ? rows.filter(r => r.registeredAt <= sessionDate) : rows);
@@ -409,9 +422,18 @@ export default function CourseDetailPage() {
                   <ul className="divide-y divide-gray-50">
                     {registrants.map(r => (
                       <li key={r.id} className="flex items-center justify-between px-5 py-3 gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">{r.displayName}</p>
-                          <p className="text-xs text-gray-400 truncate">{r.email}{r.phone ? ` · ${r.phone}` : ''}</p>
+                        <div className="flex items-center gap-3 min-w-0">
+                          {r.photoUrl ? (
+                            <img src={r.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs shrink-0">
+                              {r.displayName.split(' ').map((w: string) => w[0]).slice(0, 2).join('')}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{r.displayName}</p>
+                            <p className="text-xs text-gray-400 truncate">{r.email}{r.phone ? ` · ${r.phone}` : ''}</p>
+                          </div>
                         </div>
                         <span className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${r.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
                           {r.status === 'active' ? 'Inscrit' : 'Attente'}

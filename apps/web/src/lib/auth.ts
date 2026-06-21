@@ -182,6 +182,12 @@ export const createDancer = async (accountId: string, input: CreateDancerInput) 
   return dancerRef.id;
 };
 
+export interface SignUpOptions {
+  phone?: string;
+  marketingConsent?: boolean;
+  imageRightsConsent?: boolean;
+}
+
 export interface UpdateDancerInput {
   firstName?: string;
   lastName?: string;

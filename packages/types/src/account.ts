@@ -15,6 +15,8 @@ export interface Account extends WithTimestamps {
   marketingConsent?: boolean;
   imageRightsConsent?: boolean;
   fcmTokens?: string[];
+  marketingConsent?: boolean;
+  imageRightsConsent?: boolean;
   registeredCourseIds?: string[];
   levelsByStyle?: Record<string, string>;
 }

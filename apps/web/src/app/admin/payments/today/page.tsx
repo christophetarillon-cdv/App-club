@@ -19,6 +19,7 @@ interface DueRow {
   planKind: 'solo' | 'group';
   userId: string;
   memberName: string;
+  photoUrl?: string;
   chequeNumber: string;
   draweeBank: string;
   draweeCity: string;
@@ -59,8 +60,10 @@ export default function TodayPaymentsPage() {
         ]);
 
         const dancerMap = new Map<string, string>();
+        const dancerPhotoMap = new Map<string, string>();
         dancerSnap.docs.forEach(d => {
           dancerMap.set(d.id, `${d.data().firstName ?? ''} ${d.data().lastName ?? ''}`.trim());
+          if (d.data().photoUrl) dancerPhotoMap.set(d.id, d.data().photoUrl);
         });
 
         const accountMap = new Map<string, { dancerIds: string[]; displayName: string }>();
@@ -97,11 +100,14 @@ export default function TodayPaymentsPage() {
             let planId: string;
             let planKind: 'solo' | 'group';
             let memberName: string;
+            let photoUrl: string | undefined;
 
             if (paymentGroupId && validGroups.has(paymentGroupId)) {
               planId = paymentGroupId;
               planKind = 'group';
               memberName = getMemberName(data.userId ?? '');
+              const firstDancerId = accountMap.get(data.userId ?? '')?.dancerIds?.[0];
+              if (firstDancerId) photoUrl = dancerPhotoMap.get(firstDancerId);
             } else if (membershipId && validMemberships.has(membershipId)) {
               planId = membershipId;
               planKind = 'solo';
@@ -109,6 +115,7 @@ export default function TodayPaymentsPage() {
               memberName = (dancerId && dancerMap.get(dancerId))
                 ? dancerMap.get(dancerId)!
                 : getMemberName(data.userId ?? '');
+              if (dancerId) photoUrl = dancerPhotoMap.get(dancerId);
             } else {
               return acc;
             }
@@ -122,6 +129,7 @@ export default function TodayPaymentsPage() {
               planKind,
               userId: data.userId ?? '',
               memberName,
+              photoUrl,
               chequeNumber: data.chequeNumber ?? '',
               draweeBank: data.draweeBank ?? '',
               draweeCity: data.draweeCity ?? '',
@@ -236,14 +244,23 @@ export default function TodayPaymentsPage() {
               ) : (
                 <>
                   <div className="flex items-start justify-between gap-3 mb-4">
-                    <div>
-                      <p className="font-semibold text-gray-900 text-base">{row.memberName}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        Prévu le {new Date(row.expectedDate + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
-                        {row.expectedDate < today && (
-                          <span className="ml-1.5 font-medium text-orange-600">· En retard</span>
-                        )}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      {row.photoUrl ? (
+                        <img src={row.photoUrl} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm shrink-0">
+                          {row.memberName.split(' ').map((w: string) => w[0]).slice(0, 2).join('')}
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-semibold text-gray-900 text-base">{row.memberName}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Prévu le {new Date(row.expectedDate + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                          {row.expectedDate < today && (
+                            <span className="ml-1.5 font-medium text-orange-600">· En retard</span>
+                          )}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${METHOD_COLOR[row.method as keyof typeof METHOD_COLOR] ?? 'bg-gray-100 text-gray-500'}`}>

@@ -19,4 +19,9 @@ export interface ClubProfile extends WithTimestamps {
   logoUrl: string;
   primaryColor: string;
   shortDescription: string;
+  siret?: string;
+  apeCode?: string;
+  associationNumber?: string;
+  presidentName?: string;
+  presidentSignatureUrl?: string;
 }

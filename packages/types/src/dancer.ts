@@ -1,6 +1,6 @@
 import type { WithTimestamps, FirestoreTimestamp } from './common';
 
-export type DancerRole = 'member' | 'trial' | 'instructor' | 'admin';
+export type DancerRole = 'member' | 'trial' | 'instructor' | 'bureau' | 'admin';
 
 export interface Dancer extends WithTimestamps {
   id: string;
@@ -26,5 +26,7 @@ export interface Dancer extends WithTimestamps {
   trialSessionsUsed?: number;
   trialExpiresAt?: FirestoreTimestamp;
   customFields?: Record<string, unknown>;
+  notificationPreferences?: Record<string, boolean>;
+  chatLastRead?: Record<string, number>;
   isActive: boolean;
 }

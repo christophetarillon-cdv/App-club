@@ -24,6 +24,12 @@
   },
   "packageManager": "pnpm@9.0.0",
   "dependencies": {
-    "@nodelib/fs.walk": "1.2.8"
+    "@nodelib/fs.walk": "1.2.8",
+    "math-intrinsics": "^1.1.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "8.4.31"
+    }
   }
 }

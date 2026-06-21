@@ -5,6 +5,7 @@ import {
   collection, getDocs, query, where, orderBy,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -56,6 +57,7 @@ function formatWeekLabel(monday: Date): string {
 
 export default function PlanningPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()));
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [selectedDay, setSelectedDay] = useState<Date>(() => new Date());
@@ -161,7 +163,7 @@ export default function PlanningPage() {
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-700">← Retour</Link>
+            <button onClick={() => router.back()} className="text-sm text-gray-400 hover:text-gray-700">← Retour</button>
             <h1 className="text-2xl font-bold text-gray-900">Planning</h1>
           </div>
           <div className="flex items-center gap-2">

@@ -4,6 +4,12 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onRequest, onCall, HttpsError } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import * as admin from 'firebase-admin';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegPath from 'ffmpeg-static';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
 const helloassoClientId = defineSecret('HELLOASSO_CLIENT_ID');
 const helloassoClientSecret = defineSecret('HELLOASSO_CLIENT_SECRET');
@@ -899,5 +905,820 @@ export const detectIdleKiosks = onSchedule(
     });
     await batch.commit();
     console.log(`[detectIdleKiosks] Fermé ${idleQ.size} kiosque(s) inactif(s)`);
+  },
+);
+
+// ── registerMedia — crée un doc media après upload Firebase Storage ───────────
+export const registerMedia = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+
+    const {
+      storagePath, sourceUrl, title, description, type,
+      seasonId, attachedTo, mimeType, sizeBytes, durationSeconds, isPublic,
+    } = request.data as {
+      storagePath: string; sourceUrl: string; title: string; description?: string;
+      type: 'audio' | 'video'; seasonId?: string | null; attachedTo?: string | null;
+      mimeType: string; sizeBytes: number; durationSeconds?: number; isPublic: boolean;
+    };
+
+    const db = getDb();
+    const uid = request.auth.uid;
+
+    const accountSnap = await db.doc(`accounts/${uid}`).get();
+    const isAdmin = accountSnap.data()?.roles?.includes('admin') === true;
+
+    let courseId: string | null = null;
+    let danceStyleId: string | null = null;
+
+    if (attachedTo?.startsWith('course:')) {
+      courseId = attachedTo.replace('course:', '');
+      const courseSnap = await db.doc(`courses/${courseId}`).get();
+      if (!courseSnap.exists) throw new HttpsError('not-found', 'Cours introuvable');
+      const courseData = courseSnap.data()!;
+      danceStyleId = courseData.danceStyleId ?? null;
+
+      if (!isAdmin) {
+        const instructorId: string | undefined = courseData.instructorId;
+        if (!instructorId) throw new HttpsError('permission-denied', 'Accès refusé');
+        const dancerSnap = await db.collection('dancers')
+          .where('accountId', '==', uid).get();
+        const myDancerIds = dancerSnap.docs.map(d => d.id);
+        if (!myDancerIds.includes(instructorId)) {
+          throw new HttpsError('permission-denied', 'Accès refusé');
+        }
+      }
+    } else if (!isAdmin) {
+      throw new HttpsError('permission-denied', 'Seuls les administrateurs peuvent ajouter des médias généraux');
+    }
+
+    const mediaRef = db.collection('media').doc();
+    await mediaRef.set({
+      title,
+      description: description ?? null,
+      type,
+      seasonId: seasonId ?? null,
+      storageProvider: 'firebase',
+      storagePath,
+      sourceUrl,
+      uploadedBy: uid,
+      attachedTo: attachedTo ?? null,
+      courseId,
+      danceStyleId,
+      mimeType,
+      sizeBytes,
+      durationSeconds: durationSeconds ?? null,
+      isPublic: isPublic ?? false,
+      uploadedAt: admin.firestore.FieldValue.serverTimestamp(),
+      encodingStatus: type === 'video' ? 'pending' : null,
+    });
+
+    return { id: mediaRef.id };
+  },
+);
+
+// ── encodeMedia — compresse les vidéos déclenchée par création du doc Firestore
+export const encodeMedia = onDocumentCreated(
+  { document: 'media/{id}', region: 'europe-west3', memory: '4GiB', timeoutSeconds: 540, cpu: 2 },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data) return;
+    if (data.type !== 'video') { console.log('[encodeMedia] skip: not a video'); return; }
+    if (data.encodingStatus !== 'pending') { console.log('[encodeMedia] skip: status is', data.encodingStatus); return; }
+
+    const filePath = data.storagePath as string;
+    console.log(`[encodeMedia] triggered for doc ${event.params.id} | path: ${filePath}`);
+
+    const mediaRef = event.data!.ref;
+    await mediaRef.update({ encodingStatus: 'encoding' });
+
+    const bucket = admin.storage().bucket();
+    const tmpInput = path.join(os.tmpdir(), `cdv_in_${Date.now()}`);
+    const tmpOutput = path.join(os.tmpdir(), `cdv_out_${Date.now()}.mp4`);
+
+    try {
+      console.log('[encodeMedia] downloading...');
+      await bucket.file(filePath).download({ destination: tmpInput });
+      console.log(`[encodeMedia] downloaded ${Math.round(fs.statSync(tmpInput).size / 1024 / 1024)}Mo`);
+
+      if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(tmpInput)
+          .outputOptions(['-vcodec libx264', '-crf 28', '-preset fast', '-acodec aac', '-b:a 128k', '-movflags +faststart'])
+          .output(tmpOutput)
+          .on('progress', (p: any) => console.log(`[encodeMedia] ${Math.round(p.percent ?? 0)}%`))
+          .on('end', () => { console.log('[encodeMedia] ffmpeg done'); resolve(); })
+          .on('error', (err: Error) => { console.error('[encodeMedia] ffmpeg error:', err.message); reject(err); })
+          .run();
+      });
+
+      const stats = fs.statSync(tmpOutput);
+      console.log(`[encodeMedia] output: ${Math.round(stats.size / 1024 / 1024)}Mo`);
+
+      const newToken = crypto.randomUUID();
+      await bucket.upload(tmpOutput, {
+        destination: filePath,
+        metadata: {
+          contentType: 'video/mp4',
+          metadata: { encoded: 'true', firebaseStorageDownloadTokens: newToken },
+        },
+      });
+
+      const bucketName = bucket.name;
+      const newUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(filePath)}?alt=media&token=${newToken}`;
+
+      const duration = await new Promise<number | undefined>(resolve => {
+        ffmpeg.ffprobe(tmpOutput, (err: Error | null, d: any) => {
+          resolve(err ? undefined : Math.round(d?.format?.duration ?? 0) || undefined);
+        });
+      });
+
+      await mediaRef.update({
+        encodingStatus: 'done',
+        sizeBytes: stats.size,
+        sourceUrl: newUrl,
+        ...(duration && { durationSeconds: duration }),
+      });
+      console.log('[encodeMedia] done');
+    } catch (err) {
+      console.error('[encodeMedia] error:', err);
+      await mediaRef.update({ encodingStatus: 'error' });
+    } finally {
+      if (fs.existsSync(tmpInput)) fs.unlinkSync(tmpInput);
+      if (fs.existsSync(tmpOutput)) fs.unlinkSync(tmpOutput);
+    }
+  },
+);
+
+// ── resolveRecipientAccountIds — logique partagée ─────────────────────────────
+async function resolveRecipientAccountIds(
+  db: admin.firestore.Firestore,
+  channel: admin.firestore.DocumentData,
+): Promise<string[]> {
+  if (channel.type === 'main') {
+    const snap = await db.collection('accounts').get();
+    return snap.docs.map(d => d.id);
+  }
+  if (channel.type === 'course' && channel.targetId) {
+    const snap = await db.collection('accounts')
+      .where('registeredCourseIds', 'array-contains', channel.targetId)
+      .get();
+    return snap.docs.map(d => d.id);
+  }
+  if (channel.type === 'style' && channel.targetId) {
+    const snap = await db.collection('dancers').where('isActive', '==', true).get();
+    const ids = new Set<string>();
+    snap.docs.forEach(d => {
+      const data = d.data();
+      if (data.levelsByStyle && channel.targetId in data.levelsByStyle) {
+        ids.add(data.accountId as string);
+      }
+    });
+    return [...ids];
+  }
+  if (channel.type === 'custom' && Array.isArray(channel.customMemberIds)) {
+    return channel.customMemberIds as string[];
+  }
+  return [];
+}
+
+// ── previewNotificationRecipients ─────────────────────────────────────────────
+export const previewNotificationRecipients = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Non authentifié');
+    const { channelId } = request.data as { channelId: string };
+    if (!channelId) throw new HttpsError('invalid-argument', 'channelId manquant');
+
+    const db = getDb();
+    const channelSnap = await db.doc(`notificationChannels/${channelId}`).get();
+    if (!channelSnap.exists) throw new HttpsError('not-found', 'Canal introuvable');
+
+    const accountIds = await resolveRecipientAccountIds(db, channelSnap.data()!);
+
+    // Vérifie opt-out au niveau danseur : si tous les danseurs du compte ont opt-out, exclure le compte
+    const dancersSnap = await db.collection('dancers').get();
+    const dancersByAccount = new Map<string, admin.firestore.DocumentData[]>();
+    dancersSnap.docs.forEach(d => {
+      const data = d.data();
+      const aid = data.accountId as string;
+      if (!aid) return;
+      if (!dancersByAccount.has(aid)) dancersByAccount.set(aid, []);
+      dancersByAccount.get(aid)!.push(data);
+    });
+
+    let recipientCount = 0;
+    for (const accountId of accountIds) {
+      const dancers = dancersByAccount.get(accountId) ?? [];
+      // Si au moins un danseur du compte n'a pas opt-out → compte inclus
+      const hasOptIn = dancers.length === 0 || dancers.some(d => {
+        const prefs = d.notificationPreferences as Record<string, boolean> | undefined;
+        return prefs?.[channelId] !== false;
+      });
+      if (hasOptIn) recipientCount++;
+    }
+    return { recipientCount };
+  },
+);
+
+// ── sendNotification ──────────────────────────────────────────────────────────
+export const sendNotification = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Non authentifié');
+
+    const { channelId, title, body } = request.data as {
+      channelId: string;
+      title: string;
+      body: string;
+    };
+    if (!channelId || !title || !body) {
+      throw new HttpsError('invalid-argument', 'channelId, title et body sont requis');
+    }
+
+    const db = getDb();
+
+    const channelSnap = await db.doc(`notificationChannels/${channelId}`).get();
+    if (!channelSnap.exists) throw new HttpsError('not-found', 'Canal introuvable');
+    const channel = channelSnap.data()!;
+    if (!channel.isActive) throw new HttpsError('failed-precondition', 'Canal inactif');
+
+    const accountIds = await resolveRecipientAccountIds(db, channel);
+
+    // Préférences opt-out par danseur
+    const allDancersSnap = await db.collection('dancers').get();
+    const dancersByAccountId = new Map<string, admin.firestore.DocumentData[]>();
+    allDancersSnap.docs.forEach(d => {
+      const data = d.data();
+      const aid = data.accountId as string;
+      if (!aid) return;
+      if (!dancersByAccountId.has(aid)) dancersByAccountId.set(aid, []);
+      dancersByAccountId.get(aid)!.push(data);
+    });
+
+    const accountSnaps = await Promise.all(accountIds.map(id => db.doc(`accounts/${id}`).get()));
+    const fcmTokens: string[] = [];
+    let recipientCount = 0;
+
+    for (const snap of accountSnaps) {
+      if (!snap.exists) continue;
+      const data = snap.data()!;
+      const dancers = dancersByAccountId.get(snap.id) ?? [];
+      // Exclure si tous les danseurs du compte ont opt-out
+      const hasOptIn = dancers.length === 0 || dancers.some(d => {
+        const prefs = d.notificationPreferences as Record<string, boolean> | undefined;
+        return prefs?.[channelId] !== false;
+      });
+      if (!hasOptIn) continue;
+      recipientCount++;
+      if (Array.isArray(data.fcmTokens)) fcmTokens.push(...data.fcmTokens);
+    }
+
+    let fcmSuccessCount = 0;
+    const invalidTokens: string[] = [];
+
+    if (fcmTokens.length > 0) {
+      const result = await admin.messaging().sendEachForMulticast({
+        tokens: fcmTokens.slice(0, 500),
+        notification: { title, body },
+        data: { channelId, type: 'announcement' },
+      });
+      fcmSuccessCount = result.successCount;
+      result.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          const code = resp.error?.code ?? '';
+          if (
+            code === 'messaging/invalid-registration-token' ||
+            code === 'messaging/registration-token-not-registered'
+          ) {
+            invalidTokens.push(fcmTokens[idx]!);
+          }
+        }
+      });
+    }
+
+    await db.collection('notifications').add({
+      channelId,
+      title,
+      body,
+      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      sentBy: request.auth.uid,
+      recipientCount,
+      fcmSuccessCount,
+    });
+
+    // Nettoyage des tokens invalides
+    for (const invalidToken of invalidTokens) {
+      const tokenSnap = await db.collection('accounts')
+        .where('fcmTokens', 'array-contains', invalidToken)
+        .get();
+      for (const d of tokenSnap.docs) {
+        await d.ref.update({
+          fcmTokens: admin.firestore.FieldValue.arrayRemove(invalidToken),
+        });
+      }
+    }
+
+    return { recipientCount, fcmSuccessCount };
+  },
+);
+
+// ── onChatMessageCreated — notifie les membres abonnés au canal ───────────────
+export const onChatMessageCreated = onDocumentCreated(
+  { document: 'chatMessages/{messageId}', region: 'europe-west3' },
+  async (event) => {
+    const msg = event.data?.data();
+    if (!msg) return;
+    const db = getDb();
+    const channelId: string = msg.channelId;
+    const authorName: string = msg.authorName;
+    const text: string = msg.text ?? (msg.mediaType === 'image' ? '📷 Photo' : msg.mediaType === 'audio' ? '🎵 Audio' : msg.mediaType === 'video' ? '🎬 Vidéo' : 'Nouveau message');
+
+    // Récupère tous les accounts avec un FCM token
+    const accountsSnap = await db.collection('accounts').where('fcmTokens', '!=', []).get();
+
+    const tokens: string[] = [];
+    for (const accDoc of accountsSnap.docs) {
+      const accData = accDoc.data();
+      const fcmTokens: string[] = accData.fcmTokens ?? [];
+      if (fcmTokens.length === 0) continue;
+
+      // Vérifie l'opt-out : au moins un danseur du compte n'a pas désactivé ce canal
+      const dancersSnap = await db.collection('dancers')
+        .where('accountId', '==', accDoc.id).get();
+
+      const hasOptIn = dancersSnap.docs.some(d => {
+        const prefs = d.data().notificationPreferences ?? {};
+        return prefs[`chat_${channelId}`] !== false;
+      });
+
+      if (hasOptIn) tokens.push(...fcmTokens);
+    }
+
+    if (tokens.length === 0) return;
+
+    // Envoie FCM par lots de 500
+    const chunks = [];
+    for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
+    for (const chunk of chunks) {
+      const res = await admin.messaging().sendEachForMulticast({
+        tokens: chunk,
+        notification: { title: authorName, body: text },
+        data: { type: 'chat', channelId },
+        webpush: { fcmOptions: { link: `/chat/${channelId}` } },
+      });
+      // Nettoie les tokens invalides
+      const invalidTokens: string[] = [];
+      res.responses.forEach((r, i) => {
+        if (!r.success && (r.error?.code === 'messaging/invalid-registration-token' ||
+          r.error?.code === 'messaging/registration-token-not-registered')) {
+          invalidTokens.push(chunk[i]!);
+        }
+      });
+      if (invalidTokens.length > 0) {
+        const batch = db.batch();
+        accountsSnap.docs.forEach(d => {
+          const toRemove = invalidTokens.filter(t => (d.data().fcmTokens ?? []).includes(t));
+          if (toRemove.length > 0) {
+            batch.update(d.ref, { fcmTokens: admin.firestore.FieldValue.arrayRemove(...toRemove) });
+          }
+        });
+        await batch.commit();
+      }
+    }
+  },
+);
+
+// ── generateReceipt — logique partagée de génération de reçu PDF ─────────────
+async function generateReceipt(installmentId: string, data: admin.firestore.DocumentData) {
+    const db = getDb();
+    const bucket = admin.storage().bucket();
+
+    const userId: string = data.userId;
+    const amountCents: number = data.amount ?? 0;
+
+    // Récupère les infos
+    const [accountSnap, dancersSnap] = await Promise.all([
+      db.doc(`accounts/${userId}`).get(),
+      db.collection('dancers').where('accountId', '==', userId).where('isActive', '==', true).limit(1).get(),
+    ]);
+
+    const accountData = accountSnap.data() ?? {};
+    const dancerData = dancersSnap.docs[0]?.data() ?? {};
+    const memberName = dancerData.firstName && dancerData.lastName
+      ? `${dancerData.firstName} ${dancerData.lastName}`
+      : (accountData.displayName ?? accountData.email ?? 'Membre');
+
+    // Saison
+    let seasonLabel = '';
+    const membershipId: string | undefined = data.membershipId;
+    if (membershipId) {
+      const memberSnap = await db.doc(`memberships/${membershipId}`).get();
+      if (memberSnap.exists) {
+        const seasonSnap = await db.doc(`seasons/${memberSnap.data()!.seasonId}`).get();
+        seasonLabel = (seasonSnap.data()?.label as string | undefined) ?? '';
+      }
+    }
+
+    // Numéro de reçu unique
+    const counterRef = db.doc('config/receiptCounter');
+    const year = new Date().getFullYear();
+    const receiptNumber = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(counterRef);
+      const stored = snap.exists ? (snap.data() ?? {}) : {};
+      const storedYear: number = (stored.year as number) ?? 0;
+      const last: number = storedYear === year ? ((stored.last as number) ?? 0) : 0;
+      const next = last + 1;
+      tx.set(counterRef, { last: next, year }, { merge: false });
+      return `${year}-${String(next).padStart(4, '0')}`;
+    });
+
+    // Génère le PDF
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([595, 842]); // A4
+    const { width, height } = page.getSize();
+
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const fontReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    const blue = rgb(0.1, 0.22, 0.42);
+    const gray = rgb(0.45, 0.45, 0.45);
+    const black = rgb(0, 0, 0);
+
+    // En-tête
+    page.drawRectangle({ x: 0, y: height - 80, width, height: 80, color: blue });
+    page.drawText('Club de Danse Voiron', {
+      x: 40, y: height - 38, size: 20, font: fontBold, color: rgb(1, 1, 1),
+    });
+    page.drawText('Reçu de paiement', {
+      x: 40, y: height - 60, size: 11, font: fontReg, color: rgb(0.85, 0.85, 0.95),
+    });
+
+    // Numéro + date
+    const dateStr = new Date().toLocaleDateString('fr-FR', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+    page.drawText(`N° ${receiptNumber}`, {
+      x: width - 200, y: height - 38, size: 13, font: fontBold, color: rgb(1, 1, 1),
+    });
+    page.drawText(dateStr, {
+      x: width - 200, y: height - 58, size: 10, font: fontReg, color: rgb(0.85, 0.85, 0.95),
+    });
+
+    // Corps
+    let y = height - 130;
+    const drawRow = (label: string, value: string, bold = false) => {
+      page.drawText(label, { x: 60, y, size: 11, font: fontReg, color: gray });
+      page.drawText(value, { x: 220, y, size: 11, font: bold ? fontBold : fontReg, color: black });
+      y -= 26;
+    };
+
+    page.drawText('Détails du paiement', {
+      x: 60, y, size: 14, font: fontBold, color: blue,
+    });
+    y -= 34;
+
+    // Ligne séparatrice
+    page.drawLine({ start: { x: 60, y }, end: { x: width - 60, y }, thickness: 1, color: rgb(0.88, 0.88, 0.9) });
+    y -= 22;
+
+    drawRow('Adhérent', memberName);
+    if (seasonLabel) drawRow('Saison', seasonLabel);
+    drawRow('Méthode de paiement', data.method === 'cheque' ? 'Chèque' : data.method === 'transfer' ? 'Virement' : data.method === 'cash' ? 'Espèces' : data.method ?? '');
+    if (data.expectedDate) drawRow('Date d\'échéance', data.expectedDate);
+    drawRow('Date de paiement', new Date().toLocaleDateString('fr-FR'));
+
+    y -= 10;
+    page.drawLine({ start: { x: 60, y }, end: { x: width - 60, y }, thickness: 1, color: rgb(0.88, 0.88, 0.9) });
+    y -= 30;
+
+    // Montant total encadré
+    const amountStr = `${(amountCents / 100).toFixed(2).replace('.', ',')} €`;
+    page.drawRectangle({ x: 60, y: y - 10, width: width - 120, height: 44, color: rgb(0.96, 0.97, 1) });
+    page.drawText('Montant payé', { x: 80, y: y + 10, size: 12, font: fontReg, color: gray });
+    page.drawText(amountStr, { x: width - 160, y: y + 10, size: 18, font: fontBold, color: blue });
+    y -= 60;
+
+    // Pied de page
+    page.drawText('Ce document constitue un reçu officiel de paiement.', {
+      x: 60, y: 60, size: 9, font: fontReg, color: gray,
+    });
+    page.drawText('Club de Danse Voiron — CDV', {
+      x: 60, y: 44, size: 9, font: fontReg, color: gray,
+    });
+
+    const pdfBytes = await pdfDoc.save();
+
+    // Upload Storage
+    const fileName = `recu-${receiptNumber}.pdf`;
+    const storagePath = `documents/${userId}/receipts/${fileName}`;
+    const tempPath = path.join(os.tmpdir(), fileName);
+    fs.writeFileSync(tempPath, pdfBytes);
+
+    const downloadToken = crypto.randomUUID();
+    await bucket.upload(tempPath, {
+      destination: storagePath,
+      metadata: {
+        contentType: 'application/pdf',
+        metadata: { firebaseStorageDownloadTokens: downloadToken },
+      },
+    });
+    fs.unlinkSync(tempPath);
+
+    const fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+
+    // Crée le doc Firestore
+    await db.collection('documents').add({
+      userId,
+      dancerId: dancersSnap.docs[0]?.id ?? null,
+      type: 'receipt',
+      fileUrl,
+      fileName,
+      relatedId: installmentId,
+      receiptNumber,
+      amount: amountCents,
+      memberName,
+      seasonLabel: seasonLabel || null,
+      generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log(`[generateReceipt] Reçu ${receiptNumber} généré pour ${userId} — ${amountStr}`);
+}
+
+// ── onInstallmentPaid — trigger sur mise à jour (pending → paid) ──────────────
+export const onInstallmentPaid = onDocumentUpdated(
+  { document: 'paymentInstallments/{installmentId}', region: 'europe-west3' },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) return;
+    if (before.status === 'paid' || after.status !== 'paid') return;
+    await generateReceipt(event.params.installmentId, after);
+  },
+);
+
+// ── onInstallmentCreatedPaid — trigger sur création directe avec status paid ──
+export const onInstallmentCreatedPaid = onDocumentCreated(
+  { document: 'paymentInstallments/{installmentId}', region: 'europe-west3' },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data || data.status !== 'paid') return;
+    await generateReceipt(event.params.installmentId, data);
+  },
+);
+
+// ── onMembershipApproved — génère une attestation d'adhésion ─────────────────
+export const onMembershipApproved = onDocumentUpdated(
+  { document: 'memberships/{membershipId}', region: 'europe-west3' },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) return;
+    if (before.paymentPlanStatus === 'approved' || after.paymentPlanStatus !== 'approved') return;
+
+    const membershipId = event.params.membershipId;
+    const db = getDb();
+    const bucket = admin.storage().bucket();
+
+    const userId: string = after.userId;
+    const seasonId: string = after.seasonId;
+    const dancerIdFromMembership: string | null = (after.dancerId as string | undefined) ?? null;
+
+    // Récupère infos en parallèle
+    const [accountSnap, seasonSnap, regsSnap, clubSnap] = await Promise.all([
+      db.doc(`accounts/${userId}`).get(),
+      db.doc(`seasons/${seasonId}`).get(),
+      db.collection('registrations').where('userId', '==', userId).where('status', '==', 'active').get(),
+      db.doc('clubProfile/main').get(),
+    ]);
+
+    // Danseur : utilise dancerId du membership si disponible (cas groupé/famille)
+    let dancerData: Record<string, unknown> = {};
+    let dancerId: string | null = null;
+    if (dancerIdFromMembership) {
+      const snap = await db.doc(`dancers/${dancerIdFromMembership}`).get();
+      dancerData = snap.data() ?? {};
+      dancerId = dancerIdFromMembership;
+    } else {
+      const snap = await db.collection('dancers')
+        .where('accountId', '==', userId)
+        .where('isActive', '==', true)
+        .limit(1)
+        .get();
+      if (snap.docs[0]) {
+        dancerData = snap.docs[0].data();
+        dancerId = snap.docs[0].id;
+      }
+    }
+
+    const accountData = accountSnap.data() ?? {};
+    const memberName = dancerData.firstName && dancerData.lastName
+      ? `${dancerData.firstName} ${dancerData.lastName}`
+      : (accountData.displayName ?? accountData.email ?? 'Membre');
+    const memberNumber: string = dancerData.memberNumber ?? '';
+    const seasonLabel: string = (seasonSnap.data()?.label as string | undefined) ?? '';
+
+    const clubData = clubSnap.data() ?? {};
+    const clubName: string = (clubData.officialName as string | undefined) ?? 'Club de Danse Voiron';
+    const clubSiret: string = (clubData.siret as string | undefined) ?? '';
+    const clubApe: string = (clubData.apeCode as string | undefined) ?? '';
+    const clubAssocNum: string = (clubData.associationNumber as string | undefined) ?? '';
+    const clubLegalStatus: string = (clubData.legalStatus as string | undefined) ?? 'Association loi 1901';
+    const clubPresidentName: string = (clubData.presidentName as string | undefined) ?? '';
+    const clubPresidentSignatureUrl: string = (clubData.presidentSignatureUrl as string | undefined) ?? '';
+    const clubAddr = clubData.headquartersAddress as { street?: string; postalCode?: string; city?: string; country?: string } | undefined;
+    const clubAddressLine = clubAddr
+      ? [clubAddr.street, `${clubAddr.postalCode ?? ''} ${clubAddr.city ?? ''}`.trim()].filter(Boolean).join(', ')
+      : '';
+
+    // Cours inscrits
+    const courseIds = regsSnap.docs.map(d => d.data().courseId as string).filter(Boolean);
+    let courseNames: string[] = [];
+    if (courseIds.length > 0) {
+      const courseSnaps = await Promise.all(courseIds.map(id => db.doc(`courses/${id}`).get()));
+      courseNames = courseSnaps.filter(s => s.exists).map(s => s.data()!.name as string);
+    }
+
+    // Génère le PDF
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([595, 842]);
+    const { width, height } = page.getSize();
+
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const fontReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+
+    const blue = rgb(0.1, 0.22, 0.42);
+    const gray = rgb(0.45, 0.45, 0.45);
+    const black = rgb(0, 0, 0);
+
+    // En-tête
+    page.drawRectangle({ x: 0, y: height - 90, width, height: 90, color: blue });
+    page.drawText(clubName, {
+      x: 40, y: height - 38, size: 18, font: fontBold, color: rgb(1, 1, 1),
+    });
+    page.drawText('Attestation d\'adhésion — Activité : Danse', {
+      x: 40, y: height - 58, size: 10, font: fontReg, color: rgb(0.85, 0.85, 0.95),
+    });
+    if (clubAddressLine) {
+      page.drawText(clubAddressLine, {
+        x: 40, y: height - 74, size: 9, font: fontReg, color: rgb(0.75, 0.75, 0.9),
+      });
+    }
+
+    const dateStr = new Date().toLocaleDateString('fr-FR', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+    page.drawText(dateStr, {
+      x: width - 190, y: height - 49, size: 9, font: fontReg, color: rgb(0.85, 0.85, 0.95),
+    });
+
+    // Intro
+    let y = height - 140;
+    page.drawText(`${clubName} atteste que :`, {
+      x: 60, y, size: 11, font: fontReg, color: gray,
+    });
+    y -= 50;
+
+    // Bloc membre
+    page.drawRectangle({ x: 60, y: y - 14, width: width - 120, height: 90, color: rgb(0.96, 0.97, 1) });
+    page.drawText(memberName, { x: 80, y: y + 50, size: 18, font: fontBold, color: blue });
+    if (memberNumber) {
+      page.drawText(`Numéro de membre : ${memberNumber}`, { x: 80, y: y + 26, size: 11, font: fontReg, color: black });
+    }
+    if (accountData.email) {
+      page.drawText(accountData.email as string, { x: 80, y: y + 8, size: 10, font: fontReg, color: gray });
+    }
+    y -= 60;
+
+    // Détails adhésion
+    y -= 30;
+    page.drawText('est bien adhérent(e) au club pour la saison :', {
+      x: 60, y, size: 11, font: fontReg, color: gray,
+    });
+    y -= 28;
+    page.drawText(seasonLabel, { x: 60, y, size: 14, font: fontBold, color: blue });
+    y -= 40;
+
+    // Cours inscrits
+    if (courseNames.length > 0) {
+      page.drawText('Cours suivis :', { x: 60, y, size: 11, font: fontBold, color: black });
+      y -= 22;
+      for (const name of courseNames) {
+        page.drawText(`• ${name}`, { x: 80, y, size: 11, font: fontReg, color: black });
+        y -= 20;
+      }
+      y -= 10;
+    }
+
+    // Montant et mode de règlement
+    const totalDue: number = after.totalDue ?? 0;
+    const paymentMethod: string = after.paymentMethod ?? '';
+    const methodLabel = paymentMethod === 'cheque' ? 'Chèque' : paymentMethod === 'transfer' ? 'Virement bancaire' : paymentMethod === 'cash' ? 'Espèces' : paymentMethod;
+    const amountStr = `${(totalDue / 100).toFixed(2).replace('.', ',')} €`;
+
+    page.drawText('Cotisation :', { x: 60, y, size: 11, font: fontBold, color: black });
+    page.drawText(amountStr, { x: 180, y, size: 11, font: fontBold, color: blue });
+    y -= 22;
+    page.drawText('Mode de règlement :', { x: 60, y, size: 11, font: fontBold, color: black });
+    page.drawText(methodLabel, { x: 220, y, size: 11, font: fontReg, color: black });
+    y -= 10;
+
+    // Ligne séparatrice
+    y -= 20;
+    page.drawLine({ start: { x: 60, y }, end: { x: width - 60, y }, thickness: 1, color: rgb(0.88, 0.88, 0.9) });
+    y -= 30;
+
+    // Mention légale
+    page.drawText(
+      'Cette attestation est délivrée à titre officiel et peut être utilisée',
+      { x: 60, y, size: 9, font: fontItalic, color: gray },
+    );
+    y -= 14;
+    page.drawText(
+      'pour justifier d\'une adhésion à une association sportive (assurance, URSSAF, etc.).',
+      { x: 60, y, size: 9, font: fontItalic, color: gray },
+    );
+
+    // Zone signature
+    y -= 30;
+    const sigZoneX = width - 240;
+    const sigZoneY = y - 60;
+
+    // Embed signature image si disponible
+    if (clubPresidentSignatureUrl) {
+      try {
+        const imgResponse = await fetch(clubPresidentSignatureUrl);
+        if (imgResponse.ok) {
+          const imgBuffer = await imgResponse.arrayBuffer();
+          const contentType = imgResponse.headers.get('content-type') ?? '';
+          const sigImage = contentType.includes('png')
+            ? await pdfDoc.embedPng(imgBuffer)
+            : await pdfDoc.embedJpg(imgBuffer);
+          const sigDims = sigImage.scaleToFit(160, 60);
+          page.drawImage(sigImage, {
+            x: sigZoneX,
+            y: sigZoneY + 10,
+            width: sigDims.width,
+            height: sigDims.height,
+          });
+        }
+      } catch (err) {
+        console.warn('[onMembershipApproved] Impossible de charger la signature :', err);
+      }
+    }
+
+    page.drawLine({ start: { x: sigZoneX, y: sigZoneY }, end: { x: width - 60, y: sigZoneY }, thickness: 1, color: rgb(0.7, 0.7, 0.7) });
+    const presLine = clubPresidentName ? `Le/La Président·e — ${clubPresidentName}` : 'Le Bureau du club';
+    page.drawText(presLine, { x: sigZoneX, y: sigZoneY - 14, size: 9, font: fontReg, color: gray });
+
+    // Pied de page avec mentions légales
+    const footerParts: string[] = [`${clubName} — ${clubLegalStatus}`];
+    if (clubSiret) footerParts.push(`SIRET : ${clubSiret}`);
+    if (clubApe) footerParts.push(`APE : ${clubApe}`);
+    if (clubAssocNum) footerParts.push(`N° ${clubAssocNum}`);
+
+    page.drawText(footerParts.join('  •  '), {
+      x: 40, y: 40, size: 8, font: fontReg, color: gray,
+    });
+
+    const pdfBytes = await pdfDoc.save();
+
+    // Upload Storage
+    const safeLabel = seasonLabel.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const safeDancer = memberName.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 30);
+    const fileName = `attestation-${safeLabel}-${safeDancer}.pdf`;
+    const storagePath = `documents/${userId}/attestations/${fileName}`;
+    const tempPath = path.join(os.tmpdir(), fileName);
+    fs.writeFileSync(tempPath, pdfBytes);
+
+    const downloadToken = crypto.randomUUID();
+    await bucket.upload(tempPath, {
+      destination: storagePath,
+      metadata: {
+        contentType: 'application/pdf',
+        metadata: { firebaseStorageDownloadTokens: downloadToken },
+      },
+    });
+    fs.unlinkSync(tempPath);
+
+    const fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+
+    // Crée le doc Firestore
+    await db.collection('documents').add({
+      userId,
+      dancerId,
+      type: 'attestation',
+      fileUrl,
+      fileName,
+      relatedId: membershipId,
+      memberName,
+      seasonLabel: seasonLabel || null,
+      generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log(`[onMembershipApproved] Attestation générée pour ${userId} — saison ${seasonLabel}`);
   },
 );

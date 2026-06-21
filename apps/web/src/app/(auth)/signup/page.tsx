@@ -5,15 +5,16 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { signUpWithEmail, signUpTrial, type SignUpOptions } from '@/lib/auth';
-import type { ProfileFieldsConfig, ProfileFieldKey } from '@cdv/types';
+import { signUpWithEmail, signUpTrial } from '@/lib/auth';
+import type { ProfileFieldsConfig } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
 
-function mergeWithDefaults(saved?: Partial<ProfileFieldsConfig>): Record<ProfileFieldKey, { enabled: boolean; required: boolean }> {
-  const result = { ...DEFAULT_PROFILE_FIELDS } as Record<ProfileFieldKey, { enabled: boolean; required: boolean }>;
-  if (!saved) return result;
-  for (const key of Object.keys(saved) as ProfileFieldKey[]) {
-    if (saved[key]) result[key] = { ...result[key], ...saved[key] };
+function mergeWithDefaults(saved: Partial<ProfileFieldsConfig> | undefined): ProfileFieldsConfig {
+  const result = { ...DEFAULT_PROFILE_FIELDS };
+  if (saved) {
+    for (const key of Object.keys(DEFAULT_PROFILE_FIELDS) as (keyof ProfileFieldsConfig)[]) {
+      if (saved[key]) result[key] = { ...DEFAULT_PROFILE_FIELDS[key], ...saved[key] };
+    }
   }
   return result;
 }
@@ -23,13 +24,11 @@ export default function SignupPage() {
   const [isTrial, setIsTrial] = useState(false);
   const [trialMaxSessions, setTrialMaxSessions] = useState(3);
   const [trialMaxDays, setTrialMaxDays] = useState(30);
-  const [fieldConfig, setFieldConfig] = useState(mergeWithDefaults());
+  const [fieldConfig, setFieldConfig] = useState<ProfileFieldsConfig>(DEFAULT_PROFILE_FIELDS);
   const [form, setForm] = useState({
     displayName: '', firstName: '', lastName: '', email: '', password: '', confirm: '',
-    phone: '',
+    phone: '', marketingConsent: false, imageRightsConsent: false,
   });
-  const [marketingConsent, setMarketingConsent] = useState(false);
-  const [imageRightsConsent, setImageRightsConsent] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,44 +39,41 @@ export default function SignupPage() {
         const data = snap.data();
         if (data.trialMaxSessions) setTrialMaxSessions(data.trialMaxSessions);
         if (data.trialMaxDays) setTrialMaxDays(data.trialMaxDays);
-        if (data.profileFields) setFieldConfig(mergeWithDefaults(data.profileFields));
+        setFieldConfig(mergeWithDefaults(data.profileFields));
       }
     });
   }, []);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm(prev => ({ ...prev, [k]: e.target.value }));
+    setForm(prev => ({ ...prev, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (form.password !== form.confirm) { setError('Les mots de passe ne correspondent pas.'); return; }
     if (form.password.length < 6) { setError('Le mot de passe doit contenir au moins 6 caractères.'); return; }
+    if (fieldConfig.marketingConsent.enabled && fieldConfig.marketingConsent.required && !form.marketingConsent) {
+      setError('Le consentement marketing est requis.'); return;
+    }
+    if (fieldConfig.imageRightsConsent.enabled && fieldConfig.imageRightsConsent.required && !form.imageRightsConsent) {
+      setError("L'accord sur les droits à l'image est requis."); return;
+    }
     setLoading(true);
+    const options = {
+      phone: fieldConfig.phone.enabled ? form.phone.trim() || undefined : undefined,
+      marketingConsent: fieldConfig.marketingConsent.enabled ? form.marketingConsent : undefined,
+      imageRightsConsent: fieldConfig.imageRightsConsent.enabled ? form.imageRightsConsent : undefined,
+    };
     try {
-      const options: SignUpOptions = {};
-      if (fieldConfig.phone?.enabled && form.phone.trim()) options.phone = form.phone.trim();
-      if (fieldConfig.marketingConsent?.enabled) options.marketingConsent = marketingConsent;
-      if (fieldConfig.imageRightsConsent?.enabled) options.imageRightsConsent = imageRightsConsent;
-
       if (isTrial) {
         await signUpTrial(
-          form.displayName.trim(),
-          form.firstName.trim(),
-          form.lastName.trim(),
-          form.email.trim(),
-          form.password,
-          trialMaxDays,
-          options,
+          form.displayName.trim(), form.firstName.trim(), form.lastName.trim(),
+          form.email.trim(), form.password, trialMaxDays, options,
         );
       } else {
         await signUpWithEmail(
-          form.displayName.trim(),
-          form.firstName.trim(),
-          form.lastName.trim(),
-          form.email.trim(),
-          form.password,
-          options,
+          form.displayName.trim(), form.firstName.trim(), form.lastName.trim(),
+          form.email.trim(), form.password, options,
         );
       }
       router.replace('/select-dancer');
@@ -110,17 +106,13 @@ export default function SignupPage() {
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setIsTrial(false)}
               className={`py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-                !isTrial
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                !isTrial ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}>
               Membre
             </button>
             <button type="button" onClick={() => setIsTrial(true)}
               className={`py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-                isTrial
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                isTrial ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}>
               Cours d'essai
             </button>
@@ -163,13 +155,14 @@ export default function SignupPage() {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
           </div>
 
-          {fieldConfig.phone?.enabled && (
+          {fieldConfig.phone.enabled && (
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                Téléphone{fieldConfig.phone.required ? ' *' : ''}
+                Téléphone{fieldConfig.phone.required && ' *'}
               </label>
               <input type="tel" value={form.phone} onChange={set('phone')}
                 required={fieldConfig.phone.required}
+                autoComplete="tel"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
             </div>
           )}
@@ -194,25 +187,25 @@ export default function SignupPage() {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
           </div>
 
-          {(fieldConfig.marketingConsent?.enabled || fieldConfig.imageRightsConsent?.enabled) && (
+          {(fieldConfig.marketingConsent.enabled || fieldConfig.imageRightsConsent.enabled) && (
             <div className="space-y-2 pt-2 border-t border-gray-100">
-              {fieldConfig.marketingConsent?.enabled && (
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input type="checkbox" checked={marketingConsent} onChange={e => setMarketingConsent(e.target.checked)}
-                    required={fieldConfig.marketingConsent.required}
-                    className="mt-0.5 rounded border-gray-300" />
+              {fieldConfig.marketingConsent.enabled && (
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={form.marketingConsent} onChange={set('marketingConsent')}
+                    className="mt-0.5 w-4 h-4 rounded flex-shrink-0" />
                   <span className="text-xs text-gray-600">
-                    J'accepte de recevoir des communications du club (newsletters, événements…){fieldConfig.marketingConsent.required ? ' *' : ''}
+                    J'accepte de recevoir des communications marketing de la part du club.
+                    {fieldConfig.marketingConsent.required && <span className="text-red-500 ml-0.5">*</span>}
                   </span>
                 </label>
               )}
-              {fieldConfig.imageRightsConsent?.enabled && (
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input type="checkbox" checked={imageRightsConsent} onChange={e => setImageRightsConsent(e.target.checked)}
-                    required={fieldConfig.imageRightsConsent.required}
-                    className="mt-0.5 rounded border-gray-300" />
+              {fieldConfig.imageRightsConsent.enabled && (
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={form.imageRightsConsent} onChange={set('imageRightsConsent')}
+                    className="mt-0.5 w-4 h-4 rounded flex-shrink-0" />
                   <span className="text-xs text-gray-600">
-                    J'autorise l'utilisation de mon image (photos, vidéos) par le club{fieldConfig.imageRightsConsent.required ? ' *' : ''}
+                    J'autorise le club à utiliser mon image (photos/vidéos).
+                    {fieldConfig.imageRightsConsent.required && <span className="text-red-500 ml-0.5">*</span>}
                   </span>
                 </label>
               )}

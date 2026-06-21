@@ -31,3 +31,4 @@ ui-debug.log
 *.pem
 .turbo/
 coverage/
+.vercel

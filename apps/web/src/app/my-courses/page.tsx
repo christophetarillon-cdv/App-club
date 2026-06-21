@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 interface Registration {
@@ -33,6 +34,7 @@ const DAY_LABELS = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
 
 export default function MyCoursesPage() {
   const { user, account } = useAuth();
+  const router = useRouter();
   const [items, setItems] = useState<(Registration & { course: CourseInfo })[]>([]);
   const [levelsMap, setLevelsMap] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -117,7 +119,7 @@ export default function MyCoursesPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-2xl mx-auto px-4 py-10">
-        <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-700 mb-6 inline-block">← Profil</Link>
+        <button onClick={() => router.back()} className="text-sm text-gray-400 hover:text-gray-700 mb-6 inline-block">← Retour</button>
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Mes cours</h1>
 
         {items.length === 0 ? (
