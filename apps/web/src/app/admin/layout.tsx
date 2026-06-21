@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { ADMIN_NAV } from '@/lib/admin-nav';
@@ -11,22 +13,63 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const pathname = usePathname();
 
-  const isAdmin =
-    account?.roles?.includes('admin') ||
-    dancers.some(d => d.roles.includes('admin'));
+  const [pagePermissions, setPagePermissions] = useState<Record<string, string[]> | null>(null);
 
+  const userRoles: string[] = [
+    ...(account?.roles ?? []),
+    ...dancers.flatMap(d => d.roles),
+  ];
+  const isAdmin = userRoles.includes('admin');
+
+  // Charge les permissions de pages une fois l'auth confirmée
+  useEffect(() => {
+    if (loading || !user) return;
+    getDoc(doc(db, 'appSettings', 'main')).then(snap => {
+      setPagePermissions((snap.data()?.pagePermissions ?? {}) as Record<string, string[]>);
+    });
+  }, [loading, user]);
+
+  // Redirige si non authentifié ou non autorisé
   useEffect(() => {
     if (loading) return;
     if (!user) { router.replace('/login'); return; }
-    if (!loading && account !== undefined && !isAdmin) router.replace('/profile');
+    if (account !== undefined && !isAdmin && !userRoles.some(r => r !== 'member' && r !== 'trial')) {
+      router.replace('/profile');
+    }
   }, [user, account, loading, isAdmin, router]);
 
-  if (loading || !user || !isAdmin) {
+  // Vérifie l'accès à la page courante une fois les permissions chargées
+  useEffect(() => {
+    if (!pagePermissions || isAdmin) return;
+    const allItems = ADMIN_NAV.flatMap(g => g.items);
+    const match = allItems.find(item => pathname === item.href || pathname.startsWith(item.href + '/'));
+    if (!match) return;
+    const allowed = pagePermissions[match.href] ?? ['admin'];
+    if (!userRoles.some(r => allowed.includes(r))) {
+      // Redirige vers la première page accessible
+      const first = allItems.find(item => {
+        const a = pagePermissions[item.href] ?? ['admin'];
+        return userRoles.some(r => a.includes(r));
+      });
+      router.replace(first ? first.href : '/profile');
+    }
+  }, [pagePermissions, pathname, userRoles, isAdmin, router]);
+
+  if (loading || !user || (!isAdmin && pagePermissions === null)) {
     return <div className="min-h-screen flex items-center justify-center text-gray-500">Chargement…</div>;
   }
 
-  const isActive = (href: string) =>
-    pathname === href || pathname.startsWith(href + '/');
+  const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
+
+  // Filtre le nav selon les permissions
+  const visibleNav = ADMIN_NAV.map(group => ({
+    ...group,
+    items: group.items.filter(item => {
+      if (isAdmin) return true;
+      const allowed = pagePermissions?.[item.href] ?? ['admin'];
+      return userRoles.some(r => allowed.includes(r));
+    }),
+  })).filter(group => group.items.length > 0);
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -36,7 +79,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         <nav className="flex-1 px-2 py-3 space-y-4 overflow-y-auto">
-          {ADMIN_NAV.map((group) => (
+          {visibleNav.map((group) => (
             <div key={group.label}>
               <p className="px-2 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
                 {group.label}

@@ -43,6 +43,12 @@ export const ADMIN_NAV: NavGroup[] = [
     ],
   },
   {
+    label: 'Administration',
+    items: [
+      { label: 'Accès pages', href: '/admin/settings/page-permissions' },
+    ],
+  },
+  {
     label: 'Finances',
     items: [
       { label: 'Tarifs', href: '/admin/pricing-plans' },

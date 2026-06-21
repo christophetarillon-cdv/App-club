@@ -42,4 +42,5 @@ export interface AppSettings extends WithTimestamps {
   cancelOnPublicHolidaysOnlyDuringSchoolHolidays?: boolean;
   profileFields?: ProfileFieldsConfig;
   profileMapping?: Record<string, { schemaId: string }>;
+  pagePermissions?: Record<string, string[]>;
 }
