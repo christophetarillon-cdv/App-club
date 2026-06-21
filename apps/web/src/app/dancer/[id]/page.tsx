@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
 import { logout } from '@/lib/auth';
 import Link from 'next/link';
 import type { Dancer } from '@cdv/types';
+import { ADMIN_NAV } from '@/lib/admin-nav';
 
 function Avatar({ dancer, size = 'md' }: { dancer: Dancer; size?: 'lg' | 'md' | 'sm' }) {
   const initials = `${dancer.firstName[0] ?? ''}${dancer.lastName[0] ?? ''}`.toUpperCase();
@@ -41,7 +44,15 @@ export default function DancerHubPage() {
 
   const dancer = dancers.find(d => d.id === id);
   const otherDancers = dancers.filter(d => d.id !== id);
-  const isAdmin = account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin'));
+  const userRoles = [...(account?.roles ?? []), ...dancers.flatMap(d => d.roles)];
+  const isAdmin = userRoles.includes('admin');
+
+  const [pagePermissions, setPagePermissions] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    getDoc(doc(db, 'appSettings', 'main')).then(snap => {
+      if (snap.exists()) setPagePermissions((snap.data().pagePermissions ?? {}) as Record<string, string[]>);
+    });
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) { router.replace('/login'); return; }
@@ -73,8 +84,17 @@ export default function DancerHubPage() {
     { href: '/trombinoscope', label: 'Trombinoscope' },
   ];
 
-  const adminItems: NavItem[] = isAdmin
-    ? [{ href: '/admin/club-settings', label: 'Administration' }]
+  const firstAccessibleAdminHref = (() => {
+    const allItems = ADMIN_NAV.flatMap(g => g.items);
+    if (isAdmin) return '/admin/club-settings';
+    const match = allItems.find(item => {
+      const allowed = pagePermissions[item.href] ?? ['admin'];
+      return userRoles.some(r => allowed.includes(r));
+    });
+    return match?.href ?? null;
+  })();
+  const adminItems: NavItem[] = firstAccessibleAdminHref
+    ? [{ href: firstAccessibleAdminHref, label: 'Administration' }]
     : [];
 
   return (
