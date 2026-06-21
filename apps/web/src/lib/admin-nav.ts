@@ -9,6 +9,30 @@ export interface NavGroup {
   items: NavItem[];
 }
 
+export const MEMBER_NAV: NavGroup[] = [
+  {
+    label: 'Accès rapide',
+    items: [
+      { label: 'QR code de présence', href: '/dancer/card' },
+      { label: 'Planning des cours', href: '/planning' },
+      { label: 'Chat', href: '/chat' },
+      { label: 'Médiathèque', href: '/media' },
+      { label: 'Trombinoscope', href: '/trombinoscope' },
+    ],
+  },
+  {
+    label: 'Espace personnel',
+    items: [
+      { label: 'Ma cotisation', href: '/membership' },
+      { label: 'Mes niveaux par style', href: '/dancer/levels' },
+      { label: 'Messages', href: '/dancer/notifications' },
+      { label: 'Paramètres notifications', href: '/dancer/settings' },
+      { label: 'Mes documents', href: '/my-documents' },
+      { label: 'Bibliothèque du club', href: '/library' },
+    ],
+  },
+];
+
 export const ADMIN_NAV: NavGroup[] = [
   {
     label: 'Structure',

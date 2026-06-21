@@ -76,13 +76,19 @@ export default function DancerHubPage() {
     );
   }
 
+  const hasPerm = (permKey: string) => {
+    if (!(permKey in pagePermissions)) return true;
+    const allowed = pagePermissions[permKey] ?? [];
+    return isAdmin || userRoles.some(r => allowed.includes(r));
+  };
+
   const navItems: NavItem[] = [
-    { href: `/dancer/${id}/card`, label: 'Mon QR code de présence' },
-    { href: '/planning', label: 'Planning des cours' },
-    { href: '/chat', label: 'Chat' },
-    { href: '/media', label: 'Médiathèque' },
-    { href: '/trombinoscope', label: 'Trombinoscope' },
-  ];
+    { href: `/dancer/${id}/card`, label: 'Mon QR code de présence', permKey: '/dancer/card' },
+    { href: '/planning', label: 'Planning des cours', permKey: '/planning' },
+    { href: '/chat', label: 'Chat', permKey: '/chat' },
+    { href: '/media', label: 'Médiathèque', permKey: '/media' },
+    { href: '/trombinoscope', label: 'Trombinoscope', permKey: '/trombinoscope' },
+  ].filter(item => hasPerm((item as any).permKey));
 
   const firstAccessibleAdminHref = (() => {
     const allItems = ADMIN_NAV.flatMap(g => g.items);

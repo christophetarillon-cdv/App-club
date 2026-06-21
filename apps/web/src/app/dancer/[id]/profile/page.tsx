@@ -215,6 +215,15 @@ export default function DancerPersonalProfilePage() {
     if (!authLoading && !dancer) router.replace('/select-dancer');
   }, [authLoading, dancer, router]);
 
+  const [pagePermissions, setPagePermissions] = useState<Record<string, string[]>>({});
+  const userRoles = [...(account?.roles ?? []), ...(dancer?.roles ?? [])];
+  const isAdmin = userRoles.includes('admin');
+  const hasPerm = (permKey: string) => {
+    if (!(permKey in pagePermissions)) return true;
+    const allowed = pagePermissions[permKey] ?? [];
+    return isAdmin || userRoles.some(r => allowed.includes(r));
+  };
+
   // Charge les configs (prédéfinis + custom) selon le rôle principal du danseur
   useEffect(() => {
     if (!dancer) return;
@@ -223,6 +232,7 @@ export default function DancerPersonalProfilePage() {
       const settingsSnap = await getDoc(doc(db, 'appSettings', 'main'));
       if (settingsSnap.exists()) {
         setFieldConfig(mergeWithDefaults(settingsSnap.data().profileFields));
+        setPagePermissions((settingsSnap.data().pagePermissions ?? {}) as Record<string, string[]>);
       }
 
       const profileMapping: Record<string, { schemaId: string }> =
@@ -438,14 +448,14 @@ export default function DancerPersonalProfilePage() {
         {/* Liens rapides */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm divide-y divide-gray-100 overflow-hidden mb-4">
           {[
-            { href: `/dancer/${id}/card`, label: 'Ma carte de membre' },
-            { href: '/membership', label: 'Ma cotisation' },
-            { href: `/dancer/${id}/levels`, label: 'Mes niveaux par style' },
-            { href: `/dancer/${id}/notifications`, label: 'Messages' },
-            { href: `/dancer/${id}/settings`, label: 'Paramètres notifications' },
-            { href: '/my-documents', label: 'Mes documents' },
-            { href: '/library', label: 'Bibliothèque du club' },
-          ].map((item, i) => (
+            { href: `/dancer/${id}/card`, label: 'Ma carte de membre', permKey: '/dancer/card' },
+            { href: '/membership', label: 'Ma cotisation', permKey: '/membership' },
+            { href: `/dancer/${id}/levels`, label: 'Mes niveaux par style', permKey: '/dancer/levels' },
+            { href: `/dancer/${id}/notifications`, label: 'Messages', permKey: '/dancer/notifications' },
+            { href: `/dancer/${id}/settings`, label: 'Paramètres notifications', permKey: '/dancer/settings' },
+            { href: '/my-documents', label: 'Mes documents', permKey: '/my-documents' },
+            { href: '/library', label: 'Bibliothèque du club', permKey: '/library' },
+          ].filter(item => hasPerm(item.permKey)).map((item, i) => (
             <Link key={i} href={item.href}
               className="flex items-center justify-between px-4 py-3.5 hover:bg-blue-50/50 transition-colors">
               <span className="text-sm text-gray-800 font-medium">{item.label}</span>
