@@ -30,7 +30,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let unsubAccount: (() => void) | null = null;
     let unsubDancers: (() => void) | null = null;
 
+    const safetyTimer = setTimeout(() => setLoading(false), 5000);
+
     const unsubAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      clearTimeout(safetyTimer);
       if (unsubAccount) { unsubAccount(); unsubAccount = null; }
       if (unsubDancers) { unsubDancers(); unsubDancers = null; }
 
@@ -72,6 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => {
+      clearTimeout(safetyTimer);
       unsubAuth();
       if (unsubAccount) unsubAccount();
       if (unsubDancers) unsubDancers();

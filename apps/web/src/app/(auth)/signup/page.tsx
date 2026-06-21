@@ -80,7 +80,7 @@ export default function SignupPage() {
           options,
         );
       }
-      router.replace('/profile');
+      router.replace('/select-dancer');
     } catch (err: any) {
       setError(
         err.code === 'auth/email-already-in-use'
