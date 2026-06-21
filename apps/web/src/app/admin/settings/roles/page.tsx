@@ -13,11 +13,15 @@ const COLOR_LABELS: Record<RoleColor, string> = {
 };
 
 async function ensureSystemRoles() {
-  const snap = await getDocs(collection(db, 'roles'));
-  if (!snap.empty) return;
-  for (const role of SYSTEM_ROLES) {
-    const ref = doc(db, 'roles', role.key);
-    await setDoc(ref, { ...role, id: role.key, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  try {
+    const snap = await getDocs(collection(db, 'roles'));
+    if (!snap.empty) return;
+    for (const role of SYSTEM_ROLES) {
+      const ref = doc(db, 'roles', role.key);
+      await setDoc(ref, { ...role, id: role.key, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    }
+  } catch (err) {
+    console.warn('ensureSystemRoles: could not auto-create system roles', err);
   }
 }
 
@@ -124,10 +128,15 @@ export default function RolesPage() {
 
   useEffect(() => {
     (async () => {
-      await ensureSystemRoles();
-      const snap = await getDocs(query(collection(db, 'roles'), orderBy('displayOrder')));
-      setRoles(snap.docs.map(d => ({ id: d.id, ...d.data() } as RoleConfig)));
-      setLoading(false);
+      try {
+        await ensureSystemRoles();
+        const snap = await getDocs(query(collection(db, 'roles'), orderBy('displayOrder')));
+        setRoles(snap.docs.map(d => ({ id: d.id, ...d.data() } as RoleConfig)));
+      } catch (err) {
+        console.error('Roles load error:', err);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
