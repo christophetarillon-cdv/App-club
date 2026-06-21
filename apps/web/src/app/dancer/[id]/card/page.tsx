@@ -5,8 +5,10 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import QRCode from 'qrcode';
+import { useRoles } from '@/hooks/useRoles';
 
 export default function DancerCardPage() {
+  const { getLabel } = useRoles();
   const { id } = useParams<{ id: string }>();
   const { dancers, account, loading } = useAuth();
   const router = useRouter();
@@ -62,7 +64,7 @@ export default function DancerCardPage() {
               <div className="flex gap-2 mt-2">
                 {dancer.roles.map(r => (
                   <span key={r} className="text-xs bg-white/10 text-white/70 px-2 py-0.5 rounded-full capitalize">
-                    {r === 'member' ? 'Membre' : r === 'trial' ? 'Essai' : r === 'instructor' ? 'Moniteur' : r}
+                    {getLabel(r)}
                   </span>
                 ))}
               </div>

@@ -7,6 +7,7 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import type { Dancer } from '@cdv/types';
 import Link from 'next/link';
+import { useRoles } from '@/hooks/useRoles';
 
 type ScanResult =
   | { status: 'registered' | 'walk-in'; isTrial: boolean; dancerName: string; memberNumber: string | null }
@@ -19,6 +20,7 @@ const recordAttendanceFn = httpsCallable<
 >(functions, 'recordAttendance');
 
 export default function KioskSearchPage() {
+  const { getLabel } = useRoles();
   const { id: kioskSessionId } = useParams<{ id: string }>();
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -258,7 +260,7 @@ export default function KioskSearchPage() {
                 <span key={r} className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                   r === 'trial' ? 'bg-orange-800/60 text-orange-300' : 'bg-blue-800/60 text-blue-300'
                 }`}>
-                  {r === 'member' ? 'Membre' : r === 'trial' ? 'Essai' : r === 'instructor' ? 'Moniteur' : r}
+                  {getLabel(r)}
                 </span>
               ))}
             </div>

@@ -9,12 +9,7 @@ import { updateDancer } from '@/lib/auth';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import type { Dancer } from '@cdv/types';
-
-const roleLabel: Record<string, string> = {
-  member: 'Membre',
-  trial: 'Essai',
-  instructor: 'Moniteur',
-};
+import { useRoles } from '@/hooks/useRoles';
 
 function formatDate(ts: { seconds: number } | undefined): string {
   if (!ts) return '—';
@@ -22,6 +17,7 @@ function formatDate(ts: { seconds: number } | undefined): string {
 }
 
 export default function DancerProfilePage() {
+  const { getLabel } = useRoles();
   const params = useParams();
   const dancerId = typeof params.dancerId === 'string' ? params.dancerId : (params.dancerId?.[0] ?? '');
   const { account, dancers, loading: authLoading } = useAuth();
@@ -136,7 +132,7 @@ export default function DancerProfilePage() {
                 <span key={r} className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                   r === 'trial' ? 'bg-orange-100 text-orange-700' : 'bg-blue-50 text-blue-700'
                 }`}>
-                  {roleLabel[r] ?? r}
+                  {getLabel(r)}
                 </span>
               ))}
               {dancer.memberNumber && (

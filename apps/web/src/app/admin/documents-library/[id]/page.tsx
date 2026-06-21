@@ -5,6 +5,7 @@ import { collection, getDocs, getDoc, addDoc, updateDoc, doc, serverTimestamp, o
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRoles } from '@/hooks/useRoles';
 import { useRouter, useParams } from 'next/navigation';
 import type { DocumentLibrary, DocumentVersion, DocCategory, DocAccessLevel } from '@cdv/types';
 
@@ -23,10 +24,6 @@ const ACCESS_LABELS: Record<DocAccessLevel, string> = {
   'specific-roles': 'Rôles spécifiques',
 };
 
-const ROLES = ['member', 'trial', 'instructor', 'bureau', 'admin'];
-const ROLE_LABELS: Record<string, string> = {
-  member: 'Membre', trial: 'Essai', instructor: 'Professeur', bureau: 'Bureau', admin: 'Admin',
-};
 
 function formatSize(bytes?: number): string {
   if (!bytes) return '';
@@ -42,6 +39,7 @@ function formatDate(ts: any): string {
 
 export default function AdminDocumentDetailPage() {
   const { user } = useAuth();
+  const { roles, getLabel } = useRoles();
   const router = useRouter();
   const params = useParams();
   const docId = params.id as string;
@@ -233,15 +231,15 @@ export default function AdminDocumentDetailPage() {
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">Rôles autorisés</label>
                   <div className="flex flex-wrap gap-3">
-                    {ROLES.map(r => (
-                      <label key={r} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                        <input type="checkbox" checked={metaForm.allowedRoles.includes(r)}
+                    {roles.map(r => (
+                      <label key={r.key} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                        <input type="checkbox" checked={metaForm.allowedRoles.includes(r.key)}
                           onChange={e => setMetaForm(f => ({
                             ...f, allowedRoles: e.target.checked
-                              ? [...f.allowedRoles, r]
-                              : f.allowedRoles.filter(x => x !== r),
+                              ? [...f.allowedRoles, r.key]
+                              : f.allowedRoles.filter(x => x !== r.key),
                           }))} className="rounded" />
-                        {ROLE_LABELS[r]}
+                        {r.label}
                       </label>
                     ))}
                   </div>

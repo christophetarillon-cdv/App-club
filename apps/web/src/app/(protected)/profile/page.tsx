@@ -8,6 +8,7 @@ import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { logout, createDancer, updateDancer, deleteDancer } from '@/lib/auth';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRoles } from '@/hooks/useRoles';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Dancer } from '@cdv/types';
@@ -67,9 +68,6 @@ function DancerForm({
 
 // ── Carte danseur ─────────────────────────────────────────────────────────────
 
-const roleLabel: Record<string, string> = {
-  member: 'Membre', trial: 'Essai', instructor: 'Moniteur',
-};
 
 function DancerCard({
   dancer,
@@ -78,6 +76,7 @@ function DancerCard({
   dancer: Dancer;
   accountId: string;
 }) {
+  const { getLabel } = useRoles();
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -109,7 +108,7 @@ function DancerCard({
             <div className="flex gap-1 mt-0.5">
               {dancer.roles.map(r => (
                 <span key={r} className="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded-full">
-                  {roleLabel[r] ?? r}
+                  {getLabel(r)}
                 </span>
               ))}
             </div>
