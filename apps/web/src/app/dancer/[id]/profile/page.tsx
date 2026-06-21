@@ -478,9 +478,13 @@ export default function DancerPersonalProfilePage() {
           {fieldConfig.gender.enabled && (
             <div>
               <label className="block text-xs text-gray-500 mb-1">Genre{fieldConfig.gender.required && ' *'}</label>
-              <input value={gender} onChange={e => setGender(e.target.value)}
-                required={fieldConfig.gender.required} placeholder="Ex : Femme, Homme, Non-binaire…"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+              <select value={gender} onChange={e => setGender(e.target.value)}
+                required={fieldConfig.gender.required}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 bg-white">
+                <option value="">— Choisir —</option>
+                <option value="Femme">Femme</option>
+                <option value="Homme">Homme</option>
+              </select>
             </div>
           )}
 
