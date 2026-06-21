@@ -30,8 +30,8 @@ function toFieldKey(label: string): string {
 
 const TYPE_LABELS: Record<CustomFieldType, string> = {
   text: 'Texte court', long_text: 'Texte long', number: 'Nombre',
-  date: 'Date', select: 'Liste déroulante', multiselect: 'Choix multiple',
-  checkbox: 'Case à cocher', file: 'Fichier',
+  date: 'Date', select: 'Liste déroulante', multiselect: 'Cases à cocher (plusieurs choix)',
+  checkbox: 'Oui / Non (case unique)', file: 'Fichier',
 };
 
 const ROLE_LABELS: Record<CustomFieldRole, string> = {
@@ -163,6 +163,9 @@ function FieldEditor({
               <option key={v} value={v}>{l}</option>
             ))}
           </select>
+          {draft.type === 'checkbox' && (
+            <p className="text-[10px] text-gray-400 mt-1">Réponse unique oui/non. Pour proposer des choix, utilisez « Cases à cocher ».</p>
+          )}
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">Catégorie (optionnel)</label>
