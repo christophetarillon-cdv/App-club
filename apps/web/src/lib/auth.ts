@@ -49,12 +49,19 @@ export const logout = () => signOut(auth);
 
 // ── Inscription membre (compte + premier danseur en une fois) ─────────────────
 
+export interface SignUpOptions {
+  phone?: string;
+  marketingConsent?: boolean;
+  imageRightsConsent?: boolean;
+}
+
 export const signUpWithEmail = async (
   displayName: string,
   firstName: string,
   lastName: string,
   email: string,
   password: string,
+  options?: SignUpOptions,
 ) => {
   const { user } = await createUserWithEmailAndPassword(auth, email, password);
   const dancerRef = doc(collection(db, 'dancers'));
@@ -68,6 +75,9 @@ export const signUpWithEmail = async (
       dancerIds: [dancerRef.id],
       roles: [],
       isActive: true,
+      ...(options?.phone ? { phone: options.phone } : {}),
+      ...(options?.marketingConsent !== undefined ? { marketingConsent: options.marketingConsent } : {}),
+      ...(options?.imageRightsConsent !== undefined ? { imageRightsConsent: options.imageRightsConsent } : {}),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     }),
@@ -97,6 +107,7 @@ export const signUpTrial = async (
   email: string,
   password: string,
   trialMaxDays: number,
+  options?: SignUpOptions,
 ) => {
   const { user } = await createUserWithEmailAndPassword(auth, email, password);
 
@@ -112,6 +123,9 @@ export const signUpTrial = async (
       dancerIds: [dancerRef.id],
       roles: [],
       isActive: true,
+      ...(options?.phone ? { phone: options.phone } : {}),
+      ...(options?.marketingConsent !== undefined ? { marketingConsent: options.marketingConsent } : {}),
+      ...(options?.imageRightsConsent !== undefined ? { imageRightsConsent: options.imageRightsConsent } : {}),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     }),
@@ -177,6 +191,10 @@ export interface UpdateDancerInput {
   phone?: string;
   address?: string;
   emergencyContact?: { name: string; phone: string };
+  gender?: string;
+  profession?: string;
+  medicalNotes?: string;
+  healthCertificate?: boolean;
 }
 
 export const updateDancer = async (dancerId: string, input: UpdateDancerInput) => {
@@ -195,6 +213,10 @@ export const updateDancer = async (dancerId: string, input: UpdateDancerInput) =
   if (input.phone !== undefined) updates.phone = input.phone;
   if (input.address !== undefined) updates.address = input.address;
   if (input.emergencyContact !== undefined) updates.emergencyContact = input.emergencyContact;
+  if (input.gender !== undefined) updates.gender = input.gender;
+  if (input.profession !== undefined) updates.profession = input.profession;
+  if (input.medicalNotes !== undefined) updates.medicalNotes = input.medicalNotes;
+  if (input.healthCertificate !== undefined) updates.healthCertificate = input.healthCertificate;
   await updateDoc(doc(db, 'dancers', dancerId), updates);
 };
 

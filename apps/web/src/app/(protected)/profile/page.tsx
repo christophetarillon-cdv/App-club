@@ -1,13 +1,23 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { logout, createDancer, updateDancer, deleteDancer } from '@/lib/auth';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { Dancer } from '@cdv/types';
+import type { Dancer, ProfileFieldKey } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+
+function mergeWithDefaults(saved?: Record<string, any>): Record<ProfileFieldKey, { enabled: boolean; required: boolean }> {
+  const result = { ...DEFAULT_PROFILE_FIELDS } as Record<ProfileFieldKey, { enabled: boolean; required: boolean }>;
+  if (!saved) return result;
+  for (const key of Object.keys(saved) as ProfileFieldKey[]) {
+    if (saved[key]) result[key] = { ...result[key], ...saved[key] };
+  }
+  return result;
+}
 
 // ── Formulaire danseur (ajout / édition) ──────────────────────────────────────
 
@@ -162,6 +172,9 @@ export default function ProfilePage() {
   const router = useRouter();
 
   const [accountForm, setAccountForm] = useState({ displayName: '', phone: '' });
+  const [marketingConsent, setMarketingConsent] = useState(false);
+  const [imageRightsConsent, setImageRightsConsent] = useState(false);
+  const [fieldConfig, setFieldConfig] = useState(mergeWithDefaults());
   const [savingAccount, setSavingAccount] = useState(false);
   const [savedAccount, setSavedAccount] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
@@ -169,8 +182,18 @@ export default function ProfilePage() {
   const [showAddDancer, setShowAddDancer] = useState(false);
 
   useEffect(() => {
+    getDoc(doc(db, 'appSettings', 'main')).then(snap => {
+      if (snap.exists() && snap.data().profileFields) {
+        setFieldConfig(mergeWithDefaults(snap.data().profileFields));
+      }
+    });
+  }, []);
+
+  useEffect(() => {
     if (account) {
       setAccountForm({ displayName: account.displayName, phone: account.phone ?? '' });
+      setMarketingConsent(account.marketingConsent ?? false);
+      setImageRightsConsent(account.imageRightsConsent ?? false);
     }
   }, [account]);
 
@@ -179,11 +202,14 @@ export default function ProfilePage() {
     if (!user) return;
     setSavingAccount(true); setAccountError(null); setSavedAccount(false);
     try {
-      await updateDoc(doc(db, 'accounts', user.uid), {
+      const updates: Record<string, unknown> = {
         displayName: accountForm.displayName.trim(),
-        phone: accountForm.phone.trim(),
         updatedAt: serverTimestamp(),
-      });
+      };
+      if (fieldConfig.phone?.enabled) updates.phone = accountForm.phone.trim();
+      if (fieldConfig.marketingConsent?.enabled) updates.marketingConsent = marketingConsent;
+      if (fieldConfig.imageRightsConsent?.enabled) updates.imageRightsConsent = imageRightsConsent;
+      await updateDoc(doc(db, 'accounts', user.uid), updates);
       setSavedAccount(true);
     } catch { setAccountError('Erreur lors de la sauvegarde.'); }
     finally { setSavingAccount(false); }
@@ -212,17 +238,44 @@ export default function ProfilePage() {
               onChange={e => setAccountForm(p => ({ ...p, displayName: e.target.value }))} required
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Téléphone</label>
-            <input type="tel" value={accountForm.phone}
-              onChange={e => setAccountForm(p => ({ ...p, phone: e.target.value }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-          </div>
+          {fieldConfig.phone?.enabled && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                Téléphone{fieldConfig.phone.required ? ' *' : ''}
+              </label>
+              <input type="tel" value={accountForm.phone}
+                onChange={e => setAccountForm(p => ({ ...p, phone: e.target.value }))}
+                required={fieldConfig.phone.required}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Email</label>
             <input type="email" value={account?.email ?? ''} disabled
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-400 cursor-not-allowed" />
           </div>
+          {(fieldConfig.marketingConsent?.enabled || fieldConfig.imageRightsConsent?.enabled) && (
+            <div className="space-y-2 pt-2 border-t border-gray-100">
+              {fieldConfig.marketingConsent?.enabled && (
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" checked={marketingConsent} onChange={e => setMarketingConsent(e.target.checked)}
+                    className="mt-0.5 rounded border-gray-300" />
+                  <span className="text-xs text-gray-600">
+                    J'accepte de recevoir des communications du club (newsletters, événements…)
+                  </span>
+                </label>
+              )}
+              {fieldConfig.imageRightsConsent?.enabled && (
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" checked={imageRightsConsent} onChange={e => setImageRightsConsent(e.target.checked)}
+                    className="mt-0.5 rounded border-gray-300" />
+                  <span className="text-xs text-gray-600">
+                    J'autorise l'utilisation de mon image (photos, vidéos) par le club
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
           {accountError && <p className="text-red-600 text-sm">{accountError}</p>}
           {savedAccount && <p className="text-green-600 text-sm">Compte mis à jour.</p>}
           <button type="submit" disabled={savingAccount}

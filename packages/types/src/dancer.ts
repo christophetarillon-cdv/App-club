@@ -16,6 +16,10 @@ export interface Dancer extends WithTimestamps {
   phone?: string;
   address?: string;
   emergencyContact?: { name: string; phone: string };
+  gender?: string;
+  profession?: string;
+  medicalNotes?: string;
+  healthCertificate?: boolean;
   levelsByStyle?: Record<string, string>;
   roles: DancerRole[];
   trialStartDate?: FirestoreTimestamp;

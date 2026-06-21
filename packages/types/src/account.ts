@@ -12,6 +12,8 @@ export interface Account extends WithTimestamps {
   roles: AccountRole[];
   isActive: boolean;
   notificationPreferences?: Record<string, boolean>;
+  marketingConsent?: boolean;
+  imageRightsConsent?: boolean;
   fcmTokens?: string[];
   registeredCourseIds?: string[];
   levelsByStyle?: Record<string, string>;

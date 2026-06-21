@@ -5,16 +5,31 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { signUpWithEmail, signUpTrial } from '@/lib/auth';
+import { signUpWithEmail, signUpTrial, type SignUpOptions } from '@/lib/auth';
+import type { ProfileFieldsConfig, ProfileFieldKey } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+
+function mergeWithDefaults(saved?: Partial<ProfileFieldsConfig>): Record<ProfileFieldKey, { enabled: boolean; required: boolean }> {
+  const result = { ...DEFAULT_PROFILE_FIELDS } as Record<ProfileFieldKey, { enabled: boolean; required: boolean }>;
+  if (!saved) return result;
+  for (const key of Object.keys(saved) as ProfileFieldKey[]) {
+    if (saved[key]) result[key] = { ...result[key], ...saved[key] };
+  }
+  return result;
+}
 
 export default function SignupPage() {
   const router = useRouter();
   const [isTrial, setIsTrial] = useState(false);
   const [trialMaxSessions, setTrialMaxSessions] = useState(3);
   const [trialMaxDays, setTrialMaxDays] = useState(30);
+  const [fieldConfig, setFieldConfig] = useState(mergeWithDefaults());
   const [form, setForm] = useState({
     displayName: '', firstName: '', lastName: '', email: '', password: '', confirm: '',
+    phone: '',
   });
+  const [marketingConsent, setMarketingConsent] = useState(false);
+  const [imageRightsConsent, setImageRightsConsent] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +40,7 @@ export default function SignupPage() {
         const data = snap.data();
         if (data.trialMaxSessions) setTrialMaxSessions(data.trialMaxSessions);
         if (data.trialMaxDays) setTrialMaxDays(data.trialMaxDays);
+        if (data.profileFields) setFieldConfig(mergeWithDefaults(data.profileFields));
       }
     });
   }, []);
@@ -39,6 +55,11 @@ export default function SignupPage() {
     if (form.password.length < 6) { setError('Le mot de passe doit contenir au moins 6 caractères.'); return; }
     setLoading(true);
     try {
+      const options: SignUpOptions = {};
+      if (fieldConfig.phone?.enabled && form.phone.trim()) options.phone = form.phone.trim();
+      if (fieldConfig.marketingConsent?.enabled) options.marketingConsent = marketingConsent;
+      if (fieldConfig.imageRightsConsent?.enabled) options.imageRightsConsent = imageRightsConsent;
+
       if (isTrial) {
         await signUpTrial(
           form.displayName.trim(),
@@ -47,6 +68,7 @@ export default function SignupPage() {
           form.email.trim(),
           form.password,
           trialMaxDays,
+          options,
         );
       } else {
         await signUpWithEmail(
@@ -55,6 +77,7 @@ export default function SignupPage() {
           form.lastName.trim(),
           form.email.trim(),
           form.password,
+          options,
         );
       }
       router.replace('/profile');
@@ -140,6 +163,17 @@ export default function SignupPage() {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
           </div>
 
+          {fieldConfig.phone?.enabled && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                Téléphone{fieldConfig.phone.required ? ' *' : ''}
+              </label>
+              <input type="tel" value={form.phone} onChange={set('phone')}
+                required={fieldConfig.phone.required}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Mot de passe</label>
             <div className="relative">
@@ -159,6 +193,31 @@ export default function SignupPage() {
               required autoComplete="new-password"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
           </div>
+
+          {(fieldConfig.marketingConsent?.enabled || fieldConfig.imageRightsConsent?.enabled) && (
+            <div className="space-y-2 pt-2 border-t border-gray-100">
+              {fieldConfig.marketingConsent?.enabled && (
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" checked={marketingConsent} onChange={e => setMarketingConsent(e.target.checked)}
+                    required={fieldConfig.marketingConsent.required}
+                    className="mt-0.5 rounded border-gray-300" />
+                  <span className="text-xs text-gray-600">
+                    J'accepte de recevoir des communications du club (newsletters, événements…){fieldConfig.marketingConsent.required ? ' *' : ''}
+                  </span>
+                </label>
+              )}
+              {fieldConfig.imageRightsConsent?.enabled && (
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" checked={imageRightsConsent} onChange={e => setImageRightsConsent(e.target.checked)}
+                    required={fieldConfig.imageRightsConsent.required}
+                    className="mt-0.5 rounded border-gray-300" />
+                  <span className="text-xs text-gray-600">
+                    J'autorise l'utilisation de mon image (photos, vidéos) par le club{fieldConfig.imageRightsConsent.required ? ' *' : ''}
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
 
           {error && <p className="text-red-600 text-sm">{error}</p>}
 

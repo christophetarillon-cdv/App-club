@@ -20,3 +20,4 @@ export * from './chequeImage';
 export * from './bankDeposit';
 export * from './attendance';
 export * from './kioskSession';
+export * from './customField';
