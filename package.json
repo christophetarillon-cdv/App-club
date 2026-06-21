@@ -29,7 +29,8 @@
   },
   "pnpm": {
     "overrides": {
-      "postcss": "8.4.31"
+      "postcss": "8.4.31",
+      "semver": "7.6.3"
     }
   }
 }
