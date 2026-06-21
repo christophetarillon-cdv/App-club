@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   collection, doc, getDocs, addDoc, updateDoc, deleteDoc,
-  query, where, limit, setDoc, writeBatch, orderBy, serverTimestamp,
+  query, orderBy, setDoc, writeBatch, serverTimestamp,
 } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import {
@@ -17,6 +17,10 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { CustomField, CustomFieldType, CustomFieldRole, RoleConfig } from '@cdv/types';
+
+// ── Types locaux ──────────────────────────────────────────────────────────────
+
+interface Schema { id: string; name: string; isActive: boolean; }
 
 // ── Utilitaires ───────────────────────────────────────────────────────────────
 
@@ -241,7 +245,6 @@ function SortableFieldRow({
   return (
     <div ref={setNodeRef} style={style} className={isDragging ? 'opacity-50' : ''}>
       <div className="flex items-center gap-3 px-4 py-3 border border-gray-200 bg-white rounded-xl mb-2 hover:border-gray-300 transition-colors">
-        {/* Drag handle */}
         <button
           {...attributes} {...listeners}
           className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none flex-shrink-0"
@@ -317,10 +320,20 @@ function SortableFieldRow({
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export default function CustomFieldsPage() {
+  // Schémas
+  const [schemas, setSchemas] = useState<Schema[]>([]);
   const [schemaId, setSchemaId] = useState<string | null>(null);
+  const [showNewSchemaForm, setShowNewSchemaForm] = useState(false);
+  const [newSchemaName, setNewSchemaName] = useState('');
+  const [renamingSchemaId, setRenamingSchemaId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [schemaActionSaving, setSchemaActionSaving] = useState(false);
+
+  // Champs
   const [fields, setFields] = useState<CustomField[]>([]);
   const [roles, setRoles] = useState<RoleConfig[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fieldsLoading, setFieldsLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<FieldDraft>(EMPTY_DRAFT);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -332,19 +345,37 @@ export default function CustomFieldsPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // Charge rôles + schéma actif + ses champs
+  // Charge les champs d'un schéma donné
+  const loadFields = async (sid: string) => {
+    setFieldsLoading(true);
+    setEditingId(null);
+    setShowAddForm(false);
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'profileSchemas', sid, 'fields'), orderBy('displayOrder'))
+      );
+      setFields(snap.docs.map(d => ({ id: d.id, ...d.data() } as CustomField)));
+      setSchemaId(sid);
+    } finally {
+      setFieldsLoading(false);
+    }
+  };
+
+  // Charge les rôles + tous les schémas au montage
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        const rolesSnap = await getDocs(query(collection(db, 'roles'), orderBy('displayOrder')));
+        const [rolesSnap, schemasSnap] = await Promise.all([
+          getDocs(query(collection(db, 'roles'), orderBy('displayOrder'))),
+          getDocs(collection(db, 'profileSchemas')),
+        ]);
+
         setRoles(rolesSnap.docs.map(d => ({ id: d.id, ...d.data() } as RoleConfig)));
 
-        let sid: string;
-        const q = query(collection(db, 'profileSchemas'), where('isActive', '==', true), limit(1));
-        const snap = await getDocs(q);
+        let allSchemas = schemasSnap.docs.map(d => ({ id: d.id, ...d.data() } as Schema));
 
-        if (snap.empty) {
+        if (allSchemas.length === 0) {
           const ref = doc(collection(db, 'profileSchemas'));
           await setDoc(ref, {
             name: 'Profil membre',
@@ -353,23 +384,71 @@ export default function CustomFieldsPage() {
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
-          sid = ref.id;
-        } else {
-          sid = snap.docs[0].id;
+          allSchemas = [{ id: ref.id, name: 'Profil membre', isActive: true }];
         }
 
-        setSchemaId(sid);
-        const fieldsSnap = await getDocs(
-          query(collection(db, 'profileSchemas', sid, 'fields'), orderBy('displayOrder'))
-        );
-        setFields(fieldsSnap.docs.map(d => ({ id: d.id, ...d.data() } as CustomField)));
+        setSchemas(allSchemas);
+        const activeSid = allSchemas.find(s => s.isActive)?.id ?? allSchemas[0].id;
+        await loadFields(activeSid);
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  // Drag-and-drop : réordonne et sauvegarde en batch
+  // Créer un nouveau schéma
+  const handleCreateSchema = async () => {
+    if (!newSchemaName.trim()) return;
+    setSchemaActionSaving(true);
+    try {
+      const ref = doc(collection(db, 'profileSchemas'));
+      await setDoc(ref, {
+        name: newSchemaName.trim(),
+        isActive: false,
+        createdBy: auth.currentUser?.uid ?? 'system',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      const newSchema: Schema = { id: ref.id, name: newSchemaName.trim(), isActive: false };
+      setSchemas(prev => [...prev, newSchema]);
+      setNewSchemaName('');
+      setShowNewSchemaForm(false);
+      await loadFields(ref.id);
+    } finally {
+      setSchemaActionSaving(false);
+    }
+  };
+
+  // Renommer un schéma
+  const handleRenameSchema = async (sid: string, name: string) => {
+    if (!name.trim()) return;
+    setSchemaActionSaving(true);
+    try {
+      await updateDoc(doc(db, 'profileSchemas', sid), { name: name.trim(), updatedAt: serverTimestamp() });
+      setSchemas(prev => prev.map(s => s.id === sid ? { ...s, name: name.trim() } : s));
+      setRenamingSchemaId(null);
+    } finally {
+      setSchemaActionSaving(false);
+    }
+  };
+
+  // Définir un schéma comme actif par défaut
+  const handleSetActive = async (sid: string) => {
+    setSchemaActionSaving(true);
+    try {
+      const batch = writeBatch(db);
+      schemas.forEach(s => {
+        if (s.isActive) batch.update(doc(db, 'profileSchemas', s.id), { isActive: false, updatedAt: serverTimestamp() });
+      });
+      batch.update(doc(db, 'profileSchemas', sid), { isActive: true, updatedAt: serverTimestamp() });
+      await batch.commit();
+      setSchemas(prev => prev.map(s => ({ ...s, isActive: s.id === sid })));
+    } finally {
+      setSchemaActionSaving(false);
+    }
+  };
+
+  // Drag-and-drop
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id || !schemaId) return;
@@ -443,77 +522,163 @@ export default function CustomFieldsPage() {
 
   if (loading) return <p className="text-gray-400 p-8">Chargement…</p>;
 
-  const fieldsByCategory = fields.reduce<Record<string, CustomField[]>>((acc, f) => {
-    const cat = f.category ?? '';
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(f);
-    return acc;
-  }, {});
+  const currentSchema = schemas.find(s => s.id === schemaId);
 
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-1">Champs personnalisés</h1>
       <p className="text-sm text-gray-500 mb-6">
-        Ajoutez des champs libres au profil des membres. Ils s'affichent dans le profil selon les rôles configurés.
+        Créez des schémas de champs pour chaque type de profil. Associez-les aux rôles dans <a href="/admin/settings/profile-mapping" className="underline text-blue-600">Mapping profils</a>.
       </p>
 
-      {fields.length === 0 && !showAddForm && (
-        <div className="bg-white rounded-xl border border-gray-200 border-dashed p-10 text-center mb-4">
-          <p className="text-sm text-gray-400 mb-3">Aucun champ personnalisé pour l'instant.</p>
-          <button onClick={() => { setShowAddForm(true); setAddDraft(EMPTY_DRAFT); }}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors">
-            Créer le premier champ
-          </button>
-        </div>
-      )}
-
-      {fields.length > 0 && (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={fields.map(f => f.id)} strategy={verticalListSortingStrategy}>
-            <div className="mb-4">
-              {fields.map(field => (
-                <SortableFieldRow
-                  key={field.id}
-                  field={field}
-                  isEditing={editingId === field.id}
-                  draft={editDraft}
-                  onStartEdit={() => { setEditingId(field.id); setEditDraft(fieldToDraft(field)); setShowAddForm(false); }}
-                  onDraftChange={setEditDraft}
-                  onSave={() => handleEdit(field.id)}
-                  onCancel={() => setEditingId(null)}
-                  onDelete={() => handleDelete(field.id)}
-                  saving={saving}
-                  roles={roles}
-                />
-              ))}
+      {/* Sélecteur de schémas */}
+      <div className="mb-6 p-4 bg-white border border-gray-200 rounded-xl">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Schémas de profil</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          {schemas.map(schema => (
+            <div key={schema.id}>
+              {renamingSchemaId === schema.id ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    value={renameValue}
+                    onChange={e => setRenameValue(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleRenameSchema(schema.id, renameValue); if (e.key === 'Escape') setRenamingSchemaId(null); }}
+                    autoFocus
+                    className="border border-blue-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 w-36"
+                  />
+                  <button onClick={() => handleRenameSchema(schema.id, renameValue)} disabled={schemaActionSaving}
+                    className="text-xs text-blue-600 hover:text-blue-800 px-1.5 py-1">✓</button>
+                  <button onClick={() => setRenamingSchemaId(null)}
+                    className="text-xs text-gray-400 hover:text-gray-600 px-1.5 py-1">✕</button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => loadFields(schema.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                    schemaId === schema.id
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {schema.name}
+                  {schema.isActive && (
+                    <span className={`text-[10px] ${schemaId === schema.id ? 'text-blue-200' : 'text-green-500'}`}>★</span>
+                  )}
+                </button>
+              )}
             </div>
-          </SortableContext>
-        </DndContext>
-      )}
+          ))}
 
-      {showAddForm ? (
-        <FieldEditor
-          draft={addDraft} onChange={setAddDraft}
-          onSave={handleAdd} onCancel={() => setShowAddForm(false)}
-          saving={saving} isNew roles={roles}
-        />
+          {showNewSchemaForm ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                value={newSchemaName}
+                onChange={e => setNewSchemaName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateSchema(); if (e.key === 'Escape') { setShowNewSchemaForm(false); setNewSchemaName(''); } }}
+                placeholder="Nom du schéma"
+                autoFocus
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 w-40"
+              />
+              <button onClick={handleCreateSchema} disabled={schemaActionSaving || !newSchemaName.trim()}
+                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                Créer
+              </button>
+              <button onClick={() => { setShowNewSchemaForm(false); setNewSchemaName(''); }}
+                className="text-xs text-gray-400 hover:text-gray-600 px-1.5 py-1.5">✕</button>
+            </div>
+          ) : (
+            <button onClick={() => setShowNewSchemaForm(true)}
+              className="flex items-center gap-1 px-3 py-1.5 border border-dashed border-gray-300 text-gray-500 text-sm rounded-lg hover:border-gray-400 hover:text-gray-700 transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              Nouveau schéma
+            </button>
+          )}
+        </div>
+
+        {currentSchema && (
+          <div className="flex items-center gap-4 mt-2.5 pt-2.5 border-t border-gray-100">
+            {currentSchema.isActive ? (
+              <span className="text-xs text-green-600">★ Schéma actif par défaut</span>
+            ) : (
+              <button onClick={() => handleSetActive(currentSchema.id)} disabled={schemaActionSaving}
+                className="text-xs text-gray-500 hover:text-green-700 hover:underline disabled:opacity-50">
+                Définir comme schéma actif par défaut
+              </button>
+            )}
+            <button onClick={() => { setRenamingSchemaId(currentSchema.id); setRenameValue(currentSchema.name); }}
+              className="text-xs text-gray-400 hover:text-gray-700 hover:underline">
+              Renommer
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Champs du schéma sélectionné */}
+      {fieldsLoading ? (
+        <p className="text-gray-400 text-sm py-4">Chargement des champs…</p>
       ) : (
-        fields.length > 0 && (
-          <button
-            onClick={() => { setShowAddForm(true); setAddDraft(EMPTY_DRAFT); setEditingId(null); }}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition-colors">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            Ajouter un champ
-          </button>
-        )
-      )}
+        <>
+          {fields.length === 0 && !showAddForm && (
+            <div className="bg-white rounded-xl border border-gray-200 border-dashed p-10 text-center mb-4">
+              <p className="text-sm text-gray-400 mb-3">Aucun champ dans ce schéma.</p>
+              <button onClick={() => { setShowAddForm(true); setAddDraft(EMPTY_DRAFT); }}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors">
+                Créer le premier champ
+              </button>
+            </div>
+          )}
 
-      {fields.length > 1 && (
-        <p className="text-xs text-gray-400 mt-4">
-          Glissez-déposez les champs pour modifier leur ordre d'affichage.
-        </p>
+          {fields.length > 0 && (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={fields.map(f => f.id)} strategy={verticalListSortingStrategy}>
+                <div className="mb-4">
+                  {fields.map(field => (
+                    <SortableFieldRow
+                      key={field.id}
+                      field={field}
+                      isEditing={editingId === field.id}
+                      draft={editDraft}
+                      onStartEdit={() => { setEditingId(field.id); setEditDraft(fieldToDraft(field)); setShowAddForm(false); }}
+                      onDraftChange={setEditDraft}
+                      onSave={() => handleEdit(field.id)}
+                      onCancel={() => setEditingId(null)}
+                      onDelete={() => handleDelete(field.id)}
+                      saving={saving}
+                      roles={roles}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
+
+          {showAddForm ? (
+            <FieldEditor
+              draft={addDraft} onChange={setAddDraft}
+              onSave={handleAdd} onCancel={() => setShowAddForm(false)}
+              saving={saving} isNew roles={roles}
+            />
+          ) : (
+            fields.length > 0 && (
+              <button
+                onClick={() => { setShowAddForm(true); setAddDraft(EMPTY_DRAFT); setEditingId(null); }}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Ajouter un champ
+              </button>
+            )
+          )}
+
+          {fields.length > 1 && (
+            <p className="text-xs text-gray-400 mt-4">
+              Glissez-déposez les champs pour modifier leur ordre d'affichage.
+            </p>
+          )}
+        </>
       )}
     </div>
   );
