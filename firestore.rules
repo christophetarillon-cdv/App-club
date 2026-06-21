@@ -258,6 +258,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── roles (configuration des rôles) ──────────────────────────────────────
+    match /roles/{roleId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
     // ── profileSchemas (champs personnalisés) ─────────────────────────────────
     match /profileSchemas/{schemaId} {
       allow read: if isAuth();

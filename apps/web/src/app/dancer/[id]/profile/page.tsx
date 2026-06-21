@@ -11,7 +11,7 @@ import { storage, db } from '@/lib/firebase';
 import { updateDancer } from '@/lib/auth';
 import type { UpdateDancerInput } from '@/lib/auth';
 import type { Dancer, ProfileFieldsConfig, CustomField, CustomFieldRole } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, ROLE_PRIORITY } from '@cdv/types';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { z } from 'zod';
@@ -215,24 +215,45 @@ export default function DancerPersonalProfilePage() {
     if (!authLoading && !dancer) router.replace('/select-dancer');
   }, [authLoading, dancer, router]);
 
-  // Charge les configs (prédéfinis + custom) en parallèle
+  // Charge les configs (prédéfinis + custom) selon le rôle principal du danseur
   useEffect(() => {
-    getDoc(doc(db, 'appSettings', 'main')).then(snap => {
-      if (snap.exists()) setFieldConfig(mergeWithDefaults(snap.data().profileFields));
-    });
+    if (!dancer) return;
 
     (async () => {
-      const q = query(collection(db, 'profileSchemas'), where('isActive', '==', true), limit(1));
-      const snap = await getDocs(q);
-      if (snap.empty) return;
-      const sid = snap.docs[0].id;
+      const settingsSnap = await getDoc(doc(db, 'appSettings', 'main'));
+      if (settingsSnap.exists()) {
+        setFieldConfig(mergeWithDefaults(settingsSnap.data().profileFields));
+      }
+
+      const profileMapping: Record<string, { schemaId: string }> =
+        settingsSnap.exists() ? (settingsSnap.data().profileMapping ?? {}) : {};
+
+      // Rôle principal = rôle avec la priorité la plus haute
+      const dancerRolesList = (dancer.roles ?? []) as string[];
+      let primaryRole = '';
+      let highestPriority = -1;
+      for (const role of dancerRolesList) {
+        const priority = ROLE_PRIORITY[role] ?? 0;
+        if (priority > highestPriority) { highestPriority = priority; primaryRole = role; }
+      }
+
+      let sid: string | null = null;
+      if (primaryRole && profileMapping[primaryRole]?.schemaId) {
+        sid = profileMapping[primaryRole].schemaId;
+      } else {
+        const q = query(collection(db, 'profileSchemas'), where('isActive', '==', true), limit(1));
+        const snap = await getDocs(q);
+        if (!snap.empty) sid = snap.docs[0].id;
+      }
+
+      if (!sid) return;
       setCustomSchemaId(sid);
       const fieldsSnap = await getDocs(
         query(collection(db, 'profileSchemas', sid, 'fields'), orderBy('displayOrder'))
       );
       setCustomFields(fieldsSnap.docs.map(d => ({ id: d.id, ...d.data() } as CustomField)));
     })();
-  }, []);
+  }, [dancer?.id]);
 
   // Initialise les valeurs depuis le danseur
   useEffect(() => {

@@ -16,7 +16,7 @@ import {
   sortableKeyboardCoordinates, arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { CustomField, CustomFieldType, CustomFieldRole } from '@cdv/types';
+import type { CustomField, CustomFieldType, CustomFieldRole, RoleConfig } from '@cdv/types';
 
 // ── Utilitaires ───────────────────────────────────────────────────────────────
 
@@ -33,12 +33,6 @@ const TYPE_LABELS: Record<CustomFieldType, string> = {
   date: 'Date', select: 'Liste déroulante', multiselect: 'Cases à cocher (plusieurs choix)',
   checkbox: 'Oui / Non (case unique)', file: 'Fichier',
 };
-
-const ROLE_LABELS: Record<CustomFieldRole, string> = {
-  member: 'Membres', instructor: 'Moniteurs', bureau: 'Bureau', admin: 'Admins',
-};
-
-const ALL_ROLES: CustomFieldRole[] = ['member', 'instructor', 'bureau', 'admin'];
 
 // ── Draft (formulaire local) ──────────────────────────────────────────────────
 
@@ -93,19 +87,23 @@ function draftToData(d: FieldDraft, displayOrder: number) {
 // ── Éditeur de champ ──────────────────────────────────────────────────────────
 
 function RoleCheckboxes({
-  label, value, onChange,
-}: { label: string; value: CustomFieldRole[]; onChange: (v: CustomFieldRole[]) => void }) {
-  const toggle = (role: CustomFieldRole) =>
-    onChange(value.includes(role) ? value.filter(r => r !== role) : [...value, role]);
+  label, value, onChange, roles,
+}: { label: string; value: CustomFieldRole[]; onChange: (v: CustomFieldRole[]) => void; roles: RoleConfig[] }) {
+  const toggle = (key: string) =>
+    onChange(
+      value.includes(key as CustomFieldRole)
+        ? value.filter(r => r !== key)
+        : [...value, key as CustomFieldRole]
+    );
   return (
     <div>
       <p className="text-xs text-gray-500 mb-1">{label}</p>
       <div className="flex gap-3 flex-wrap">
-        {ALL_ROLES.map(role => (
-          <label key={role} className="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" checked={value.includes(role)} onChange={() => toggle(role)}
+        {roles.map(role => (
+          <label key={role.key} className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={value.includes(role.key as CustomFieldRole)} onChange={() => toggle(role.key)}
               className="w-3.5 h-3.5 rounded" />
-            <span className="text-xs text-gray-700">{ROLE_LABELS[role]}</span>
+            <span className="text-xs text-gray-700">{role.label}</span>
           </label>
         ))}
       </div>
@@ -114,7 +112,7 @@ function RoleCheckboxes({
 }
 
 function FieldEditor({
-  draft, onChange, onSave, onCancel, saving, isNew,
+  draft, onChange, onSave, onCancel, saving, isNew, roles,
 }: {
   draft: FieldDraft;
   onChange: (d: FieldDraft) => void;
@@ -122,6 +120,7 @@ function FieldEditor({
   onCancel: () => void;
   saving: boolean;
   isNew: boolean;
+  roles: RoleConfig[];
 }) {
   const set = <K extends keyof FieldDraft>(k: K, v: FieldDraft[K]) =>
     onChange({ ...draft, [k]: v });
@@ -192,9 +191,9 @@ function FieldEditor({
       </div>
 
       <RoleCheckboxes label="Visible par" value={draft.visibility}
-        onChange={v => set('visibility', v)} />
+        onChange={v => set('visibility', v)} roles={roles} />
       <RoleCheckboxes label="Modifiable par" value={draft.editability}
-        onChange={v => set('editability', v)} />
+        onChange={v => set('editability', v)} roles={roles} />
 
       <div className="flex items-center gap-4 pt-1">
         <label className="flex items-center gap-2 cursor-pointer">
@@ -221,7 +220,7 @@ function FieldEditor({
 // ── Ligne triable ─────────────────────────────────────────────────────────────
 
 function SortableFieldRow({
-  field, isEditing, draft, onStartEdit, onDraftChange, onSave, onCancel, onDelete, saving,
+  field, isEditing, draft, onStartEdit, onDraftChange, onSave, onCancel, onDelete, saving, roles,
 }: {
   field: CustomField;
   isEditing: boolean;
@@ -232,6 +231,7 @@ function SortableFieldRow({
   onCancel: () => void;
   onDelete: () => void;
   saving: boolean;
+  roles: RoleConfig[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: field.id });
@@ -266,11 +266,14 @@ function SortableFieldRow({
             )}
           </div>
           <div className="flex gap-1 mt-1 flex-wrap">
-            {field.visibility.map(r => (
-              <span key={r} className="text-[9px] px-1 py-0.5 rounded bg-gray-50 text-gray-400 border border-gray-100">
-                {ROLE_LABELS[r]}
-              </span>
-            ))}
+            {field.visibility.map(r => {
+              const role = roles.find(ro => ro.key === r);
+              return (
+                <span key={r} className="text-[9px] px-1 py-0.5 rounded bg-gray-50 text-gray-400 border border-gray-100">
+                  {role?.label ?? r}
+                </span>
+              );
+            })}
           </div>
         </div>
 
@@ -304,7 +307,7 @@ function SortableFieldRow({
         <FieldEditor
           draft={draft} onChange={onDraftChange}
           onSave={onSave} onCancel={onCancel}
-          saving={saving} isNew={false}
+          saving={saving} isNew={false} roles={roles}
         />
       )}
     </div>
@@ -316,6 +319,7 @@ function SortableFieldRow({
 export default function CustomFieldsPage() {
   const [schemaId, setSchemaId] = useState<string | null>(null);
   const [fields, setFields] = useState<CustomField[]>([]);
+  const [roles, setRoles] = useState<RoleConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<FieldDraft>(EMPTY_DRAFT);
@@ -328,11 +332,14 @@ export default function CustomFieldsPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // Charge ou crée le schéma actif + ses champs
+  // Charge rôles + schéma actif + ses champs
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
+        const rolesSnap = await getDocs(query(collection(db, 'roles'), orderBy('displayOrder')));
+        setRoles(rolesSnap.docs.map(d => ({ id: d.id, ...d.data() } as RoleConfig)));
+
         let sid: string;
         const q = query(collection(db, 'profileSchemas'), where('isActive', '==', true), limit(1));
         const snap = await getDocs(q);
@@ -476,6 +483,7 @@ export default function CustomFieldsPage() {
                   onCancel={() => setEditingId(null)}
                   onDelete={() => handleDelete(field.id)}
                   saving={saving}
+                  roles={roles}
                 />
               ))}
             </div>
@@ -487,7 +495,7 @@ export default function CustomFieldsPage() {
         <FieldEditor
           draft={addDraft} onChange={setAddDraft}
           onSave={handleAdd} onCancel={() => setShowAddForm(false)}
-          saving={saving} isNew
+          saving={saving} isNew roles={roles}
         />
       ) : (
         fields.length > 0 && (

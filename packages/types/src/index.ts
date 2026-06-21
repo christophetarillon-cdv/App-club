@@ -27,3 +27,4 @@ export * from './chat';
 export * from './personalDocument';
 export * from './documentLibrary';
 export * from './customField';
+export * from './role';
