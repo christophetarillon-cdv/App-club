@@ -257,5 +257,16 @@ service cloud.firestore {
       allow read: if isAuth();
       allow write: if isAdmin();
     }
+
+    // ── profileSchemas (champs personnalisés) ─────────────────────────────────
+    match /profileSchemas/{schemaId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    match /profileSchemas/{schemaId}/fields/{fieldId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
   }
 }
