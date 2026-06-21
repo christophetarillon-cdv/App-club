@@ -64,8 +64,8 @@ export default function PagePermissionsPage() {
     }
   };
 
-  // Rôles affichables (excl. member et trial qui n'ont pas accès à l'admin)
-  const adminRoles = roles.filter(r => !['member', 'trial'].includes(r.key));
+  // Tous les rôles Firestore
+  const adminRoles = roles;
 
   if (loading) return <p className="text-gray-400 p-8">Chargement…</p>;
 

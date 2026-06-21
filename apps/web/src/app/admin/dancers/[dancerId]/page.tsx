@@ -5,7 +5,7 @@ import { collection, doc, getDoc, getDocs, limit, orderBy, query, updateDoc, whe
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import type { ProfileFieldsConfig, CustomField } from '@cdv/types';
+import type { ProfileFieldsConfig, CustomField, RoleConfig } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
 
 function mergeWithDefaults(saved: Partial<ProfileFieldsConfig> | undefined): ProfileFieldsConfig {
@@ -137,14 +137,7 @@ export default function DancerDetailPage() {
   const [pendingRoles, setPendingRoles] = useState<string[]>([]);
   const [pendingActive, setPendingActive] = useState(true);
   const [savingRoles, setSavingRoles] = useState(false);
-
-  const ALL_ROLES = [
-    { value: 'member', label: 'Membre' },
-    { value: 'trial', label: 'Essai' },
-    { value: 'instructor', label: 'Professeur' },
-    { value: 'bureau', label: 'Bureau' },
-    { value: 'admin', label: 'Admin' },
-  ];
+  const [allRoles, setAllRoles] = useState<RoleConfig[]>([]);
 
   const handleSaveRoles = async () => {
     if (!dancerId) return;
@@ -160,10 +153,12 @@ export default function DancerDetailPage() {
     (async () => {
       setLoading(true);
       try {
-        const [dancerSnap, settingsSnap] = await Promise.all([
+        const [dancerSnap, settingsSnap, rolesSnap] = await Promise.all([
           getDoc(doc(db, 'dancers', dancerId)),
           getDoc(doc(db, 'appSettings', 'main')),
+          getDocs(query(collection(db, 'roles'), orderBy('displayOrder'))),
         ]);
+        setAllRoles(rolesSnap.docs.map(d => ({ id: d.id, ...d.data() } as RoleConfig)));
         if (settingsSnap.exists()) setFieldConfig(mergeWithDefaults(settingsSnap.data().profileFields));
 
         // Charge les champs custom
@@ -411,7 +406,7 @@ export default function DancerDetailPage() {
                   {dancer.isActive ? 'Actif' : 'Inactif'}
                 </span>
                 {dancer.roles.map(r => {
-                  const label = ALL_ROLES.find(x => x.value === r)?.label ?? r;
+                  const label = allRoles.find(x => x.key === r)?.label ?? r;
                   return <span key={r} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{label}</span>;
                 })}
               </div>
@@ -423,12 +418,12 @@ export default function DancerDetailPage() {
                   <span className="text-sm text-gray-700">Compte actif</span>
                 </label>
                 <div className="border-t border-gray-100 pt-2 grid grid-cols-2 gap-2">
-                  {ALL_ROLES.map(role => (
-                    <label key={role.value} className="flex items-center gap-2 cursor-pointer">
+                  {allRoles.map(role => (
+                    <label key={role.key} className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox"
-                        checked={pendingRoles.includes(role.value)}
+                        checked={pendingRoles.includes(role.key)}
                         onChange={e => setPendingRoles(prev =>
-                          e.target.checked ? [...prev, role.value] : prev.filter(r => r !== role.value)
+                          e.target.checked ? [...prev, role.key] : prev.filter(r => r !== role.key)
                         )}
                         className="w-4 h-4 rounded" />
                       <span className="text-sm text-gray-700">{role.label}</span>
