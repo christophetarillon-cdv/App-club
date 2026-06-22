@@ -7,7 +7,8 @@ import {
   updateDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { storage, db } from '@/lib/firebase';
+import { storage, db, auth } from '@/lib/firebase';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { updateDancer } from '@/lib/auth';
 import type { UpdateDancerInput } from '@/lib/auth';
 import type { Dancer, ProfileFieldsConfig, CustomField, CustomFieldRole } from '@cdv/types';
@@ -217,6 +218,37 @@ export default function DancerPersonalProfilePage() {
 
   const [pagePermissions, setPagePermissions] = useState<Record<string, string[]>>({});
   const userRoles = [...(account?.roles ?? []), ...(dancer?.roles ?? [])];
+
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
+  const [savingPw, setSavingPw] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSaved, setPwSaved] = useState(false);
+  const hasEmailProvider = auth.currentUser?.providerData.some(p => p.providerId === 'password') ?? false;
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pwForm.next !== pwForm.confirm) { setPwError('Les mots de passe ne correspondent pas.'); return; }
+    if (pwForm.next.length < 6) { setPwError('Le mot de passe doit faire au moins 6 caractères.'); return; }
+    const email = auth.currentUser?.email;
+    if (!email) return;
+    setSavingPw(true); setPwError(null); setPwSaved(false);
+    try {
+      const credential = EmailAuthProvider.credential(email, pwForm.current);
+      await reauthenticateWithCredential(auth.currentUser!, credential);
+      await updatePassword(auth.currentUser!, pwForm.next);
+      setPwForm({ current: '', next: '', confirm: '' });
+      setPwSaved(true);
+      setTimeout(() => setPwSaved(false), 3000);
+    } catch (err: any) {
+      setPwError(
+        err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential'
+          ? 'Mot de passe actuel incorrect.'
+          : 'Erreur lors du changement de mot de passe.'
+      );
+    } finally {
+      setSavingPw(false);
+    }
+  };
   const isAdmin = userRoles.includes('admin');
   const hasPerm = (permKey: string) => {
     if (!(permKey in pagePermissions)) return true;
@@ -474,13 +506,6 @@ export default function DancerPersonalProfilePage() {
           Ajouter un danseur
         </Link>
 
-        <Link href="/profile"
-          className="flex items-center justify-center gap-2 w-full py-3 bg-white rounded-2xl border border-gray-200 shadow-sm text-sm text-gray-600 hover:bg-gray-50 transition-colors mb-4">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-          </svg>
-          Changer mon mot de passe
-        </Link>
 
         {/* Formulaire champs prédéfinis */}
         <form onSubmit={handleSave} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4 mb-4">
@@ -623,6 +648,33 @@ export default function DancerPersonalProfilePage() {
               {customSaving ? 'Enregistrement…' : customSaved ? '✓ Enregistré' : 'Enregistrer les informations complémentaires'}
             </button>
           </div>
+        )}
+        {/* Changement de mot de passe */}
+        {hasEmailProvider && (
+          <form onSubmit={handlePasswordSubmit} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Mot de passe</h2>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Mot de passe actuel</label>
+              <input type="password" value={pwForm.current} onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))} required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Nouveau mot de passe</label>
+              <input type="password" value={pwForm.next} onChange={e => setPwForm(p => ({ ...p, next: e.target.value }))} required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Confirmer le mot de passe</label>
+              <input type="password" value={pwForm.confirm} onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))} required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            </div>
+            {pwError && <p className="text-red-600 text-sm">{pwError}</p>}
+            {pwSaved && <p className="text-green-600 text-sm">Mot de passe mis à jour.</p>}
+            <button type="submit" disabled={savingPw}
+              className="w-full py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors">
+              {savingPw ? 'Mise à jour…' : 'Changer le mot de passe'}
+            </button>
+          </form>
         )}
       </div>
     </div>
