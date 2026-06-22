@@ -9,7 +9,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage, db, auth } from '@/lib/firebase';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
-import { updateDancer } from '@/lib/auth';
+import { updateDancer, createDancer } from '@/lib/auth';
 import type { UpdateDancerInput } from '@/lib/auth';
 import type { Dancer, ProfileFieldsConfig, CustomField, CustomFieldRole } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS, ROLE_PRIORITY } from '@cdv/types';
@@ -174,7 +174,7 @@ function CustomFieldInput({
 
 export default function DancerPersonalProfilePage() {
   const { id } = useParams<{ id: string }>();
-  const { dancers, account, loading: authLoading } = useAuth();
+  const { user, dancers, account, loading: authLoading } = useAuth();
   const router = useRouter();
 
   const dancer: Dancer | undefined = dancers.find(d => d.id === id);
@@ -218,6 +218,23 @@ export default function DancerPersonalProfilePage() {
 
   const [pagePermissions, setPagePermissions] = useState<Record<string, string[]>>({});
   const userRoles = [...(account?.roles ?? []), ...(dancer?.roles ?? [])];
+
+  const [showAddDancer, setShowAddDancer] = useState(false);
+  const [newDancer, setNewDancer] = useState({ firstName: '', lastName: '' });
+  const [addingDancer, setAddingDancer] = useState(false);
+
+  const handleAddDancer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setAddingDancer(true);
+    try {
+      await createDancer(user.uid, { firstName: newDancer.firstName.trim(), lastName: newDancer.lastName.trim() });
+      setNewDancer({ firstName: '', lastName: '' });
+      setShowAddDancer(false);
+    } finally {
+      setAddingDancer(false);
+    }
+  };
 
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
   const [savingPw, setSavingPw] = useState(false);
@@ -498,13 +515,51 @@ export default function DancerPersonalProfilePage() {
           ))}
         </div>
 
-        <Link href="/profile"
-          className="flex items-center justify-center gap-2 w-full py-3 bg-white rounded-2xl border border-gray-200 shadow-sm text-sm text-gray-600 hover:bg-gray-50 transition-colors mb-4">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          Ajouter un danseur
-        </Link>
+        {/* Ajouter un danseur */}
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Mes danseurs</h2>
+            <button onClick={() => { setShowAddDancer(v => !v); setNewDancer({ firstName: '', lastName: '' }); }}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-800">
+              {showAddDancer ? 'Annuler' : '+ Ajouter'}
+            </button>
+          </div>
+          {showAddDancer && (
+            <form onSubmit={handleAddDancer} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Prénom</label>
+                  <input type="text" value={newDancer.firstName} onChange={e => setNewDancer(p => ({ ...p, firstName: e.target.value }))} required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Nom</label>
+                  <input type="text" value={newDancer.lastName} onChange={e => setNewDancer(p => ({ ...p, lastName: e.target.value }))} required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button type="submit" disabled={addingDancer}
+                  className="flex-1 bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
+                  {addingDancer ? 'Enregistrement…' : 'Enregistrer'}
+                </button>
+                <button type="button" onClick={() => setShowAddDancer(false)}
+                  className="flex-1 border border-gray-300 text-gray-600 font-semibold py-2 rounded-lg hover:bg-gray-50 text-sm transition-colors">
+                  Annuler
+                </button>
+              </div>
+            </form>
+          )}
+          {!showAddDancer && (
+            <button onClick={() => setShowAddDancer(true)}
+              className="flex items-center justify-center gap-2 w-full py-2 text-sm text-gray-500 hover:text-blue-600 transition-colors">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              Ajouter un danseur
+            </button>
+          )}
+        </div>
 
 
         {/* Formulaire champs prédéfinis */}
