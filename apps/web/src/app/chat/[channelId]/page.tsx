@@ -157,7 +157,7 @@ export default function ChatChannelPage() {
                         {m.fileName && (
                           <a href={m.mediaUrl} download={m.fileName}
                             className={`block text-xs mt-1 underline ${isMe ? 'text-blue-100' : 'text-blue-600'}`}>
-                            ↓ {m.fileName}
+                            ↓ Télécharger
                           </a>
                         )}
                       </div>
