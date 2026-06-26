@@ -10,7 +10,6 @@ import type { Media } from '@cdv/types';
 interface Season   { id: string; label: string; isActive: boolean; }
 interface DanceStyle { id: string; name: string; color?: string; }
 interface Course   { id: string; name: string; danceStyleId: string; }
-interface Membership { seasonId: string; paymentPlanStatus: string; status: string; }
 
 function formatDuration(secs?: number) {
   if (!secs) return null;
@@ -18,12 +17,7 @@ function formatDuration(secs?: number) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-// Couleur de fond selon le style, fallback navy
-function styleBg(color?: string) {
-  return color ?? '#1B3A6B';
-}
-
-export default function MediaPage() {
+export default function AudioPage() {
   const { user, account, dancers } = useAuth();
 
   const [allMedia, setAllMedia]           = useState<Media[]>([]);
@@ -39,16 +33,15 @@ export default function MediaPage() {
   const [expanded, setExpanded]           = useState<string | null>(null);
   const [speeds, setSpeeds]               = useState<Map<string, number>>(new Map());
   const [downloading, setDownloading]     = useState<string | null>(null);
-  const mediaEls = useRef<Map<string, HTMLAudioElement | HTMLVideoElement>>(new Map());
+  const audioEls = useRef<Map<string, HTMLAudioElement>>(new Map());
 
-  const handleDownload = useCallback(async (m: { id: string; title: string; sourceUrl: string; type: string }) => {
+  const handleDownload = useCallback(async (m: { id: string; title: string; sourceUrl: string }) => {
     setDownloading(m.id);
     try {
       const res = await fetch(m.sourceUrl);
       const blob = await res.blob();
-      const ext = m.type === 'video' ? 'mp4' : 'mp3';
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = `${m.title}.${ext}`; a.click();
+      const a = document.createElement('a'); a.href = url; a.download = `${m.title}.mp3`; a.click();
       URL.revokeObjectURL(url);
     } catch { /* silencieux */ } finally { setDownloading(null); }
   }, []);
@@ -66,7 +59,7 @@ export default function MediaPage() {
     setHasActiveTrial(trialActive);
 
     Promise.all([
-      getDocs(query(collection(db, 'media'), orderBy('uploadedAt', 'desc'))),
+      getDocs(query(collection(db, 'media'), where('type', '==', 'audio'), orderBy('uploadedAt', 'desc'))),
       getDocs(collection(db, 'seasons')),
       getDocs(collection(db, 'danceStyles')),
       getDocs(collection(db, 'courses')),
@@ -100,7 +93,6 @@ export default function MediaPage() {
   const courseMap = new Map(courses.map(c => [c.id, c]));
 
   const visible = allMedia.filter(m => {
-    if (m.type !== 'video') return false;
     if (!canAccess(m)) return false;
     if (filterStyle && m.danceStyleId !== filterStyle) return false;
     if (filterSeason === 'active') return !m.seasonId || m.seasonId === activeSeason?.id;
@@ -109,8 +101,7 @@ export default function MediaPage() {
     return true;
   });
 
-  // locked media (no access but exists)
-  const locked = allMedia.filter(m => m.type === 'video' && !canAccess(m) && (
+  const locked = allMedia.filter(m => !canAccess(m) && (
     filterSeason === 'active' ? (!m.seasonId || m.seasonId === activeSeason?.id) : true
   )).length;
 
@@ -148,71 +139,67 @@ export default function MediaPage() {
           <div className="text-center py-16 text-gray-400 text-sm">Chargement…</div>
         ) : visible.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-200 px-6 py-12 text-center">
-            <p className="text-gray-500 font-medium">Aucun média disponible.</p>
+            <p className="text-gray-500 font-medium">Aucun audio disponible.</p>
             {paidSeasonIds.length === 0 && !isAdminOrInstructor && !hasActiveTrial && (
               <p className="text-gray-400 text-sm mt-1">L'accès requiert une cotisation active.</p>
             )}
           </div>
         ) : (
           <>
-            {/* Grid de vignettes */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
-              {visible.map(m => {
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden mb-3">
+              {visible.map((m, i) => {
                 const style  = m.danceStyleId ? styleMap.get(m.danceStyleId) : undefined;
                 const course = m.courseId ? courseMap.get(m.courseId) : undefined;
-                const bg     = styleBg(style?.color);
+                const accent = style?.color ?? '#1B3A6B';
                 const isOpen = expanded === m.id;
+                const label  = [style?.name, course?.name].filter(Boolean).join(' · ');
                 return (
-                  <div key={m.id} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                    {/* Thumbnail */}
+                  <div key={m.id} className={`${i > 0 ? 'border-t border-gray-100' : ''}`}>
                     <button onClick={() => setExpanded(isOpen ? null : m.id)}
-                      className="relative w-full aspect-video flex items-center justify-center group"
-                      style={{ backgroundColor: bg }}>
-                      <svg viewBox="0 0 24 24" fill="currentColor" className={`w-8 h-8 text-white transition-opacity ${isOpen ? 'opacity-60' : 'opacity-80 group-hover:opacity-100'}`}>
-                        {m.type === 'audio'
-                          ? <path d="M19.952 1.651a.75.75 0 01.298.599V16.303a3 3 0 01-2.176 2.884l-1.32.377a2.553 2.553 0 11-1.403-4.909l2.311-.66a1.5 1.5 0 001.088-1.442V6.994l-9 2.572v9.737a3 3 0 01-2.176 2.884l-1.32.377a2.553 2.553 0 11-1.402-4.909l2.31-.66A1.5 1.5 0 007.5 15.952V4.725a.75.75 0 01.544-.721l10.5-3a.75.75 0 01.408.647z"/>
-                          : <path d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653z"/>
-                        }
-                      </svg>
-                      {/* Badge danse · niveau */}
-                      {(style || course) && (
-                        <div className="absolute bottom-0 inset-x-0 px-2 pb-1.5">
-                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-black/40 text-white leading-none">
-                            {[style?.name, course?.name].filter(Boolean).join(' · ')}
-                          </span>
+                      className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors text-left">
+                      {/* Play indicator */}
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ backgroundColor: `${accent}20` }}>
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4" style={{ color: accent }}>
+                          {isOpen
+                            ? <path fillRule="evenodd" d="M6.75 5.25a.75.75 0 01.75-.75H9a.75.75 0 01.75.75v13.5a.75.75 0 01-.75.75H7.5a.75.75 0 01-.75-.75V5.25zm7.5 0A.75.75 0 0115 4.5h1.5a.75.75 0 01.75.75v13.5a.75.75 0 01-.75.75H15a.75.75 0 01-.75-.75V5.25z" clipRule="evenodd"/>
+                            : <path d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653z"/>
+                          }
+                        </svg>
+                      </div>
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{m.title}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {label && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded"
+                              style={{ backgroundColor: `${accent}20`, color: accent }}>
+                              {label}
+                            </span>
+                          )}
+                          {m.durationSeconds && (
+                            <span className="text-[10px] text-gray-400">{formatDuration(m.durationSeconds)}</span>
+                          )}
                         </div>
-                      )}
+                      </div>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+                        className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+                        <path d="M19 9l-7 7-7-7"/>
+                      </svg>
                     </button>
 
-                    {/* Info */}
-                    <div className="px-3 py-2.5">
-                      <p className="text-xs font-semibold text-gray-900 leading-tight truncate">{m.title}</p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${m.type === 'audio' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}`}>
-                          {m.type === 'audio' ? 'Audio' : 'Vidéo'}
-                        </span>
-                        {m.durationSeconds && <span className="text-[9px] text-gray-400">{formatDuration(m.durationSeconds)}</span>}
-                      </div>
-                    </div>
-
-                    {/* Player (expanded) */}
                     {isOpen && (
-                      <div className="px-3 pb-3 border-t border-gray-100 pt-2.5 space-y-2">
+                      <div className="px-4 pb-4 space-y-2.5 border-t border-gray-100 pt-3">
                         {m.description && <p className="text-xs text-gray-500">{m.description}</p>}
-                        {m.type === 'audio' ? (
-                          <audio controls crossOrigin="anonymous" src={m.sourceUrl} className="w-full"
-                            ref={el => { if (el) mediaEls.current.set(m.id, el); else mediaEls.current.delete(m.id); }} />
-                        ) : (
-                          <video controls crossOrigin="anonymous" src={m.sourceUrl} className="w-full rounded-xl" style={{ maxHeight: 220 }}
-                            ref={el => { if (el) mediaEls.current.set(m.id, el); else mediaEls.current.delete(m.id); }} />
-                        )}
+                        <audio controls crossOrigin="anonymous" src={m.sourceUrl} className="w-full"
+                          ref={el => { if (el) audioEls.current.set(m.id, el as HTMLAudioElement); else audioEls.current.delete(m.id); }} />
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-gray-400 shrink-0">Vitesse</span>
                           <input type="range" min="0.5" max="2" step="0.01" value={speeds.get(m.id) ?? 1}
                             onChange={e => {
                               const val = parseFloat(e.target.value);
                               setSpeeds(prev => new Map(prev).set(m.id, val));
-                              const el = mediaEls.current.get(m.id);
+                              const el = audioEls.current.get(m.id);
                               if (el) { el.playbackRate = val; (el as any).preservesPitch = true; }
                             }} className="flex-1 accent-primary" />
                           <span className="text-[10px] text-gray-400 w-8 text-right">{Math.round((speeds.get(m.id) ?? 1) * 100)}%</span>
@@ -230,12 +217,12 @@ export default function MediaPage() {
             </div>
 
             {locked > 0 && (
-              <div className="flex items-start gap-2.5 bg-orange-50 border border-orange-200 rounded-2xl p-4 mt-2">
+              <div className="flex items-start gap-2.5 bg-orange-50 border border-orange-200 rounded-2xl p-4">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-orange-500 shrink-0 mt-0.5">
                   <path d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
                 </svg>
                 <p className="text-xs text-orange-700">
-                  {locked} média{locked > 1 ? 's' : ''} réservé{locked > 1 ? 's' : ''} aux membres. <a href="/membership" className="underline font-medium">Régler ma cotisation →</a>
+                  {locked} audio{locked > 1 ? 's' : ''} réservé{locked > 1 ? 's' : ''} aux membres. <a href="/membership" className="underline font-medium">Régler ma cotisation →</a>
                 </p>
               </div>
             )}

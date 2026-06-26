@@ -37,6 +37,7 @@ const SettingsIcon = ({ className = 'w-5 h-5' }: SvgProps) => <svg viewBox="0 0 
 const LogoutIcon  = ({ className = 'w-5 h-5' }: SvgProps) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" /></svg>;
 const BellIcon    = ({ className = 'w-5 h-5' }: SvgProps) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" /></svg>;
 const ChevronRightIcon = ({ className = 'w-4 h-4' }: SvgProps) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9 5l7 7-7 7" /></svg>;
+const MusicIcon   = ({ className = 'w-5 h-5' }: SvgProps) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>;
 
 // ── Card type ─────────────────────────────────────────────────────────────────────
 type CardDef = { href: string; label: string; icon: React.ReactNode; iconBg: string; iconColor: string };
@@ -46,6 +47,7 @@ const CARD_CONFIG: Record<string, Omit<CardDef, 'href' | 'label'>> = {
   '/planning':       { icon: <CalendarIcon className="w-6 h-6" />, iconBg: 'bg-blue-50',   iconColor: 'text-blue-600'   },
   '/chat':           { icon: <ChatIcon className="w-6 h-6" />,     iconBg: 'bg-green-50',  iconColor: 'text-green-600'  },
   '/media':          { icon: <VideoIcon className="w-6 h-6" />,    iconBg: 'bg-purple-50', iconColor: 'text-purple-600' },
+  '/audio':          { icon: <MusicIcon className="w-6 h-6" />,    iconBg: 'bg-pink-50',   iconColor: 'text-pink-600'   },
   '/trombinoscope':  { icon: <UsersIcon className="w-6 h-6" />,    iconBg: 'bg-teal-50',   iconColor: 'text-teal-600'   },
 };
 
@@ -101,6 +103,7 @@ export default function DancerHubPage() {
     { href: '/planning',          label: 'Planning',    permKey: '/planning' },
     { href: '/chat',              label: 'Chat',        permKey: '/chat' },
     { href: '/media',             label: 'Vidéos',      permKey: '/media' },
+    { href: '/audio',             label: 'Audio',        permKey: '/audio' },
     { href: '/trombinoscope',     label: 'Trombinoscope', permKey: '/trombinoscope' },
   ].filter(item => hasPerm(item.permKey));
 
