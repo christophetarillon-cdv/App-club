@@ -13,15 +13,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import { Audio } from 'expo-av';
+import VideoThumbnail from '@/components/VideoThumbnail';
+import VideoPlayerSheet from '@/components/VideoPlayerSheet';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { Colors } from '@/constants/Colors';
-import type { ChatChannel, ChatMessage } from '@cdv/types';
+import type { ChatChannel, ChatMessage, Media } from '@cdv/types';
 
 function notifKey(channelId: string) { return `chat_${channelId}`; }
 function timeAgo(ts: any): string {
@@ -32,11 +33,6 @@ function timeAgo(ts: any): string {
   if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
   if (diff < 86400) return `il y a ${Math.floor(diff / 3600)} h`;
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-}
-
-function VideoMessage({ url }: { url: string }) {
-  const player = useVideoPlayer(url, p => { p.loop = false; });
-  return <VideoView style={styles.msgVideo} player={player} nativeControls allowsFullscreen contentFit="contain" />;
 }
 
 function AudioMessage({ url, mine }: { url: string; mine: boolean }) {
@@ -68,6 +64,18 @@ function AudioMessage({ url, mine }: { url: string; mine: boolean }) {
   );
 }
 
+function DownloadButton({ mine, onPress }: { mine: boolean; onPress: () => void }) {
+  const c = mine ? 'rgba(255,255,255,0.92)' : '#534AB7';
+  return (
+    <TouchableOpacity style={styles.dlBtn} onPress={onPress} activeOpacity={0.7} hitSlop={6}>
+      <Svg width={15} height={15} viewBox="0 0 24 24" fill="none">
+        <Path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+      <Text style={[styles.dlText, { color: c }]}>Télécharger</Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function ChatChannelScreen() {
   const { id, channelId } = useLocalSearchParams<{ id: string; channelId: string }>();
   const router = useRouter();
@@ -81,6 +89,7 @@ export default function ChatChannelScreen() {
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
+  const [activeVideo, setActiveVideo] = useState<ChatMessage | null>(null);
   const bottomRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -227,10 +236,28 @@ export default function ChatChannelScreen() {
                 <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
                   {m.text ? <Text style={[styles.msgText, mine && { color: '#fff' }]}>{m.text}</Text> : null}
                   {m.mediaType === 'image' && m.mediaUrl && (
-                    <TouchableOpacity onPress={() => downloadMedia(m)} activeOpacity={0.9}><Image source={{ uri: m.mediaUrl }} style={styles.msgImage} resizeMode="cover" /></TouchableOpacity>
+                    <View>
+                      <Image source={{ uri: m.mediaUrl }} style={styles.msgImage} resizeMode="cover" />
+                      <DownloadButton mine={mine} onPress={() => downloadMedia(m)} />
+                    </View>
                   )}
-                  {m.mediaType === 'video' && m.mediaUrl && <VideoMessage url={m.mediaUrl} />}
-                  {m.mediaType === 'audio' && m.mediaUrl && <AudioMessage url={m.mediaUrl} mine={mine} />}
+                  {m.mediaType === 'video' && m.mediaUrl && (
+                    <View>
+                      <TouchableOpacity style={styles.videoThumb} activeOpacity={0.9} onPress={() => setActiveVideo(m)}>
+                        <VideoThumbnail videoUrl={m.mediaUrl} fallbackColor="#1A1A2E" />
+                        <View style={styles.playOverlay} pointerEvents="none">
+                          <View style={styles.playCircle}><View style={styles.playTri} /></View>
+                        </View>
+                      </TouchableOpacity>
+                      <DownloadButton mine={mine} onPress={() => downloadMedia(m)} />
+                    </View>
+                  )}
+                  {m.mediaType === 'audio' && m.mediaUrl && (
+                    <View>
+                      <AudioMessage url={m.mediaUrl} mine={mine} />
+                      <DownloadButton mine={mine} onPress={() => downloadMedia(m)} />
+                    </View>
+                  )}
                   {isFile && (
                     <TouchableOpacity style={[styles.fileChip, { backgroundColor: mine ? 'rgba(255,255,255,0.16)' : '#F1EFE8' }]} onPress={() => downloadMedia(m)} activeOpacity={0.8}>
                       <Svg width={20} height={20} viewBox="0 0 24 24" fill="none"><Path d="M9 12h6M9 16h6M9 8h3M6 2h9l5 5v13a1 1 0 01-1 1H6a1 1 0 01-1-1V3a1 1 0 011-1z" stroke={mine ? '#fff' : '#5A5A6A'} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" /></Svg>
@@ -280,6 +307,20 @@ export default function ChatChannelScreen() {
           </Pressable>
         </Pressable>
       )}
+
+      {/* Lecteur vidéo plein écran (même composant que la page Vidéos) */}
+      {activeVideo?.mediaUrl && (
+        <VideoPlayerSheet
+          video={{
+            sourceUrl: activeVideo.mediaUrl,
+            title: activeVideo.fileName || 'Vidéo',
+            description: '',
+          } as unknown as Media}
+          styleColor="#2F86C0"
+          seasonBadge={activeVideo.authorName.split(' ')[0]}
+          onClose={() => setActiveVideo(null)}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -304,7 +345,10 @@ const styles = StyleSheet.create({
   bubbleOther: { backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', borderTopLeftRadius: 4 },
   msgText: { fontSize: 14, color: Colors.text },
   msgImage: { width: 200, height: 150, borderRadius: 10, marginTop: 6 },
-  msgVideo: { width: 220, height: 150, borderRadius: 10, marginTop: 6, backgroundColor: '#000' },
+  videoThumb: { width: 220, height: 150, borderRadius: 12, overflow: 'hidden', marginTop: 6, backgroundColor: '#1A1A2E' },
+  playOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  playCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  playTri: { width: 0, height: 0, borderLeftWidth: 16, borderTopWidth: 10, borderBottomWidth: 10, borderTopColor: 'transparent', borderBottomColor: 'transparent', borderLeftColor: '#fff', marginLeft: 4 },
 
   audioRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4, paddingVertical: 2 },
   audioBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
@@ -313,6 +357,9 @@ const styles = StyleSheet.create({
 
   fileChip: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, padding: 8, marginTop: 6, minWidth: 180 },
   fileName: { flex: 1, fontSize: 13 },
+
+  dlBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, alignSelf: 'flex-start', paddingVertical: 2 },
+  dlText: { fontSize: 12, fontWeight: '500' },
 
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 12, paddingTop: 8, backgroundColor: Colors.background, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.06)' },
   attachBtn: { width: 42, height: 42, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', alignItems: 'center', justifyContent: 'center' },
