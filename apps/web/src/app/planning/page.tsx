@@ -33,8 +33,6 @@ export default function PlanningPage() {
   const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()));
   const [selectedDay, setSelectedDay] = useState<Date>(() => new Date());
   const [sessions, setSessions] = useState<SessionWithCourse[]>([]);
-  const [danceStyles, setDanceStyles] = useState<DanceStyle[]>([]);
-  const [styleFilter, setStyleFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [registrationDates, setRegistrationDates] = useState<Map<string, string>>(new Map());
@@ -45,13 +43,12 @@ export default function PlanningPage() {
       getDocs(collection(db, 'courses')),
       getDocs(collection(db, 'rooms')),
     ]);
-    const styles: DanceStyle[] = stylesSnap.docs.map(d => ({ id: d.id, name: d.data().name, color: d.data().color }));
+    const styles: DanceStyle[] = stylesSnap.docs.map(d => ({ id: d.id, name: d.data().name, color: d.data().color ?? '#6B7280' }));
     const courses: Course[] = coursesSnap.docs.map(d => ({
       id: d.id, name: d.data().name, danceStyleId: d.data().danceStyleId,
       dayOfWeek: d.data().dayOfWeek, startTime: d.data().startTime, endTime: d.data().endTime, roomId: d.data().roomId,
     }));
     const rooms: Room[] = roomsSnap.docs.map(d => ({ id: d.id, name: d.data().name }));
-    setDanceStyles(styles);
     return { styles, courses, rooms };
   }, []);
 
@@ -92,7 +89,7 @@ export default function PlanningPage() {
       });
   }, [user]);
 
-  const filtered = styleFilter ? sessions.filter(s => s.style?.id === styleFilter) : sessions;
+  const filtered = sessions;
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const today = toDateStr(new Date());
   const selectedStr = toDateStr(selectedDay);
@@ -141,26 +138,7 @@ export default function PlanningPage() {
           })}
         </div>
 
-        {/* Style filter chips */}
-        {danceStyles.length > 0 && (
-          <div className="flex gap-2 flex-wrap mb-4">
-            <button onClick={() => setStyleFilter(null)}
-              className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-colors ${
-                !styleFilter ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-              }`}>Tous</button>
-            {danceStyles.map(s => (
-              <button key={s.id} onClick={() => setStyleFilter(styleFilter === s.id ? null : s.id)}
-                className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-colors ${
-                  styleFilter === s.id ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                }`}
-                style={styleFilter === s.id ? { backgroundColor: s.color, borderColor: s.color } : undefined}>
-                {s.name}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {error && (
+{error && (
           <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
             <p className="text-sm text-red-700">Erreur de chargement — {error}</p>
           </div>
