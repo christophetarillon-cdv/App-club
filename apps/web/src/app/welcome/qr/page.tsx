@@ -90,7 +90,7 @@ function QrContent() {
               Régler ma cotisation →
             </Link>
           )}
-          <Link href="/profile"
+          <Link href="/select-dancer"
             className={`block w-full font-semibold py-2.5 rounded-lg transition-colors text-sm ${
               type === 'member'
                 ? 'border border-gray-200 text-gray-600 hover:bg-gray-50'
