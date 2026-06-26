@@ -1,88 +1,100 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import Link from 'next/link';
-import QRCode from 'qrcode';
+import { AppShell } from '@/components/AppShell';
 import { useRoles } from '@/hooks/useRoles';
+import QRCode from 'react-qr-code';
 
 export default function DancerCardPage() {
   const { getLabel } = useRoles();
-  const { id } = useParams<{ id: string }>();
-  const { dancers, account, loading } = useAuth();
+  const { dancers, loading } = useAuth();
   const router = useRouter();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [qrReady, setQrReady] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
 
-  const dancer = dancers.find(d => d.id === id);
+  if (loading) {
+    return (
+      <AppShell>
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      </AppShell>
+    );
+  }
 
-  useEffect(() => {
-    if (!loading && !dancer) router.replace('/select-dancer');
-  }, [loading, dancer, router]);
+  if (dancers.length === 0) {
+    router.replace('/select-dancer');
+    return null;
+  }
 
-  useEffect(() => {
-    if (!dancer || !canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, dancer.id, {
-      width: 220,
-      margin: 2,
-      color: { dark: '#111827', light: '#ffffff' },
-    }).then(() => setQrReady(true)).catch(() => {});
-  }, [dancer?.id]);
-
-  if (loading || !dancer) return null;
-
+  const dancer = dancers[Math.min(activeIdx, dancers.length - 1)]!;
+  const palette = ['bg-blue-500','bg-purple-500','bg-pink-500','bg-green-500','bg-orange-500','bg-teal-500'];
+  const color = palette[(dancer.firstName.charCodeAt(0) + dancer.lastName.charCodeAt(0)) % palette.length];
   const initials = `${dancer.firstName[0] ?? ''}${dancer.lastName[0] ?? ''}`.toUpperCase();
-  const colors = ['bg-blue-500','bg-purple-500','bg-pink-500','bg-green-500','bg-orange-500'];
-  const color = colors[(dancer.firstName.charCodeAt(0) + dancer.lastName.charCodeAt(0)) % colors.length];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-md mx-auto px-4 py-8">
-        <div className="flex items-center gap-3 mb-6">
-          <Link href={`/dancer/${id}/profile`} className="text-sm text-gray-400 hover:text-gray-700">← Retour</Link>
-          <h1 className="text-xl font-bold text-gray-900">Ma carte & QR code</h1>
-        </div>
+    <AppShell>
+      <div className="max-w-sm mx-auto px-4 py-6 space-y-4">
 
-        {/* Carte de membre */}
-        <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 mb-5 shadow-xl">
-          <div className="flex items-start justify-between mb-6">
+        {/* Sélecteur de danseur (si plusieurs) */}
+        {dancers.length > 1 && (
+          <div className="flex gap-2">
+            {dancers.map((d, i) => (
+              <button key={d.id} onClick={() => setActiveIdx(i)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
+                  i === activeIdx
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                }`}>
+                {d.photoUrl
+                  ? <img src={d.photoUrl} alt="" className="w-6 h-6 rounded-lg object-cover" />
+                  : <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold text-white ${
+                      palette[(d.firstName.charCodeAt(0) + d.lastName.charCodeAt(0)) % palette.length]
+                    }`}>{`${d.firstName[0] ?? ''}${d.lastName[0] ?? ''}`.toUpperCase()}</span>
+                }
+                {d.firstName}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Carte membre */}
+        <div className="bg-primary rounded-2xl p-5">
+          <div className="flex items-start justify-between mb-5">
             <div>
-              <p className="text-white/40 text-xs uppercase tracking-widest">Club de Danse Voiron</p>
-              <p className="text-white/70 text-sm mt-0.5">Carte de membre</p>
+              <p className="text-white/50 text-[10px] uppercase tracking-widest">Club de Danse Voiron</p>
+              <p className="text-white/70 text-xs mt-0.5">Carte de membre</p>
             </div>
-            <div className={`w-10 h-10 ${color} rounded-xl flex items-center justify-center`}>
-              <span className="text-white font-bold text-sm">{initials}</span>
+            <div className={`w-9 h-9 ${color} rounded-xl flex items-center justify-center`}>
+              <span className="text-white font-bold text-xs">{initials}</span>
             </div>
           </div>
-          <div className="flex items-end justify-between">
-            <div>
-              <p className="text-white text-xl font-bold">{dancer.firstName} {dancer.lastName}</p>
-              {dancer.memberNumber && (
-                <p className="text-white/40 font-mono text-xs mt-1">{dancer.memberNumber}</p>
-              )}
-              <div className="flex gap-2 mt-2">
-                {dancer.roles.map(r => (
-                  <span key={r} className="text-xs bg-white/10 text-white/70 px-2 py-0.5 rounded-full capitalize">
-                    {getLabel(r)}
-                  </span>
-                ))}
-              </div>
-            </div>
+          <p className="text-white text-lg font-semibold">{dancer.firstName} {dancer.lastName}</p>
+          {dancer.memberNumber && (
+            <p className="text-white/40 font-mono text-[11px] mt-0.5">{dancer.memberNumber}</p>
+          )}
+          <div className="flex gap-1.5 mt-3 flex-wrap">
+            {dancer.roles.map(r => (
+              <span key={r} className="text-[10px] bg-white/15 text-white/80 px-2 py-0.5 rounded-full capitalize">
+                {getLabel(r)}
+              </span>
+            ))}
           </div>
         </div>
 
         {/* QR code */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 text-center">
-          <p className="text-sm font-medium text-gray-700 mb-4">QR code de pointage</p>
-          <div className="flex justify-center">
-            <canvas ref={canvasRef} className={`rounded-xl ${qrReady ? 'opacity-100' : 'opacity-0'} transition-opacity`} />
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex flex-col items-center gap-4">
+          <p className="text-sm font-medium text-gray-700">QR code de pointage</p>
+          <div className="p-3 bg-white rounded-xl border border-gray-100">
+            <QRCode value={dancer.id} size={180} fgColor="#111827" bgColor="#ffffff" />
           </div>
-          <p className="text-xs text-gray-400 mt-4">
-            Présente ce QR code au kiosque pour pointer ta présence.
+          <p className="text-xs text-gray-400 text-center">
+            Présentez ce code à l'accueil pour pointer votre présence.
           </p>
         </div>
+
       </div>
-    </div>
+    </AppShell>
   );
 }

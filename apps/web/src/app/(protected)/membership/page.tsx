@@ -11,6 +11,7 @@ import {
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
+import { AppShell } from '@/components/AppShell';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -435,16 +436,17 @@ export default function MembershipPage() {
   };
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-gray-400">Chargement…</p>
-    </div>
+    <AppShell>
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    </AppShell>
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-xl mx-auto px-4 py-10">
-        <Link href={selectedDancer ? `/dancer/${selectedDancer.id}/profile` : '/select-dancer'} className="text-sm text-gray-400 hover:text-gray-700 mb-6 inline-block">← Retour</Link>
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Ma cotisation</h1>
+    <AppShell>
+      <div className="max-w-xl mx-auto px-4 py-6">
+        <h1 className="text-lg font-semibold text-gray-900 mb-5">Ma cotisation</h1>
 
         {onlineStatus === 'success' && (
           <div className="mb-4 bg-green-50 border border-green-200 rounded-2xl p-4 text-green-800 text-sm font-medium">
@@ -719,7 +721,7 @@ export default function MembershipPage() {
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }
 
