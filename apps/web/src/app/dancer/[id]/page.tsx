@@ -140,6 +140,7 @@ export default function DancerHubPage() {
     { href: '/planning',         label: 'Planning', icon: <CalendarIcon /> },
     { href: '/chat',             label: 'Chat',     icon: <ChatIcon /> },
     { href: '/media',            label: 'Vidéos',   icon: <VideoIcon /> },
+    { href: '/audio',            label: 'Audio',    icon: <MusicIcon /> },
     { href: '/trombinoscope',    label: 'Trombi',   icon: <UsersIcon /> },
   ];
 
