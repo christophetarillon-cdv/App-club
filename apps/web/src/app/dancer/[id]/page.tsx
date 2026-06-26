@@ -58,7 +58,7 @@ export default function DancerHubPage() {
 
   const dancer = dancers.find(d => d.id === id);
   const otherDancers = dancers.filter(d => d.id !== id);
-  const userRoles = [...(account?.roles ?? []), ...dancers.flatMap(d => d.roles)];
+  const userRoles = [...(account?.roles ?? []), ...(dancer?.roles ?? [])];
   const isAdmin = userRoles.includes('admin');
 
   const [pagePermissions, setPagePermissions] = useState<Record<string, string[]>>({});
