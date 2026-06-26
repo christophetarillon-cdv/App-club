@@ -235,3 +235,65 @@ export const deleteDancer = async (accountId: string, dancerId: string) => {
     }),
   ]);
 };
+
+// ── Inscription unifiée (welcome) — multi-danseurs, essai ou membre ───────────
+
+export interface DancerInput {
+  firstName: string;
+  lastName: string;
+}
+
+export const signUpWithDancers = async (
+  dancers: DancerInput[],
+  email: string,
+  password: string,
+  type: 'member' | 'trial',
+  config: { trialMaxDays?: number; options?: SignUpOptions } = {},
+) => {
+  const { user } = await createUserWithEmailAndPassword(auth, email, password);
+
+  const first = dancers[0]!;
+  const displayName = `${first.firstName.trim()} ${first.lastName.trim()}`.trim();
+  const dancerRefs = dancers.map(() => doc(collection(db, 'dancers')));
+  const trialExpiresAt = type === 'trial' && config.trialMaxDays
+    ? new Date(Date.now() + config.trialMaxDays * 24 * 60 * 60 * 1000)
+    : undefined;
+
+  await Promise.all([
+    setDoc(doc(db, 'accounts', user.uid), {
+      uid: user.uid,
+      email,
+      displayName,
+      isDancerToo: true,
+      dancerIds: dancerRefs.map(r => r.id),
+      roles: [],
+      isActive: true,
+      ...(config.options?.phone ? { phone: config.options.phone } : {}),
+      ...(config.options?.marketingConsent !== undefined ? { marketingConsent: config.options.marketingConsent } : {}),
+      ...(config.options?.imageRightsConsent !== undefined ? { imageRightsConsent: config.options.imageRightsConsent } : {}),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }),
+    ...dancers.map((dancer, i) =>
+      setDoc(dancerRefs[i]!, {
+        accountId: user.uid,
+        firstName: dancer.firstName.trim(),
+        lastName: dancer.lastName.trim(),
+        firstNameLower: dancer.firstName.trim().toLowerCase(),
+        lastNameLower: dancer.lastName.trim().toLowerCase(),
+        isMinor: false,
+        roles: [type === 'trial' ? 'trial' : 'member'],
+        isActive: true,
+        ...(type === 'trial' && trialExpiresAt ? {
+          trialStartDate: serverTimestamp(),
+          trialExpiresAt,
+          trialSessionsUsed: 0,
+        } : {}),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    ),
+  ]);
+
+  return { user, dancerIds: dancerRefs.map(r => r.id) };
+};
