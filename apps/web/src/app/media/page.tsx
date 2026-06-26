@@ -37,7 +37,7 @@ export default function MediaPage() {
   const [loading, setLoading]             = useState(true);
 
   const [filterSeason, setFilterSeason]   = useState('active');
-  const [filterStyle, setFilterStyle]     = useState('');
+  const [filterCourse, setFilterCourse]   = useState('');
   const [expanded, setExpanded]           = useState<string | null>(null);
   const [speeds, setSpeeds]               = useState<Map<string, number>>(new Map());
   const [downloading, setDownloading]     = useState<string | null>(null);
@@ -104,10 +104,19 @@ export default function MediaPage() {
   const courseMap = new Map(courses.map(c => [c.id, c]));
   const levelMap  = new Map(levels.map(l => [l.id, l]));
 
+  // Chips : uniquement les cours qui ont au moins une vidéo accessible
+  const courseChips = courses
+    .filter(c => allMedia.some(m => m.type === 'video' && m.courseId === c.id && canAccess(m)))
+    .map(c => ({
+      id: c.id,
+      label: [styleMap.get(c.danceStyleId)?.name, levelMap.get(c.levelId)?.name].filter(Boolean).join(' · '),
+      color: styleMap.get(c.danceStyleId)?.color,
+    }));
+
   const visible = allMedia.filter(m => {
     if (m.type !== 'video') return false;
     if (!canAccess(m)) return false;
-    if (filterStyle && m.danceStyleId !== filterStyle) return false;
+    if (filterCourse && m.courseId !== filterCourse) return false;
     if (filterSeason === 'active') return !m.seasonId || m.seasonId === activeSeason?.id;
     if (filterSeason === 'intemporel') return !m.seasonId;
     if (filterSeason) return m.seasonId === filterSeason;
@@ -125,18 +134,18 @@ export default function MediaPage() {
 
         {/* Filters */}
         <div className="flex gap-2 flex-wrap mb-5">
-          <div className="flex gap-1.5 overflow-x-auto">
-            <button onClick={() => setFilterStyle('')}
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+            <button onClick={() => setFilterCourse('')}
               className={`text-xs px-3 py-1.5 rounded-full font-medium border whitespace-nowrap transition-colors ${
-                !filterStyle ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                !filterCourse ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
               }`}>Tous</button>
-            {styles.map(s => (
-              <button key={s.id} onClick={() => setFilterStyle(filterStyle === s.id ? '' : s.id)}
+            {courseChips.map(c => (
+              <button key={c.id} onClick={() => setFilterCourse(filterCourse === c.id ? '' : c.id)}
                 className={`text-xs px-3 py-1.5 rounded-full font-medium border whitespace-nowrap transition-colors ${
-                  filterStyle === s.id ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                  filterCourse === c.id ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                 }`}
-                style={filterStyle === s.id ? { backgroundColor: s.color, borderColor: s.color } : undefined}>
-                {s.name}
+                style={filterCourse === c.id ? { backgroundColor: c.color, borderColor: c.color } : undefined}>
+                {c.label}
               </button>
             ))}
           </div>
@@ -164,41 +173,37 @@ export default function MediaPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
               {visible.map(m => {
                 const style  = m.danceStyleId ? styleMap.get(m.danceStyleId) : undefined;
-                const course = m.courseId ? courseMap.get(m.courseId) : undefined;
-                const level  = course?.levelId ? levelMap.get(course.levelId) : undefined;
                 const bg     = styleBg(style?.color);
                 const isOpen = expanded === m.id;
                 return (
                   <div key={m.id} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                    {/* Thumbnail */}
-                    <button onClick={() => setExpanded(isOpen ? null : m.id)}
-                      className="relative w-full aspect-video flex items-center justify-center group"
-                      style={{ backgroundColor: bg }}>
-                      <svg viewBox="0 0 24 24" fill="currentColor" className={`w-8 h-8 text-white transition-opacity ${isOpen ? 'opacity-60' : 'opacity-80 group-hover:opacity-100'}`}>
-                        {m.type === 'audio'
-                          ? <path d="M19.952 1.651a.75.75 0 01.298.599V16.303a3 3 0 01-2.176 2.884l-1.32.377a2.553 2.553 0 11-1.403-4.909l2.311-.66a1.5 1.5 0 001.088-1.442V6.994l-9 2.572v9.737a3 3 0 01-2.176 2.884l-1.32.377a2.553 2.553 0 11-1.402-4.909l2.31-.66A1.5 1.5 0 007.5 15.952V4.725a.75.75 0 01.544-.721l10.5-3a.75.75 0 01.408.647z"/>
-                          : <path d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653z"/>
-                        }
-                      </svg>
-                      {/* Badge danse · niveau */}
-                      {(style || level) && (
-                        <div className="absolute bottom-0 inset-x-0 px-2 pb-1.5">
-                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-black/40 text-white leading-none">
-                            {[style?.name, level?.name].filter(Boolean).join(' · ')}
-                          </span>
+                    {/* Thumbnail vidéo */}
+                    <div className="relative w-full aspect-video overflow-hidden" style={{ backgroundColor: bg }}>
+                      <video
+                        src={m.sourceUrl}
+                        preload="metadata"
+                        muted
+                        playsInline
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                      <button
+                        onClick={() => setExpanded(isOpen ? null : m.id)}
+                        className="absolute inset-0 flex items-center justify-center group"
+                      >
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-opacity bg-black/40 ${isOpen ? 'opacity-60' : 'opacity-80 group-hover:opacity-100'}`}>
+                          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-white ml-0.5">
+                            <path d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653z"/>
+                          </svg>
                         </div>
-                      )}
-                    </button>
+                      </button>
+                    </div>
 
                     {/* Info */}
                     <div className="px-3 py-2.5">
                       <p className="text-xs font-semibold text-gray-900 leading-tight truncate">{m.title}</p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${m.type === 'audio' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}`}>
-                          {m.type === 'audio' ? 'Audio' : 'Vidéo'}
-                        </span>
-                        {m.durationSeconds && <span className="text-[9px] text-gray-400">{formatDuration(m.durationSeconds)}</span>}
-                      </div>
+                      {m.durationSeconds && (
+                        <p className="text-[10px] text-gray-400 mt-0.5">{formatDuration(m.durationSeconds)}</p>
+                      )}
                     </div>
 
                     {/* Player (expanded) */}
