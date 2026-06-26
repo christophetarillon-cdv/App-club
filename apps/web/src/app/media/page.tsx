@@ -13,6 +13,23 @@ interface Course   { id: string; name: string; danceStyleId: string; levelId: st
 interface Level    { id: string; name: string; }
 interface Membership { seasonId: string; paymentPlanStatus: string; status: string; }
 
+function VideoThumbnail({ src, bg }: { src: string; bg: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  return (
+    <div className="absolute inset-0" style={{ backgroundColor: bg }}>
+      <video
+        ref={ref}
+        src={src}
+        preload="metadata"
+        muted
+        playsInline
+        onLoadedMetadata={() => { if (ref.current) ref.current.currentTime = 0.1; }}
+        className="w-full h-full object-cover"
+      />
+    </div>
+  );
+}
+
 function formatDuration(secs?: number) {
   if (!secs) return null;
   const m = Math.floor(secs / 60), s = secs % 60;
@@ -178,14 +195,8 @@ export default function MediaPage() {
                 return (
                   <div key={m.id} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
                     {/* Thumbnail vidéo */}
-                    <div className="relative w-full aspect-video overflow-hidden" style={{ backgroundColor: bg }}>
-                      <video
-                        src={m.sourceUrl}
-                        preload="metadata"
-                        muted
-                        playsInline
-                        className="absolute inset-0 w-full h-full object-cover"
-                      />
+                    <div className="relative w-full aspect-video overflow-hidden">
+                      <VideoThumbnail src={m.sourceUrl} bg={bg} />
                       <button
                         onClick={() => setExpanded(isOpen ? null : m.id)}
                         className="absolute inset-0 flex items-center justify-center group"
