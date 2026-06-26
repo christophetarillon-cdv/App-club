@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, where } from 'firebase/firestore'; // where used for memberships
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppShell } from '@/components/AppShell';
@@ -61,14 +61,14 @@ export default function AudioPage() {
     setHasActiveTrial(trialActive);
 
     Promise.all([
-      getDocs(query(collection(db, 'media'), where('type', '==', 'audio'), orderBy('uploadedAt', 'desc'))),
+      getDocs(query(collection(db, 'media'), orderBy('uploadedAt', 'desc'))),
       getDocs(collection(db, 'seasons')),
       getDocs(collection(db, 'danceStyles')),
       getDocs(collection(db, 'courses')),
       getDocs(collection(db, 'levels')),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
     ]).then(([mediaSnap, seasonSnap, styleSnap, courseSnap, levelSnap, membershipSnap]) => {
-      setAllMedia(mediaSnap.docs.map(d => ({ id: d.id, ...d.data() } as Media)));
+      setAllMedia(mediaSnap.docs.map(d => ({ id: d.id, ...d.data() } as Media)).filter(m => m.type === 'audio'));
 
       const s = seasonSnap.docs.map(d => ({ id: d.id, label: d.data().label ?? d.id, isActive: d.data().isActive === true }))
         .sort((a, b) => b.label > a.label ? 1 : -1);
