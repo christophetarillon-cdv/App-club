@@ -20,6 +20,12 @@ importers:
       math-intrinsics:
         specifier: ^1.1.0
         version: 1.1.0
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: 18.3.1
+        version: 18.3.1(react@18.3.1)
     devDependencies:
       '@typescript-eslint/eslint-plugin':
         specifier: ^7.0.0
