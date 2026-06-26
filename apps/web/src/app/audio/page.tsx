@@ -9,7 +9,8 @@ import type { Media } from '@cdv/types';
 
 interface Season   { id: string; label: string; isActive: boolean; }
 interface DanceStyle { id: string; name: string; color?: string; }
-interface Course   { id: string; name: string; danceStyleId: string; }
+interface Course   { id: string; name: string; danceStyleId: string; levelId: string; }
+interface Level    { id: string; name: string; }
 
 function formatDuration(secs?: number) {
   if (!secs) return null;
@@ -24,6 +25,7 @@ export default function AudioPage() {
   const [seasons, setSeasons]             = useState<Season[]>([]);
   const [styles, setStyles]               = useState<DanceStyle[]>([]);
   const [courses, setCourses]             = useState<Course[]>([]);
+  const [levels, setLevels]               = useState<Level[]>([]);
   const [paidSeasonIds, setPaidSeasonIds] = useState<string[]>([]);
   const [hasActiveTrial, setHasActiveTrial] = useState(false);
   const [loading, setLoading]             = useState(true);
@@ -63,8 +65,9 @@ export default function AudioPage() {
       getDocs(collection(db, 'seasons')),
       getDocs(collection(db, 'danceStyles')),
       getDocs(collection(db, 'courses')),
+      getDocs(collection(db, 'levels')),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
-    ]).then(([mediaSnap, seasonSnap, styleSnap, courseSnap, membershipSnap]) => {
+    ]).then(([mediaSnap, seasonSnap, styleSnap, courseSnap, levelSnap, membershipSnap]) => {
       setAllMedia(mediaSnap.docs.map(d => ({ id: d.id, ...d.data() } as Media)));
 
       const s = seasonSnap.docs.map(d => ({ id: d.id, label: d.data().label ?? d.id, isActive: d.data().isActive === true }))
@@ -72,7 +75,8 @@ export default function AudioPage() {
       setSeasons(s);
 
       setStyles(styleSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '', color: d.data().color })));
-      setCourses(courseSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '', danceStyleId: d.data().danceStyleId ?? '' })));
+      setCourses(courseSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '', danceStyleId: d.data().danceStyleId ?? '', levelId: d.data().levelId ?? '' })));
+      setLevels(levelSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '' })));
 
       const paid = membershipSnap.docs
         .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
@@ -91,6 +95,7 @@ export default function AudioPage() {
   const activeSeason = seasons.find(s => s.isActive);
   const styleMap  = new Map(styles.map(s => [s.id, s]));
   const courseMap = new Map(courses.map(c => [c.id, c]));
+  const levelMap  = new Map(levels.map(l => [l.id, l]));
 
   const visible = allMedia.filter(m => {
     if (!canAccess(m)) return false;
@@ -150,9 +155,10 @@ export default function AudioPage() {
               {visible.map((m, i) => {
                 const style  = m.danceStyleId ? styleMap.get(m.danceStyleId) : undefined;
                 const course = m.courseId ? courseMap.get(m.courseId) : undefined;
+                const level  = course?.levelId ? levelMap.get(course.levelId) : undefined;
                 const accent = style?.color ?? '#1B3A6B';
                 const isOpen = expanded === m.id;
-                const label  = [style?.name, course?.name].filter(Boolean).join(' · ');
+                const label  = [style?.name, level?.name].filter(Boolean).join(' · ');
                 return (
                   <div key={m.id} className={`${i > 0 ? 'border-t border-gray-100' : ''}`}>
                     <button onClick={() => setExpanded(isOpen ? null : m.id)}

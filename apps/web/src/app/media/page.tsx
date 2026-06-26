@@ -9,7 +9,8 @@ import type { Media } from '@cdv/types';
 
 interface Season   { id: string; label: string; isActive: boolean; }
 interface DanceStyle { id: string; name: string; color?: string; }
-interface Course   { id: string; name: string; danceStyleId: string; }
+interface Course   { id: string; name: string; danceStyleId: string; levelId: string; }
+interface Level    { id: string; name: string; }
 interface Membership { seasonId: string; paymentPlanStatus: string; status: string; }
 
 function formatDuration(secs?: number) {
@@ -30,6 +31,7 @@ export default function MediaPage() {
   const [seasons, setSeasons]             = useState<Season[]>([]);
   const [styles, setStyles]               = useState<DanceStyle[]>([]);
   const [courses, setCourses]             = useState<Course[]>([]);
+  const [levels, setLevels]               = useState<Level[]>([]);
   const [paidSeasonIds, setPaidSeasonIds] = useState<string[]>([]);
   const [hasActiveTrial, setHasActiveTrial] = useState(false);
   const [loading, setLoading]             = useState(true);
@@ -70,8 +72,9 @@ export default function MediaPage() {
       getDocs(collection(db, 'seasons')),
       getDocs(collection(db, 'danceStyles')),
       getDocs(collection(db, 'courses')),
+      getDocs(collection(db, 'levels')),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
-    ]).then(([mediaSnap, seasonSnap, styleSnap, courseSnap, membershipSnap]) => {
+    ]).then(([mediaSnap, seasonSnap, styleSnap, courseSnap, levelSnap, membershipSnap]) => {
       setAllMedia(mediaSnap.docs.map(d => ({ id: d.id, ...d.data() } as Media)));
 
       const s = seasonSnap.docs.map(d => ({ id: d.id, label: d.data().label ?? d.id, isActive: d.data().isActive === true }))
@@ -79,7 +82,8 @@ export default function MediaPage() {
       setSeasons(s);
 
       setStyles(styleSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '', color: d.data().color })));
-      setCourses(courseSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '', danceStyleId: d.data().danceStyleId ?? '' })));
+      setCourses(courseSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '', danceStyleId: d.data().danceStyleId ?? '', levelId: d.data().levelId ?? '' })));
+      setLevels(levelSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '' })));
 
       const paid = membershipSnap.docs
         .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
@@ -98,6 +102,7 @@ export default function MediaPage() {
   const activeSeason = seasons.find(s => s.isActive);
   const styleMap  = new Map(styles.map(s => [s.id, s]));
   const courseMap = new Map(courses.map(c => [c.id, c]));
+  const levelMap  = new Map(levels.map(l => [l.id, l]));
 
   const visible = allMedia.filter(m => {
     if (m.type !== 'video') return false;
@@ -160,6 +165,7 @@ export default function MediaPage() {
               {visible.map(m => {
                 const style  = m.danceStyleId ? styleMap.get(m.danceStyleId) : undefined;
                 const course = m.courseId ? courseMap.get(m.courseId) : undefined;
+                const level  = course?.levelId ? levelMap.get(course.levelId) : undefined;
                 const bg     = styleBg(style?.color);
                 const isOpen = expanded === m.id;
                 return (
@@ -175,10 +181,10 @@ export default function MediaPage() {
                         }
                       </svg>
                       {/* Badge danse · niveau */}
-                      {(style || course) && (
+                      {(style || level) && (
                         <div className="absolute bottom-0 inset-x-0 px-2 pb-1.5">
                           <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-black/40 text-white leading-none">
-                            {[style?.name, course?.name].filter(Boolean).join(' · ')}
+                            {[style?.name, level?.name].filter(Boolean).join(' · ')}
                           </span>
                         </div>
                       )}
