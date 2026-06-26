@@ -181,7 +181,7 @@ export default function DancerHubPage() {
             </Link>
           ))}
           <div className="flex-1" />
-          {firstAccessibleAdminHref && (
+          {isAdmin && firstAccessibleAdminHref && (
             <Link href={firstAccessibleAdminHref}
               className="flex flex-col items-center gap-1.5 py-3 mx-1.5 rounded-xl text-gray-400 hover:bg-background hover:text-primary transition-colors">
               <SettingsIcon />
@@ -263,7 +263,7 @@ export default function DancerHubPage() {
                   </div>
                   <ChevronRightIcon className="w-4 h-4 text-gray-300" />
                 </Link>
-                {firstAccessibleAdminHref && (
+                {isAdmin && firstAccessibleAdminHref && (
                   <Link href={firstAccessibleAdminHref}
                     className="flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition-colors">
                     <div className="flex items-center gap-3 text-gray-500">
