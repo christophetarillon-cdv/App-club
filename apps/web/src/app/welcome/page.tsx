@@ -192,7 +192,7 @@ export default function WelcomePage() {
 
                   {dancers.length < 3 && (
                     <button type="button" onClick={addDancer}
-                      className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+                      className="w-full border-2 border-dashed border-gray-300 rounded-xl py-3 text-sm font-medium text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">
                       + Ajouter un(e) danseur(se)
                     </button>
                   )}
