@@ -1,5 +1,5 @@
 {
-  "installCommand": "cd ../.. && pnpm install",
+  "installCommand": "cd ../.. && pnpm install --filter @cdv/web...",
   "buildCommand": "pnpm build",
   "outputDirectory": ".next",
   "framework": "nextjs"

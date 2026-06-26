@@ -17,12 +17,13 @@ const SHEET_H = Math.round(SCREEN_H * 0.86);
 const SPEED_PRESETS = [0.75, 1, 1.25, 1.5];
 
 export default function VideoPlayerSheet({
-  video, styleColor, seasonBadge, onClose,
+  video, styleColor, seasonBadge, onClose, onDelete,
 }: {
   video: Media;
   styleColor: string;
   seasonBadge: string;
   onClose: () => void;
+  onDelete?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(SHEET_H)).current;
@@ -30,6 +31,7 @@ export default function VideoPlayerSheet({
 
   const [speed, setSpeed] = useState(1);
   const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   const player = useVideoPlayer(video.sourceUrl, p => { p.loop = false; p.play(); });
 
@@ -76,7 +78,17 @@ export default function VideoPlayerSheet({
       const perm = await MediaLibrary.requestPermissionsAsync();
       const safe = video.title.replace(/[^a-zA-Z0-9._-]/g, '_');
       const dest = `${FileSystem.cacheDirectory}${safe || 'video'}.mp4`;
-      const { uri } = await FileSystem.downloadAsync(video.sourceUrl, dest);
+      // Téléchargement resumable : reprend au lieu d'échouer si l'app passe en
+      // arrière-plan ou si le téléphone se met en veille pendant le transfert.
+      const dl = FileSystem.createDownloadResumable(
+        video.sourceUrl, dest, {},
+        ({ totalBytesWritten, totalBytesExpectedToWrite }) => {
+          if (totalBytesExpectedToWrite > 0) setDownloadProgress(totalBytesWritten / totalBytesExpectedToWrite);
+        },
+      );
+      const result = await dl.downloadAsync();
+      const uri = result?.uri;
+      if (!uri) throw new Error('Téléchargement échoué');
       if (perm.granted) {
         await MediaLibrary.saveToLibraryAsync(uri);
         Alert.alert('Enregistrée', 'La vidéo a été ajoutée à ta galerie.');
@@ -89,6 +101,7 @@ export default function VideoPlayerSheet({
       Alert.alert('Erreur', 'Téléchargement impossible.');
     } finally {
       setDownloading(false);
+      setDownloadProgress(0);
     }
   };
 
@@ -155,10 +168,16 @@ export default function VideoPlayerSheet({
           </View>
 
           <TouchableOpacity style={styles.downloadBtn} onPress={handleDownload} disabled={downloading} activeOpacity={0.85}>
-            {downloading
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.downloadText}>Télécharger la vidéo</Text>}
+            <Text style={styles.downloadText}>
+              {downloading ? `Téléchargement… ${Math.round(downloadProgress * 100)}%` : 'Télécharger la vidéo'}
+            </Text>
           </TouchableOpacity>
+
+          {onDelete && (
+            <TouchableOpacity style={styles.deleteBtn} onPress={onDelete} disabled={downloading} activeOpacity={0.85}>
+              <Text style={styles.deleteText}>Supprimer la vidéo</Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </Animated.View>
     </View>
@@ -200,4 +219,7 @@ const styles = StyleSheet.create({
 
   downloadBtn: { backgroundColor: Colors.orange, borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', marginTop: 16 },
   downloadText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+
+  deleteBtn: { borderWidth: 1, borderColor: '#E5484D', borderRadius: 14, paddingVertical: 13, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  deleteText: { color: '#E5484D', fontSize: 15, fontWeight: '600' },
 });

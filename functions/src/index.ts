@@ -927,7 +927,16 @@ export const registerMedia = onCall(
     const uid = request.auth.uid;
 
     const accountSnap = await db.doc(`accounts/${uid}`).get();
-    const isAdmin = accountSnap.data()?.roles?.includes('admin') === true;
+    let isAdmin = accountSnap.data()?.roles?.includes('admin') === true;
+    // Le modèle d'admin de l'app inclut aussi les danseurs ayant le rôle admin
+    // (cf. web admin/layout.tsx). Sinon un admin-danseur ne peut pas téléverser.
+    if (!isAdmin) {
+      const dancerAdminSnap = await db.collection('dancers')
+        .where('accountId', '==', uid)
+        .where('roles', 'array-contains', 'admin')
+        .get();
+      isAdmin = !dancerAdminSnap.empty;
+    }
 
     let courseId: string | null = null;
     let danceStyleId: string | null = null;
@@ -975,6 +984,47 @@ export const registerMedia = onCall(
     });
 
     return { id: mediaRef.id };
+  },
+);
+
+// ── deleteMedia — supprime un média (doc Firestore + fichier Storage) ──────────
+// Réservé aux admins (compte OU danseur admin, même logique que registerMedia).
+export const deleteMedia = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+
+    const { mediaId } = request.data as { mediaId: string };
+    if (!mediaId) throw new HttpsError('invalid-argument', 'mediaId requis');
+
+    const db = getDb();
+    const uid = request.auth.uid;
+
+    const accountSnap = await db.doc(`accounts/${uid}`).get();
+    let isAdmin = accountSnap.data()?.roles?.includes('admin') === true;
+    if (!isAdmin) {
+      const dancerAdminSnap = await db.collection('dancers')
+        .where('accountId', '==', uid)
+        .where('roles', 'array-contains', 'admin')
+        .get();
+      isAdmin = !dancerAdminSnap.empty;
+    }
+    if (!isAdmin) throw new HttpsError('permission-denied', 'Seuls les administrateurs peuvent supprimer un média');
+
+    const mediaRef = db.doc(`media/${mediaId}`);
+    const mediaSnap = await mediaRef.get();
+    if (!mediaSnap.exists) return { ok: true }; // déjà supprimé
+
+    const storagePath = mediaSnap.data()?.storagePath as string | undefined;
+    if (storagePath) {
+      try {
+        await admin.storage().bucket().file(storagePath).delete();
+      } catch (err) {
+        console.warn('[deleteMedia] fichier Storage déjà absent ou non supprimable:', storagePath);
+      }
+    }
+    await mediaRef.delete();
+    return { ok: true };
   },
 );
 

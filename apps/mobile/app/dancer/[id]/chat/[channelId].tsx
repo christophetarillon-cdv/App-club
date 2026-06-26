@@ -190,7 +190,11 @@ export default function ChatChannelScreen() {
     try {
       const safe = (m.fileName ?? 'fichier').replace(/[^a-zA-Z0-9._-]/g, '_');
       const dest = `${FileSystem.cacheDirectory}${Date.now()}_${safe}`;
-      const { uri } = await FileSystem.downloadAsync(m.mediaUrl, dest);
+      // Téléchargement resumable : reprend si l'app passe en arrière-plan / veille.
+      const dl = FileSystem.createDownloadResumable(m.mediaUrl, dest, {});
+      const result = await dl.downloadAsync();
+      const uri = result?.uri;
+      if (!uri) throw new Error('Téléchargement échoué');
       if (m.mediaType === 'image' || m.mediaType === 'video') {
         const perm = await MediaLibrary.requestPermissionsAsync();
         if (perm.granted) { await MediaLibrary.saveToLibraryAsync(uri); Alert.alert('Enregistré', 'Ajouté à ta galerie.'); return; }

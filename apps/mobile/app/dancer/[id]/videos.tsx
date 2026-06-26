@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, Pressable,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, Pressable, Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDancer } from '@/contexts/DancerContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,10 +15,13 @@ import { Colors } from '@/constants/Colors';
 import BottomTabBar from '@/components/BottomTabBar';
 import VideoThumbnail from '@/components/VideoThumbnail';
 import VideoPlayerSheet from '@/components/VideoPlayerSheet';
+import VideoUploadSheet from '@/components/VideoUploadSheet';
 import type { Media } from '@cdv/types';
 
 interface Season { id: string; label: string; isActive: boolean; }
 interface DanceStyle { id: string; name: string; color: string; }
+interface CourseOpt { id: string; name: string; danceStyleId: string; levelId: string; }
+interface LevelOpt { id: string; name: string; }
 
 const FALLBACK_COLOR = '#4A8B9C';
 
@@ -57,23 +62,56 @@ export default function VideosScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, account, dancers } = useAuth();
+  const { selectedDancer } = useDancer();
 
   const [allMedia, setAllMedia] = useState<Media[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [styleList, setStyleList] = useState<DanceStyle[]>([]);
+  const [courseList, setCourseList] = useState<CourseOpt[]>([]);
+  const [levelList, setLevelList] = useState<LevelOpt[]>([]);
   const [paidSeasonIds, setPaidSeasonIds] = useState<string[]>([]);
   const [hasActiveTrial, setHasActiveTrial] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const [selectedStyle, setSelectedStyle] = useState<string>('toutes');
-  const [stylePickerOpen, setStylePickerOpen] = useState(false);
+  const [selectedCourse, setSelectedCourse] = useState<string>('toutes');
+  const [coursePickerOpen, setCoursePickerOpen] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<string>('');
   const [seasonPickerOpen, setSeasonPickerOpen] = useState(false);
   const [activeVideo, setActiveVideo] = useState<Media | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const isAdminOrInstructor =
     !!account?.roles?.includes('admin') ||
     dancers.some(d => d.roles.includes('admin') || d.roles.includes('instructor'));
+  // Même test que le menu Paramètres : basé sur le danseur SÉLECTIONNÉ uniquement.
+  const isAdmin = (selectedDancer?.roles ?? []).includes('admin');
+
+  const refreshMedia = () => {
+    getDocs(query(collection(db, 'media'), orderBy('uploadedAt', 'desc')))
+      .then(snap => setAllMedia(snap.docs.map(d => ({ id: d.id, ...d.data() } as Media))))
+      .catch(() => {});
+  };
+
+  const handleDeleteVideo = (video: Media) => {
+    Alert.alert(
+      'Supprimer la vidéo',
+      `Supprimer définitivement « ${video.title} » ? Cette action est irréversible.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer', style: 'destructive', onPress: async () => {
+            try {
+              await httpsCallable(functions, 'deleteMedia')({ mediaId: video.id });
+              setActiveVideo(null);
+              setAllMedia(prev => prev.filter(m => m.id !== video.id));
+            } catch (e: any) {
+              Alert.alert('Erreur', e?.message ?? 'Suppression impossible.');
+            }
+          },
+        },
+      ],
+    );
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -87,7 +125,9 @@ export default function VideosScreen() {
       getDocs(collection(db, 'seasons')),
       getDocs(collection(db, 'danceStyles')),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
-    ]).then(([mediaSnap, seasonSnap, styleSnap, membershipSnap]) => {
+      getDocs(query(collection(db, 'courses'), orderBy('name'))),
+      getDocs(query(collection(db, 'levels'), orderBy('order'))),
+    ]).then(([mediaSnap, seasonSnap, styleSnap, membershipSnap, courseSnap, levelSnap]) => {
       setAllMedia(mediaSnap.docs.map(d => ({ id: d.id, ...d.data() } as Media)));
       setSeasons(seasonSnap.docs.map(d => ({
         id: d.id, label: d.data().label ?? d.id, isActive: d.data().isActive === true,
@@ -97,6 +137,10 @@ export default function VideosScreen() {
         .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
         .map(d => d.data().seasonId as string).filter(Boolean);
       setPaidSeasonIds([...new Set(paid)]);
+      setCourseList(courseSnap.docs.map(d => ({
+        id: d.id, name: d.data().name ?? '', danceStyleId: d.data().danceStyleId ?? '', levelId: d.data().levelId ?? '',
+      })));
+      setLevelList(levelSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '' })));
     }).finally(() => setLoading(false));
   }, [user, dancers]);
 
@@ -106,9 +150,9 @@ export default function VideosScreen() {
     [...seasons].sort((a, b) => (a.isActive ? -1 : b.isActive ? 1 : (b.label > a.label ? 1 : -1))),
     [seasons]);
 
-  const sortedStyles = useMemo(() =>
-    [...styleList].sort((a, b) => a.name.localeCompare(b.name)),
-    [styleList]);
+  const sortedCourses = useMemo(() =>
+    [...courseList].sort((a, b) => a.name.localeCompare(b.name)),
+    [courseList]);
 
   useEffect(() => {
     if (selectedSeason || seasons.length === 0) return;
@@ -130,36 +174,44 @@ export default function VideosScreen() {
     return seasons.find(s => s.id === value)?.label ?? 'Saison';
   };
 
-  const styleLabel = (value: string): string => {
-    if (value === 'toutes') return 'Toutes les danses';
-    return styleList.find(s => s.id === value)?.name ?? 'Danse';
+  const courseFilterLabel = (value: string): string => {
+    if (value === 'toutes') return 'Tous les cours';
+    const c = courseList.find(x => x.id === value);
+    if (!c) return 'Cours';
+    const lvl = levelList.find(l => l.id === c.levelId)?.name;
+    return lvl ? `${c.name} · ${lvl}` : c.name;
   };
 
   const visible = useMemo(() => allMedia.filter(m => {
     if (m.type !== 'video') return false;
     if (!canAccess(m)) return false;
-    if (selectedStyle !== 'toutes' && m.danceStyleId !== selectedStyle) return false;
+    if (selectedCourse !== 'toutes' && m.courseId !== selectedCourse) return false;
     if (selectedSeason === 'intemporel' && m.seasonId) return false;
     if (selectedSeason !== 'intemporel' && selectedSeason !== 'toutes' && selectedSeason && m.seasonId !== selectedSeason) return false;
     return true;
-  }), [allMedia, selectedStyle, selectedSeason, paidSeasonIds, hasActiveTrial, isAdminOrInstructor]);
+  }), [allMedia, selectedCourse, selectedSeason, paidSeasonIds, hasActiveTrial, isAdminOrInstructor]);
 
   const sections = useMemo(() => {
-    const byStyle = new Map<string, Media[]>();
+    // Regroupement par cours (libellé « danse · niveau »).
+    const byCourse = new Map<string, Media[]>();
     for (const m of visible) {
-      const key = m.danceStyleId ?? '__none__';
-      if (!byStyle.has(key)) byStyle.set(key, []);
-      byStyle.get(key)!.push(m);
+      const key = m.courseId ?? '__none__';
+      if (!byCourse.has(key)) byCourse.set(key, []);
+      byCourse.get(key)!.push(m);
     }
-    const ordered = [...styleList]
-      .filter(s => byStyle.has(s.id))
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map(s => ({ style: s, videos: byStyle.get(s.id)! }));
-    if (byStyle.has('__none__')) {
-      ordered.push({ style: { id: '__none__', name: 'Autres', color: FALLBACK_COLOR }, videos: byStyle.get('__none__')! });
+    const colorOfStyle = (styleId?: string | null) =>
+      styleList.find(s => s.id === styleId)?.color ?? FALLBACK_COLOR;
+    const result: { key: string; label: string; color: string; videos: Media[] }[] = [];
+    for (const c of sortedCourses) {
+      if (byCourse.has(c.id)) {
+        result.push({ key: c.id, label: courseFilterLabel(c.id), color: colorOfStyle(c.danceStyleId), videos: byCourse.get(c.id)! });
+      }
     }
-    return ordered;
-  }, [visible, styleList]);
+    if (byCourse.has('__none__')) {
+      result.push({ key: '__none__', label: 'Autres', color: FALLBACK_COLOR, videos: byCourse.get('__none__')! });
+    }
+    return result;
+  }, [visible, styleList, sortedCourses, courseList, levelList]);
 
   const styleColorOf = (m: Media): string =>
     styleList.find(s => s.id === m.danceStyleId)?.color ?? FALLBACK_COLOR;
@@ -178,20 +230,30 @@ export default function VideosScreen() {
             <Path d="M0 22 Q100 2 200 18 Q300 32 400 12 L400 44 L0 44 Z" fill={Colors.background} />
           </Svg>
         </View>
-        <TouchableOpacity style={styles.headerRow} onPress={() => router.back()} activeOpacity={0.7}>
-          <Text style={styles.backChevron}>‹</Text>
-          <Text style={styles.headerTitle}>Mes vidéos</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRow}>
+          <TouchableOpacity style={styles.headerLeft} onPress={() => router.back()} activeOpacity={0.7}>
+            <Text style={styles.backChevron}>‹</Text>
+            <Text style={styles.headerTitle}>Mes vidéos</Text>
+          </TouchableOpacity>
+          {isAdmin && (
+            <TouchableOpacity style={styles.addBtn} onPress={() => setUploadOpen(true)} activeOpacity={0.85}>
+              <Svg width={15} height={15} viewBox="0 0 24 24" fill="none">
+                <Path d="M12 5v14M5 12h14" stroke="#185FA5" strokeWidth={2.6} strokeLinecap="round" />
+              </Svg>
+              <Text style={styles.addBtnText}>Ajouter</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 110 + insets.bottom }} showsVerticalScrollIndicator={false}>
-        {/* Sélecteur de danse */}
+        {/* Sélecteur de cours (danse + niveau) */}
         <View style={styles.selectorWrap}>
-          <TouchableOpacity style={styles.selector} onPress={() => setStylePickerOpen(true)} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.selector} onPress={() => setCoursePickerOpen(true)} activeOpacity={0.8}>
             <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
               <Path d="M12 2a10 10 0 100 20A10 10 0 0012 2zM2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke="#534AB7" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
-            <Text style={styles.selectorText}>{styleLabel(selectedStyle)}</Text>
+            <Text style={styles.selectorText}>{courseFilterLabel(selectedCourse)}</Text>
             <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
               <Path d="M6 9l6 6 6-6" stroke={Colors.textSecondary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
@@ -211,18 +273,18 @@ export default function VideosScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Picker danse */}
-        <Modal visible={stylePickerOpen} transparent animationType="fade" onRequestClose={() => setStylePickerOpen(false)}>
-          <Pressable style={styles.modalOverlay} onPress={() => setStylePickerOpen(false)}>
+        {/* Picker cours (danse + niveau) */}
+        <Modal visible={coursePickerOpen} transparent animationType="fade" onRequestClose={() => setCoursePickerOpen(false)}>
+          <Pressable style={styles.modalOverlay} onPress={() => setCoursePickerOpen(false)}>
             <View style={styles.modalSheet}>
-              <Text style={styles.modalTitle}>Choisir une danse</Text>
-              {[{ value: 'toutes', label: 'Toutes les danses' },
-                ...sortedStyles.map(s => ({ value: s.id, label: s.name }))
+              <Text style={styles.modalTitle}>Choisir un cours</Text>
+              {[{ value: 'toutes', label: 'Tous les cours' },
+                ...sortedCourses.map(c => ({ value: c.id, label: courseFilterLabel(c.id) }))
               ].map(opt => {
-                const selected = opt.value === selectedStyle;
+                const selected = opt.value === selectedCourse;
                 return (
                   <TouchableOpacity key={opt.value} style={styles.modalOption}
-                    onPress={() => { setSelectedStyle(opt.value); setStylePickerOpen(false); }} activeOpacity={0.7}>
+                    onPress={() => { setSelectedCourse(opt.value); setCoursePickerOpen(false); }} activeOpacity={0.7}>
                     <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]}>{opt.label}</Text>
                     {selected && (
                       <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
@@ -271,15 +333,15 @@ export default function VideosScreen() {
               : 'Aucune vidéo disponible.'}
           </Text>
         ) : (
-          sections.map(({ style, videos }) => (
-            <View key={style.id} style={styles.section}>
-              <Text style={styles.sectionTitle}>{style.name}</Text>
+          sections.map(({ key, label, color, videos }) => (
+            <View key={key} style={styles.section}>
+              <Text style={styles.sectionTitle}>{label}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionRow}>
                 {videos.map(v => (
                   <VideoThumb
                     key={v.id}
                     video={v}
-                    color={style.color}
+                    color={color}
                     seasonBadge={seasonBadge(v.seasonId)}
                     onPress={() => setActiveVideo(v)}
                   />
@@ -299,6 +361,17 @@ export default function VideosScreen() {
           styleColor={styleColorOf(activeVideo)}
           seasonBadge={seasonBadge(activeVideo.seasonId)}
           onClose={() => setActiveVideo(null)}
+          onDelete={isAdmin ? () => handleDeleteVideo(activeVideo) : undefined}
+        />
+      )}
+
+      {uploadOpen && (
+        <VideoUploadSheet
+          seasons={sortedSeasons}
+          danceStyles={styleList}
+          defaultSeasonId={selectedSeason}
+          onClose={() => setUploadOpen(false)}
+          onUploaded={refreshMedia}
         />
       )}
     </View>
@@ -310,9 +383,12 @@ const styles = StyleSheet.create({
 
   header: { paddingHorizontal: 20, paddingBottom: 50, overflow: 'hidden' },
   headerWave: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 44 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   backChevron: { color: '#fff', fontSize: 26, marginTop: -2 },
   headerTitle: { color: '#fff', fontSize: 20, fontWeight: '600' },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 20, paddingHorizontal: 12, height: 34 },
+  addBtnText: { color: '#185FA5', fontSize: 13, fontWeight: '600' },
 
   selectorWrap: { paddingHorizontal: 16, marginTop: 8 },
   selector: {

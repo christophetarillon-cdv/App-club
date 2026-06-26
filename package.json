@@ -8,7 +8,7 @@
     "lint": "turbo lint",
     "type-check": "turbo type-check",
     "clean": "turbo clean && rm -rf node_modules",
-    "deploy:functions": "cd functions && npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --external:firebase-admin --external:firebase-functions --external:nodemailer --outfile=lib/index.js && cd .. && FUNCTIONS_DISCOVERY_TIMEOUT=600 firebase deploy --only functions --project clubvoiron-dev"
+    "deploy:functions": "cd functions && npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --external:firebase-admin --external:firebase-functions --external:nodemailer --external:ffmpeg-static --external:fluent-ffmpeg --outfile=lib/index.js && cd .. && FUNCTIONS_DISCOVERY_TIMEOUT=600 firebase deploy --only functions --project clubvoiron-dev"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",
