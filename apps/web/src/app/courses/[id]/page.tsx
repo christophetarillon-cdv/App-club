@@ -297,28 +297,6 @@ export default function CourseDetailPage() {
               )}
             </dl>
 
-            {/* Bouton inscription */}
-            {user && account !== null && !isRegistered && !registerSuccess && (
-              <div className="space-y-2">
-                {!seasonRegistrationOpen && (
-                  <p className="text-sm text-orange-600 bg-orange-50 rounded-lg px-3 py-2">Les inscriptions ne sont pas encore ouvertes.</p>
-                )}
-                {seasonRegistrationOpen && (
-                  <button
-                    onClick={handleRegister}
-                    disabled={registering}
-                    className={`w-full font-semibold py-2.5 rounded-lg transition-colors text-sm disabled:opacity-50 ${
-                      isFull
-                        ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }`}
-                  >
-                    {registering ? 'Inscription…' : isFull ? 'Rejoindre la liste d\'attente' : 'S\'inscrire'}
-                  </button>
-                )}
-                {registerError && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{registerError}</p>}
-              </div>
-            )}
 
             {(registerSuccess || (isRegistered && (!sessionDate || !myRegisteredAt || sessionDate >= myRegisteredAt))) && (
               <div className="bg-green-50 rounded-lg px-3 py-2 space-y-1">
