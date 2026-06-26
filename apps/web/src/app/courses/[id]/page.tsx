@@ -300,20 +300,10 @@ export default function CourseDetailPage() {
             {/* Bouton inscription */}
             {user && account !== null && !isRegistered && !registerSuccess && (
               <div className="space-y-2">
-                {hasNoDeclaredLevel && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    <p className="text-sm text-amber-700 font-medium">Niveau non déclaré pour ce style</p>
-                    <p className="text-xs text-amber-600 mt-0.5">
-                      Déclarez votre niveau dans{' '}
-                      <Link href="/profile/levels" className="underline font-medium">Mes niveaux</Link>
-                      {' '}pour pouvoir vous inscrire.
-                    </p>
-                  </div>
-                )}
-                {!hasNoDeclaredLevel && !seasonRegistrationOpen && (
+                {!seasonRegistrationOpen && (
                   <p className="text-sm text-orange-600 bg-orange-50 rounded-lg px-3 py-2">Les inscriptions ne sont pas encore ouvertes.</p>
                 )}
-                {!hasNoDeclaredLevel && seasonRegistrationOpen && (
+                {seasonRegistrationOpen && (
                   <button
                     onClick={handleRegister}
                     disabled={registering}
