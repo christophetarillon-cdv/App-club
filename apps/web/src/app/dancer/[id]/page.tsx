@@ -38,6 +38,7 @@ const LogoutIcon  = ({ className = 'w-5 h-5' }: SvgProps) => <svg viewBox="0 0 2
 const BellIcon    = ({ className = 'w-5 h-5' }: SvgProps) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" /></svg>;
 const ChevronRightIcon = ({ className = 'w-4 h-4' }: SvgProps) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9 5l7 7-7 7" /></svg>;
 const MusicIcon   = ({ className = 'w-5 h-5' }: SvgProps) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>;
+const ScanIcon    = ({ className = 'w-5 h-5' }: SvgProps) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" /><path d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75z" /></svg>;
 
 // ── Card type ─────────────────────────────────────────────────────────────────────
 type CardDef = { href: string; label: string; icon: React.ReactNode; iconBg: string; iconColor: string };
@@ -49,6 +50,7 @@ const CARD_CONFIG: Record<string, Omit<CardDef, 'href' | 'label'>> = {
   '/media':          { icon: <VideoIcon className="w-6 h-6" />,    iconBg: 'bg-purple-50', iconColor: 'text-purple-600' },
   '/audio':          { icon: <MusicIcon className="w-6 h-6" />,    iconBg: 'bg-pink-50',   iconColor: 'text-pink-600'   },
   '/trombinoscope':  { icon: <UsersIcon className="w-6 h-6" />,    iconBg: 'bg-teal-50',   iconColor: 'text-teal-600'   },
+  '/kiosk':          { icon: <ScanIcon className="w-6 h-6" />,     iconBg: 'bg-amber-50',  iconColor: 'text-amber-600'  },
 };
 
 // ── Page ──────────────────────────────────────────────────────────────────────────
@@ -105,6 +107,7 @@ export default function DancerHubPage() {
     { href: '/media',             label: 'Vidéos',      permKey: '/media' },
     { href: '/audio',             label: 'Audio',        permKey: '/audio' },
     { href: '/trombinoscope',     label: 'Trombinoscope', permKey: '/trombinoscope' },
+    { href: '/kiosk/setup',       label: 'Kiosque',       permKey: '/kiosk' },
   ].filter(item => hasPerm(item.permKey));
 
   const firstAccessibleAdminHref = (() => {
@@ -142,6 +145,7 @@ export default function DancerHubPage() {
     { href: '/media',            label: 'Vidéos',   icon: <VideoIcon />,    permKey: '/media' },
     { href: '/audio',            label: 'Audio',    icon: <MusicIcon />,    permKey: '/audio' },
     { href: '/trombinoscope',    label: 'Trombi',   icon: <UsersIcon />,    permKey: '/trombinoscope' },
+    { href: '/kiosk/setup',      label: 'Kiosque',  icon: <ScanIcon />,     permKey: '/kiosk' },
   ].filter(s => !s.permKey || hasPerm(s.permKey));
 
   return (
