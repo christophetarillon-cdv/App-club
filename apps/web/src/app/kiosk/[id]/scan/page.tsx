@@ -94,7 +94,21 @@ export default function KioskScanPage() {
   const [danceStyle, setDanceStyle] = useState('');
   const [level, setLevel] = useState('');
   const [mirrored, setMirrored] = useState(false);
-  const [cameraFacing, setCameraFacing] = useState<'user' | 'environment' | null>(null);
+  const cameraKey = `kiosk_camera_${kioskSessionId}`;
+  const [cameraFacing, setCameraFacingState] = useState<'user' | 'environment' | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const saved = sessionStorage.getItem(`kiosk_camera_${kioskSessionId}`);
+    return (saved === 'user' || saved === 'environment') ? saved : null;
+  });
+
+  const setCameraFacing = (val: 'user' | 'environment' | null | ((prev: 'user' | 'environment' | null) => 'user' | 'environment' | null)) => {
+    setCameraFacingState(prev => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      if (next) sessionStorage.setItem(cameraKey, next);
+      else sessionStorage.removeItem(cameraKey);
+      return next;
+    });
+  };
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [attendanceDancerIds, setAttendanceDancerIds] = useState<string[]>([]);
   const [showList, setShowList] = useState(false);
