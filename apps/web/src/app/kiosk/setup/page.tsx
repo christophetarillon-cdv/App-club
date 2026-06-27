@@ -33,6 +33,9 @@ export default function KioskSetupPage() {
     account?.roles?.includes('admin') ||
     dancers.some(d => d.roles.includes('admin') || d.roles.includes('instructor'));
 
+  const myDancer = dancers.find(d => d.roles.includes('admin') || d.roles.includes('instructor'));
+  const backHref = myDancer ? `/dancer/${myDancer.id}` : '/';
+
   useEffect(() => {
     if (loading) return;
     if (!user) { router.replace('/login'); return; }
@@ -64,7 +67,6 @@ export default function KioskSetupPage() {
     setOpening(true);
     setError(null);
     try {
-      const myDancer = dancers.find(d => d.roles.includes('admin') || d.roles.includes('instructor'));
       const ref = await addDoc(collection(db, 'kioskSessions'), {
         sessionId: selectedSessionId,
         courseId: chosen.courseId,
@@ -131,8 +133,8 @@ export default function KioskSetupPage() {
         </div>
 
         <div className="text-center">
-          <Link href="/profile" className="text-gray-500 hover:text-gray-300 text-sm">
-            ← Retour au profil
+          <Link href={backHref} className="text-gray-500 hover:text-gray-300 text-sm">
+            ← Retour
           </Link>
         </div>
       </div>
