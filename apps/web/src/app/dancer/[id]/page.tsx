@@ -128,21 +128,21 @@ export default function DancerHubPage() {
   const isTrial = dancer.roles?.includes('trial');
 
   const tabs = [
-    { href: `/dancer/${id}`,         label: 'Accueil',  icon: <HomeIcon /> },
-    { href: '/planning',             label: 'Planning', icon: <CalendarIcon /> },
-    { href: '/chat',                 label: 'Chat',     icon: <ChatIcon /> },
-    { href: `/dancer/${id}/card`,    label: 'Ma carte', icon: <QrIcon /> },
-    { href: `/dancer/${id}/profile`, label: 'Profil',   icon: <UserIcon /> },
-  ];
+    { href: `/dancer/${id}`,         label: 'Accueil',  icon: <HomeIcon />,     permKey: null },
+    { href: '/planning',             label: 'Planning', icon: <CalendarIcon />, permKey: '/planning' },
+    { href: '/chat',                 label: 'Chat',     icon: <ChatIcon />,     permKey: '/chat' },
+    { href: `/dancer/${id}/card`,    label: 'Ma carte', icon: <QrIcon />,       permKey: '/dancer/card' },
+    { href: `/dancer/${id}/profile`, label: 'Profil',   icon: <UserIcon />,     permKey: null },
+  ].filter(t => !t.permKey || hasPerm(t.permKey));
 
   const sidebarNav = [
-    { href: `/dancer/${id}`,     label: 'Accueil',  icon: <HomeIcon /> },
-    { href: '/planning',         label: 'Planning', icon: <CalendarIcon /> },
-    { href: '/chat',             label: 'Chat',     icon: <ChatIcon /> },
-    { href: '/media',            label: 'Vidéos',   icon: <VideoIcon /> },
-    { href: '/audio',            label: 'Audio',    icon: <MusicIcon /> },
-    { href: '/trombinoscope',    label: 'Trombi',   icon: <UsersIcon /> },
-  ];
+    { href: `/dancer/${id}`,     label: 'Accueil',  icon: <HomeIcon />,     permKey: null },
+    { href: '/planning',         label: 'Planning', icon: <CalendarIcon />, permKey: '/planning' },
+    { href: '/chat',             label: 'Chat',     icon: <ChatIcon />,     permKey: '/chat' },
+    { href: '/media',            label: 'Vidéos',   icon: <VideoIcon />,    permKey: '/media' },
+    { href: '/audio',            label: 'Audio',    icon: <MusicIcon />,    permKey: '/audio' },
+    { href: '/trombinoscope',    label: 'Trombi',   icon: <UsersIcon />,    permKey: '/trombinoscope' },
+  ].filter(s => !s.permKey || hasPerm(s.permKey));
 
   return (
     <div className="min-h-screen bg-background flex flex-col">

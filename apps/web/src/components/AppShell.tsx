@@ -2,6 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
 import { logout } from '@/lib/auth';
@@ -38,6 +41,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
+  const [pagePermissions, setPagePermissions] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    getDoc(doc(db, 'appSettings', 'main')).then(snap => {
+      if (snap.exists()) setPagePermissions((snap.data().pagePermissions ?? {}) as Record<string, string[]>);
+    });
+  }, []);
+
   const id = selectedDancer?.id ?? '';
   const userRoles = [...(account?.roles ?? []), ...(selectedDancer?.roles ?? [])];
   const isAdmin = userRoles.includes('admin');
@@ -48,22 +58,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const exact = (path: string) => pathname === path;
   const starts = (path: string) => pathname.startsWith(path);
 
+  const hasPerm = (permKey: string) => {
+    if (!(permKey in pagePermissions)) return true;
+    const allowed = pagePermissions[permKey] ?? [];
+    return isAdmin || userRoles.some(r => allowed.includes(r));
+  };
+
   const sidebarNav = [
-    { href: `/dancer/${id}`, label: 'Accueil',  icon: <HomeIcon />,     active: exact(`/dancer/${id}`) },
-    { href: '/planning',     label: 'Planning', icon: <CalendarIcon />, active: starts('/planning') },
-    { href: '/chat',         label: 'Chat',     icon: <ChatIcon />,     active: starts('/chat') },
-    { href: '/media',        label: 'Vidéos',   icon: <VideoIcon />,    active: exact('/media') },
-    { href: '/audio',        label: 'Audio',    icon: <MusicIcon />,    active: exact('/audio') },
-    { href: '/trombinoscope',label: 'Trombi',   icon: <UsersIcon />,    active: exact('/trombinoscope') },
-  ];
+    { href: `/dancer/${id}`, label: 'Accueil',  icon: <HomeIcon />,     active: exact(`/dancer/${id}`), permKey: null },
+    { href: '/planning',     label: 'Planning', icon: <CalendarIcon />, active: starts('/planning'),    permKey: '/planning' },
+    { href: '/chat',         label: 'Chat',     icon: <ChatIcon />,     active: starts('/chat'),        permKey: '/chat' },
+    { href: '/media',        label: 'Vidéos',   icon: <VideoIcon />,    active: exact('/media'),        permKey: '/media' },
+    { href: '/audio',        label: 'Audio',    icon: <MusicIcon />,    active: exact('/audio'),        permKey: '/audio' },
+    { href: '/trombinoscope',label: 'Trombi',   icon: <UsersIcon />,    active: exact('/trombinoscope'), permKey: '/trombinoscope' },
+  ].filter(item => !item.permKey || hasPerm(item.permKey));
 
   const tabs = [
-    { href: `/dancer/${id}`,         label: 'Accueil',  icon: <HomeIcon />,     active: exact(`/dancer/${id}`) },
-    { href: '/planning',             label: 'Planning', icon: <CalendarIcon />, active: starts('/planning') },
-    { href: '/chat',                 label: 'Chat',     icon: <ChatIcon />,     active: starts('/chat') },
-    { href: `/dancer/${id}/card`,    label: 'Ma carte', icon: <QrIcon />,       active: starts(`/dancer/${id}/card`) },
-    { href: `/dancer/${id}/profile`, label: 'Profil',   icon: <UserIcon />,     active: starts(`/dancer/${id}/profile`) },
-  ];
+    { href: `/dancer/${id}`,         label: 'Accueil',  icon: <HomeIcon />,     active: exact(`/dancer/${id}`),           permKey: null },
+    { href: '/planning',             label: 'Planning', icon: <CalendarIcon />, active: starts('/planning'),              permKey: '/planning' },
+    { href: '/chat',                 label: 'Chat',     icon: <ChatIcon />,     active: starts('/chat'),                  permKey: '/chat' },
+    { href: `/dancer/${id}/card`,    label: 'Ma carte', icon: <QrIcon />,       active: starts(`/dancer/${id}/card`),     permKey: '/dancer/card' },
+    { href: `/dancer/${id}/profile`, label: 'Profil',   icon: <UserIcon />,     active: starts(`/dancer/${id}/profile`), permKey: null },
+  ].filter(tab => !tab.permKey || hasPerm(tab.permKey));
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
