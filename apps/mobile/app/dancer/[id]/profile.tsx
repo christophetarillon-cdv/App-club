@@ -49,12 +49,20 @@ const MENU_ITEMS: MenuItem[] = [
     bgColor: '#FFF3E0',
   },
   {
-    permKey: null,
+    permKey: '/trombinoscope',
     label: 'Trombinoscope',
     subtitle: 'Photos des membres du club',
     screen: 'trombinoscope',
     accentColor: '#0E7490',
     bgColor: '#CFFAFE',
+  },
+  {
+    permKey: '/kiosk',
+    label: 'Kiosque de pointage',
+    subtitle: 'Scanner les présences',
+    screen: 'kiosk',
+    accentColor: '#B45309',
+    bgColor: '#FEF3C7',
   },
   {
     permKey: null,
@@ -113,6 +121,14 @@ function MenuIcon({ screen, color }: { screen: string; color: string }) {
       <Path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
       <Circle cx={17} cy={8} r={2.5} stroke={color} strokeWidth={1.8} />
       <Path d="M21 21v-1.5a3.5 3.5 0 00-2.5-3.35" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+  if (screen === 'kiosk') return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Rect x={3} y={3} width={8} height={8} rx={1} stroke={color} strokeWidth={1.8} />
+      <Rect x={13} y={3} width={8} height={8} rx={1} stroke={color} strokeWidth={1.8} />
+      <Rect x={3} y={13} width={8} height={8} rx={1} stroke={color} strokeWidth={1.8} />
+      <Path d="M13 13h2v2h-2zM17 13h4M13 17h2M17 17h4M13 21h4M19 19v2" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
     </Svg>
   );
   return (

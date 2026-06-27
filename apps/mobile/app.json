@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "fr.clubdansecoublevievoiron.app",
-      "supportsTablet": false
+      "supportsTablet": true
     },
     "android": {
       "package": "fr.clubdansecoublevievoiron.app",
@@ -27,6 +27,12 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "CDCV utilise la caméra pour scanner les QR codes de présence."
+        }
+      ],
       [
         "expo-splash-screen",
         {
