@@ -114,9 +114,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <Link href="/planning" className="block text-xs text-blue-600 hover:text-blue-800">
             Voir le planning
           </Link>
-          <Link href="/profile" className="block text-xs text-gray-500 hover:text-gray-700">
-            Mon profil
-          </Link>
+          {dancers[0] && (
+            <Link href={`/dancer/${dancers[0].id}`} className="block text-xs text-gray-500 hover:text-gray-700">
+              ← Retour à l'accueil
+            </Link>
+          )}
         </div>
       </aside>
 
