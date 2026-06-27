@@ -19,6 +19,7 @@ export const MEMBER_NAV: NavGroup[] = [
       { label: 'Médiathèque vidéos', href: '/media' },
       { label: 'Médiathèque audio', href: '/audio' },
       { label: 'Trombinoscope', href: '/trombinoscope' },
+      { label: 'Kiosque de pointage', href: '/kiosk' },
     ],
   },
   {
