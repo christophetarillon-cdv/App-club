@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity,
-  StyleSheet, Dimensions,
+  StyleSheet,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useDancer } from '@/contexts/DancerContext';
+import { usePagePermissions } from '@/contexts/PagePermissionsContext';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 import Svg, { Path, Ellipse } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import BottomTabBar from '@/components/BottomTabBar';
 import type { Announcement } from '@cdv/types';
-
-const { width } = Dimensions.get('window');
 
 // ── Icônes SVG inline ──────────────────────────────────────────────────────
 
@@ -45,40 +45,6 @@ function DocIcon() {
   );
 }
 
-// ── Icônes tab bar ─────────────────────────────────────────────────────────
-
-function ChatTabIcon({ color }: { color: string }) {
-  return (
-    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
-      <Path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"/>
-    </Svg>
-  );
-}
-
-function CalendarTabIcon({ color }: { color: string }) {
-  return (
-    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
-      <Path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"/>
-    </Svg>
-  );
-}
-
-function VideoTabIcon({ color }: { color: string }) {
-  return (
-    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
-      <Path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 8h10a2 2 0 012 2v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4a2 2 0 012-2z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"/>
-    </Svg>
-  );
-}
-
-function AudioTabIcon({ color }: { color: string }) {
-  return (
-    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
-      <Path d="M9 19V6l12-3v13M9 19a3 3 0 11-6 0 3 3 0 016 0zm12-3a3 3 0 11-6 0 3 3 0 016 0z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"/>
-    </Svg>
-  );
-}
-
 // ── Vague décorative des cartes ────────────────────────────────────────────
 
 function CardWaves() {
@@ -96,6 +62,7 @@ function CardWaves() {
 export default function DancerHomeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { selectedDancer } = useDancer();
+  const { hasPerm } = usePagePermissions();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -152,17 +119,19 @@ export default function DancerHomeScreen() {
             </TouchableOpacity>
 
             {/* QR Code */}
-            <TouchableOpacity style={styles.qrBlock} onPress={() => nav('card')} activeOpacity={0.85}>
-              <Text style={styles.qrLabel}>Mon QR Code</Text>
-              <View style={styles.qrBox}>
-                <QRCode
-                  value={selectedDancer.id}
-                  size={80}
-                  color="white"
-                  backgroundColor={Colors.orange}
-                />
-              </View>
-            </TouchableOpacity>
+            {hasPerm('/dancer/card') && (
+              <TouchableOpacity style={styles.qrBlock} onPress={() => nav('card')} activeOpacity={0.85}>
+                <Text style={styles.qrLabel}>Mon QR Code</Text>
+                <View style={styles.qrBox}>
+                  <QRCode
+                    value={selectedDancer.id}
+                    size={80}
+                    color="white"
+                    backgroundColor={Colors.orange}
+                  />
+                </View>
+              </TouchableOpacity>
+            )}
           </View>
 
           <Text style={styles.welcome}>Bienvenue</Text>
@@ -192,17 +161,21 @@ export default function DancerHomeScreen() {
 
         {/* ── Cartes action ── */}
         <View style={styles.section}>
-          <TouchableOpacity style={styles.actionCard} onPress={() => nav('videos')} activeOpacity={0.85}>
-            <CardWaves />
-            <Text style={styles.actionLabel}>Mes vidéos</Text>
-            <VideoIcon />
-          </TouchableOpacity>
+          {hasPerm('/media') && (
+            <TouchableOpacity style={styles.actionCard} onPress={() => nav('videos')} activeOpacity={0.85}>
+              <CardWaves />
+              <Text style={styles.actionLabel}>Mes vidéos</Text>
+              <VideoIcon />
+            </TouchableOpacity>
+          )}
 
-          <TouchableOpacity style={[styles.actionCard, { marginTop: 12 }]} onPress={() => nav('audios')} activeOpacity={0.85}>
-            <CardWaves />
-            <Text style={styles.actionLabel}>Mes audios</Text>
-            <AudioIcon />
-          </TouchableOpacity>
+          {hasPerm('/audio') && (
+            <TouchableOpacity style={[styles.actionCard, { marginTop: 12 }]} onPress={() => nav('audios')} activeOpacity={0.85}>
+              <CardWaves />
+              <Text style={styles.actionLabel}>Mes audios</Text>
+              <AudioIcon />
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity style={[styles.actionCard, { marginTop: 12 }]} onPress={() => nav('profile')} activeOpacity={0.85}>
             <CardWaves />
@@ -212,35 +185,7 @@ export default function DancerHomeScreen() {
         </View>
       </ScrollView>
 
-      {/* ── Tab bar ── */}
-      <View style={[styles.tabBar, { paddingBottom: insets.bottom + 8 }]}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => nav('chat')}>
-          <ChatTabIcon color={Colors.tabIcon} />
-          <Text style={styles.tabLabel}>Discussion</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.tabItem} onPress={() => nav('planning')}>
-          <CalendarTabIcon color={Colors.tabIcon} />
-          <Text style={styles.tabLabel}>Calendrier</Text>
-        </TouchableOpacity>
-
-        {/* Bouton central QR */}
-        <View style={styles.tabCenter}>
-          <TouchableOpacity style={styles.tabCenterBtn} onPress={() => nav('card')} activeOpacity={0.85}>
-            <QRCode value={selectedDancer.id} size={38} color="white" backgroundColor={Colors.orange} />
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity style={styles.tabItem} onPress={() => nav('videos')}>
-          <VideoTabIcon color={Colors.tabIcon} />
-          <Text style={styles.tabLabel}>Vidéos</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.tabItem} onPress={() => nav('audios')}>
-          <AudioTabIcon color={Colors.tabIcon} />
-          <Text style={styles.tabLabel}>Audios</Text>
-        </TouchableOpacity>
-      </View>
+      <BottomTabBar dancerId={id!} bottomInset={insets.bottom} />
     </View>
   );
 }
@@ -350,50 +295,4 @@ const styles = StyleSheet.create({
   },
   actionLabel: { fontSize: 17, fontWeight: '700', color: '#fff', flex: 1 },
 
-  // Tab bar
-  tabBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Colors.tabBg,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingTop: 10,
-    paddingHorizontal: 8,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  tabItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingBottom: 4,
-    gap: 3,
-  },
-  tabLabel: { fontSize: 11, color: Colors.tabIcon, fontWeight: '500' },
-  tabCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginBottom: 4,
-  },
-  tabCenterBtn: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.orange,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-    shadowColor: Colors.orange,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 8,
-  },
 });

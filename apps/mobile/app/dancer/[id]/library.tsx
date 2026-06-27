@@ -163,7 +163,7 @@ export default function LibraryScreen() {
 
   // Rôles utilisateur (même logique que la web app)
   const isAdmin    = !!(account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin')));
-  const isMember   = dancers.some(d => d.roles.includes('member') || d.roles.includes('trial'));
+  const isMember   = dancers.some(d => d.roles.some(r => ['member', 'trial', 'instructor', 'bureau', 'admin'].includes(r)));
   const userRoles  = dancers.flatMap(d => d.roles);
 
   useEffect(() => {

@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { Colors } from '@/constants/Colors';
+import { usePagePermissions } from '@/contexts/PagePermissionsContext';
 
 type TabKey = 'chat' | 'planning' | 'card' | 'videos' | 'audios';
 
@@ -43,10 +44,18 @@ export default function BottomTabBar({
   bottomInset: number;
 }) {
   const router = useRouter();
+  const { hasPerm } = usePagePermissions();
+
+  const showChat = hasPerm('/chat');
+  const showPlanning = hasPerm('/planning');
+  const showCard = hasPerm('/dancer/card');
+  const showVideos = hasPerm('/media');
+  const showAudios = hasPerm('/audio');
+
   const go = (screen: TabKey) => {
     const href = `/dancer/${dancerId}/${screen}` as any;
     if (active === screen) return;
-    if (screen === 'card') { router.push(href); return; } // modal → toujours push pour que back() fonctionne
+    if (screen === 'card') { router.push(href); return; }
     if (active) router.replace(href);
     else router.push(href);
   };
@@ -54,39 +63,49 @@ export default function BottomTabBar({
 
   return (
     <View style={[styles.tabBar, { paddingBottom: bottomInset + 8 }]}>
-      <TouchableOpacity style={styles.tabItem} onPress={() => go('chat')}>
-        <ChatIcon color={colorFor('chat')} />
-        <Text style={[styles.tabLabel, active === 'chat' && styles.tabLabelActive]}>Discussion</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.tabItem} onPress={() => go('planning')}>
-        <CalendarIcon color={colorFor('planning')} />
-        <Text style={[styles.tabLabel, active === 'planning' && styles.tabLabelActive]}>Calendrier</Text>
-      </TouchableOpacity>
-
-      <View style={styles.tabCenter}>
-        <TouchableOpacity style={styles.tabCenterBtn} onPress={() => go('card')} activeOpacity={0.85}>
-          <Svg width={34} height={34} viewBox="0 0 24 24" fill="none">
-            <Rect x="3" y="3" width="7" height="7" rx="1" stroke="white" strokeWidth={1.8} />
-            <Rect x="14" y="3" width="7" height="7" rx="1" stroke="white" strokeWidth={1.8} />
-            <Rect x="3" y="14" width="7" height="7" rx="1" stroke="white" strokeWidth={1.8} />
-            <Rect x="5" y="5" width="3" height="3" fill="white" />
-            <Rect x="16" y="5" width="3" height="3" fill="white" />
-            <Rect x="5" y="16" width="3" height="3" fill="white" />
-            <Path d="M14 14h2v2h-2zM18 14h3v2h-3zM14 18h2v3h-2zM18 18h3v3h-3z" fill="white" />
-          </Svg>
+      {showChat && (
+        <TouchableOpacity style={styles.tabItem} onPress={() => go('chat')}>
+          <ChatIcon color={colorFor('chat')} />
+          <Text style={[styles.tabLabel, active === 'chat' && styles.tabLabelActive]}>Discussion</Text>
         </TouchableOpacity>
-      </View>
+      )}
 
-      <TouchableOpacity style={styles.tabItem} onPress={() => go('videos')}>
-        <VideoIcon color={colorFor('videos')} />
-        <Text style={[styles.tabLabel, active === 'videos' && styles.tabLabelActive]}>Vidéos</Text>
-      </TouchableOpacity>
+      {showPlanning && (
+        <TouchableOpacity style={styles.tabItem} onPress={() => go('planning')}>
+          <CalendarIcon color={colorFor('planning')} />
+          <Text style={[styles.tabLabel, active === 'planning' && styles.tabLabelActive]}>Calendrier</Text>
+        </TouchableOpacity>
+      )}
 
-      <TouchableOpacity style={styles.tabItem} onPress={() => go('audios')}>
-        <AudioIcon color={colorFor('audios')} />
-        <Text style={[styles.tabLabel, active === 'audios' && styles.tabLabelActive]}>Audios</Text>
-      </TouchableOpacity>
+      {showCard && (
+        <View style={styles.tabCenter}>
+          <TouchableOpacity style={styles.tabCenterBtn} onPress={() => go('card')} activeOpacity={0.85}>
+            <Svg width={34} height={34} viewBox="0 0 24 24" fill="none">
+              <Rect x="3" y="3" width="7" height="7" rx="1" stroke="white" strokeWidth={1.8} />
+              <Rect x="14" y="3" width="7" height="7" rx="1" stroke="white" strokeWidth={1.8} />
+              <Rect x="3" y="14" width="7" height="7" rx="1" stroke="white" strokeWidth={1.8} />
+              <Rect x="5" y="5" width="3" height="3" fill="white" />
+              <Rect x="16" y="5" width="3" height="3" fill="white" />
+              <Rect x="5" y="16" width="3" height="3" fill="white" />
+              <Path d="M14 14h2v2h-2zM18 14h3v2h-3zM14 18h2v3h-2zM18 18h3v3h-3z" fill="white" />
+            </Svg>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {showVideos && (
+        <TouchableOpacity style={styles.tabItem} onPress={() => go('videos')}>
+          <VideoIcon color={colorFor('videos')} />
+          <Text style={[styles.tabLabel, active === 'videos' && styles.tabLabelActive]}>Vidéos</Text>
+        </TouchableOpacity>
+      )}
+
+      {showAudios && (
+        <TouchableOpacity style={styles.tabItem} onPress={() => go('audios')}>
+          <AudioIcon color={colorFor('audios')} />
+          <Text style={[styles.tabLabel, active === 'audios' && styles.tabLabelActive]}>Audios</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }

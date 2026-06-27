@@ -5,6 +5,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { DancerProvider } from '@/contexts/DancerContext';
+import { PagePermissionsProvider } from '@/contexts/PagePermissionsContext';
 import { Colors } from '@/constants/Colors';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -44,8 +45,10 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <DancerProvider>
-        <StatusBar style="dark" />
-        <Gate />
+        <PagePermissionsProvider>
+          <StatusBar style="dark" />
+          <Gate />
+        </PagePermissionsProvider>
       </DancerProvider>
     </AuthProvider>
   );
