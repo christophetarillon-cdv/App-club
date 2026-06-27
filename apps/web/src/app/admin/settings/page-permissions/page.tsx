@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, getDocs, collection, query, orderBy, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, getDocs, collection, query, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { RoleConfig } from '@cdv/types';
 import { ADMIN_NAV, MEMBER_NAV } from '@/lib/admin-nav';
@@ -12,6 +12,7 @@ export default function PagePermissionsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -58,13 +59,16 @@ export default function PagePermissionsPage() {
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
-      await updateDoc(doc(db, 'appSettings', 'main'), {
+      await setDoc(doc(db, 'appSettings', 'main'), {
         pagePermissions: permissions,
         updatedAt: serverTimestamp(),
-      });
+      }, { merge: true });
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
       setSaving(false);
     }
@@ -173,6 +177,11 @@ export default function PagePermissionsPage() {
       >
         {saving ? 'Enregistrement…' : saved ? '✓ Enregistré' : 'Enregistrer'}
       </button>
+      {saveError && (
+        <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">
+          Erreur : {saveError}
+        </p>
+      )}
     </div>
   );
 }
