@@ -50,7 +50,7 @@ export default function LibraryPage() {
   const [activeCategory, setActiveCategory] = useState<DocCategory | 'all'>('all');
 
   const isAdmin = account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin'));
-  const isMember = dancers.some(d => d.roles.includes('member') || d.roles.includes('trial'));
+  const isMember = dancers.some(d => d.roles.some(r => ['member', 'trial', 'instructor', 'bureau', 'admin'].includes(r)));
   const dancerRoles: string[] = dancers.flatMap(d => d.roles);
 
   useEffect(() => {

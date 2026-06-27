@@ -240,6 +240,7 @@ export default function DancerPersonalProfilePage() {
   const [savingPw, setSavingPw] = useState(false);
   const [pwError, setPwError] = useState<string | null>(null);
   const [pwSaved, setPwSaved] = useState(false);
+  const [showPwForm, setShowPwForm] = useState(false);
   const hasEmailProvider = auth.currentUser?.providerData.some(p => p.providerId === 'password') ?? false;
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
@@ -459,278 +460,389 @@ export default function DancerPersonalProfilePage() {
 
   const initials = `${dancer.firstName[0] ?? ''}${dancer.lastName[0] ?? ''}`.toUpperCase();
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-md mx-auto px-4 py-8">
-        <div className="flex items-center gap-3 mb-6">
-          <Link href={`/dancer/${id}`} className="text-sm text-gray-400 hover:text-gray-700">← Retour</Link>
-          <h1 className="text-xl font-bold text-gray-900">Informations personnelles</h1>
-        </div>
+  const primaryRole = [...dancer.roles].sort((a, b) => (ROLE_PRIORITY[a] ?? 99) - (ROLE_PRIORITY[b] ?? 99))[0];
+  const ROLE_BADGE: Record<string, { label: string; bg: string; text: string }> = {
+    admin:      { label: 'Administrateur', bg: 'bg-blue-50',   text: 'text-blue-700' },
+    bureau:     { label: 'Bureau',         bg: 'bg-purple-50', text: 'text-purple-700' },
+    instructor: { label: 'Instructeur',    bg: 'bg-teal-50',   text: 'text-teal-700' },
+    member:     { label: 'Membre',         bg: 'bg-green-50',  text: 'text-green-700' },
+    trial:      { label: 'Essai',          bg: 'bg-amber-50',  text: 'text-amber-700' },
+  };
+  const badge = primaryRole ? (ROLE_BADGE[primaryRole] ?? { label: primaryRole, bg: 'bg-gray-100', text: 'text-gray-600' }) : null;
 
-        {/* Photo */}
-        {fieldConfig.photo.enabled && (
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 mb-4">
-            <div className="flex items-center gap-4">
-              {photoPreview || dancer.photoUrl ? (
-                <img src={photoPreview ?? dancer.photoUrl} alt={dancer.firstName}
-                  className="w-16 h-16 rounded-2xl object-cover" />
-              ) : (
-                <div className="w-16 h-16 rounded-2xl bg-blue-500 flex items-center justify-center text-white text-xl font-bold">
-                  {initials}
+  const QUICK_LINKS = [
+    { href: `/dancer/${id}/card`,          label: 'Ma carte de membre',  sub: 'QR code et infos adhésion',   permKey: '/dancer/card',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><rect x={2} y={5} width={20} height={14} rx={2}/><line x1={2} y1={10} x2={22} y2={10}/></svg>,
+      bg: 'bg-sky-50 text-sky-600' },
+    { href: '/membership',                 label: 'Ma cotisation',        sub: 'Adhésion et paiements',       permKey: '/membership',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><circle cx={12} cy={8} r={4}/><path strokeLinecap="round" strokeLinejoin="round" d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>,
+      bg: 'bg-amber-50 text-amber-600' },
+    { href: '/my-documents',               label: 'Mes documents',        sub: 'Reçus, attestations, factures', permKey: '/my-documents',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
+      bg: 'bg-green-50 text-green-600' },
+    { href: '/library',                    label: 'Bibliothèque du club', sub: 'Documents partagés',          permKey: '/library',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path strokeLinecap="round" strokeLinejoin="round" d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>,
+      bg: 'bg-violet-50 text-violet-600' },
+  ].filter(item => hasPerm(item.permKey));
+
+  const INPUT = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 bg-white';
+
+  return (
+    <div className="min-h-screen" style={{ backgroundColor: '#F9F7F4' }}>
+
+      {/* ── Hero ───────────────────────────────────────────────────────────── */}
+      <div className="bg-white border-b border-gray-100">
+        <div className="max-w-lg mx-auto px-5 pt-5 pb-6">
+          <Link href={`/dancer/${id}`}
+            className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors mb-5">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            Mon espace
+          </Link>
+
+          <div className="flex items-end gap-4">
+            {/* Avatar cliquable */}
+            {fieldConfig.photo.enabled ? (
+              <label className="relative cursor-pointer shrink-0 group">
+                <input type="file" accept="image/*" onChange={handlePhotoChange} className="sr-only" />
+                {photoPreview ?? dancer.photoUrl ? (
+                  <img src={photoPreview ?? dancer.photoUrl!} alt={dancer.firstName}
+                    className="w-[72px] h-[72px] rounded-full object-cover ring-2 ring-white shadow" />
+                ) : (
+                  <div className="w-[72px] h-[72px] rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-xl font-semibold ring-2 ring-white shadow">
+                    {initials}
+                  </div>
+                )}
+                <div className="absolute -bottom-0.5 -right-0.5 w-[22px] h-[22px] rounded-full bg-blue-600 flex items-center justify-center border-2 border-white group-hover:bg-blue-700 transition-colors">
+                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
+                  </svg>
+                </div>
+              </label>
+            ) : (
+              <div className="w-[72px] h-[72px] rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-xl font-semibold ring-2 ring-white shadow shrink-0">
+                {initials}
+              </div>
+            )}
+
+            {/* Nom + email + badge */}
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl font-semibold text-gray-900 truncate">{dancer.firstName} {dancer.lastName}</h1>
+              {auth.currentUser?.email && (
+                <p className="text-sm text-gray-400 mt-0.5 truncate">{auth.currentUser.email}</p>
+              )}
+              {badge && (
+                <span className={`mt-2 inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-full ${badge.bg} ${badge.text}`}>
+                  {badge.label}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {photoFile && (
+            <button onClick={handleUploadPhoto} disabled={uploadingPhoto}
+              className="mt-4 w-full py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors">
+              {uploadingPhoto ? 'Upload en cours…' : 'Enregistrer la photo'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="max-w-lg mx-auto px-5 py-6 space-y-5 pb-12">
+
+        {/* ── Accès rapide ───────────────────────────────────────────────── */}
+        {QUICK_LINKS.length > 0 && (
+          <section>
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Accès rapide</p>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 divide-y divide-gray-50 overflow-hidden">
+              {QUICK_LINKS.map((item, i) => (
+                <Link key={i} href={item.href}
+                  className="flex items-center gap-3 px-4 py-3.5 hover:bg-blue-50/40 transition-colors">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${item.bg}`}>
+                    {item.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">{item.label}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{item.sub}</p>
+                  </div>
+                  <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Mes danseurs ───────────────────────────────────────────────── */}
+        <section>
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Mes danseurs</p>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              {dancers.map(d => {
+                const di = `${d.firstName[0] ?? ''}${d.lastName[0] ?? ''}`.toUpperCase();
+                const isActive = d.id === id;
+                return (
+                  <div key={d.id} className="flex flex-col items-center gap-1">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all
+                      ${isActive ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-400 ring-offset-1' : 'bg-gray-100 text-gray-600'}`}>
+                      {di}
+                    </div>
+                    <span className="text-[10px] text-gray-500 text-center leading-tight max-w-[56px] truncate">{d.firstName}</span>
+                  </div>
+                );
+              })}
+              <button onClick={() => { setShowAddDancer(v => !v); setNewDancer({ firstName: '', lastName: '' }); }}
+                className="flex flex-col items-center gap-1">
+                <div className={`w-10 h-10 rounded-full border-2 border-dashed flex items-center justify-center text-lg font-light transition-colors
+                  ${showAddDancer ? 'border-blue-400 text-blue-500' : 'border-gray-300 text-gray-400 hover:border-blue-300 hover:text-blue-400'}`}>
+                  {showAddDancer ? '×' : '+'}
+                </div>
+                <span className="text-[10px] text-gray-400">{showAddDancer ? 'Annuler' : 'Ajouter'}</span>
+              </button>
+            </div>
+
+            {showAddDancer && (
+              <form onSubmit={handleAddDancer} className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Prénom</label>
+                    <input type="text" value={newDancer.firstName}
+                      onChange={e => setNewDancer(p => ({ ...p, firstName: e.target.value }))} required
+                      className={INPUT} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Nom</label>
+                    <input type="text" value={newDancer.lastName}
+                      onChange={e => setNewDancer(p => ({ ...p, lastName: e.target.value }))} required
+                      className={INPUT} />
+                  </div>
+                </div>
+                <button type="submit" disabled={addingDancer}
+                  className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-xl hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
+                  {addingDancer ? 'Enregistrement…' : 'Créer le danseur'}
+                </button>
+              </form>
+            )}
+          </div>
+        </section>
+
+        {/* ── Informations personnelles ───────────────────────────────────── */}
+        <section>
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Informations personnelles</p>
+          <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
+
+            {/* Identité */}
+            <div className="p-4 space-y-3">
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Identité</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Prénom *</label>
+                  <input value={firstName} onChange={e => setFirstName(e.target.value)} required className={INPUT} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Nom *</label>
+                  <input value={lastName} onChange={e => setLastName(e.target.value)} required className={INPUT} />
+                </div>
+              </div>
+              {fieldConfig.birthDate.enabled && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Date de naissance{fieldConfig.birthDate.required && ' *'}</label>
+                  <input type="date" value={birthDate} onChange={e => setBirthDate(e.target.value)}
+                    required={fieldConfig.birthDate.required} className={INPUT} />
                 </div>
               )}
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ma photo</label>
-                <input type="file" accept="image/*" onChange={handlePhotoChange}
-                  className="text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
-              </div>
-            </div>
-            {photoFile && (
-              <button onClick={handleUploadPhoto} disabled={uploadingPhoto}
-                className="mt-3 w-full py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50">
-                {uploadingPhoto ? 'Upload…' : 'Enregistrer la photo'}
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Liens rapides */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm divide-y divide-gray-100 overflow-hidden mb-4">
-          {[
-            { href: `/dancer/${id}/card`, label: 'Ma carte de membre', permKey: '/dancer/card' },
-            { href: '/membership', label: 'Ma cotisation', permKey: '/membership' },
-            { href: `/dancer/${id}/levels`, label: 'Mes niveaux par style', permKey: '/dancer/levels' },
-            { href: `/dancer/${id}/notifications`, label: 'Messages', permKey: '/dancer/notifications' },
-            { href: `/dancer/${id}/settings`, label: 'Paramètres notifications', permKey: '/dancer/settings' },
-            { href: '/my-documents', label: 'Mes documents', permKey: '/my-documents' },
-            { href: '/library', label: 'Bibliothèque du club', permKey: '/library' },
-          ].filter(item => hasPerm(item.permKey)).map((item, i) => (
-            <Link key={i} href={item.href}
-              className="flex items-center justify-between px-4 py-3.5 hover:bg-blue-50/50 transition-colors">
-              <span className="text-sm text-gray-800 font-medium">{item.label}</span>
-              <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
-          ))}
-        </div>
-
-        {/* Ajouter un danseur */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Mes danseurs</h2>
-            <button onClick={() => { setShowAddDancer(v => !v); setNewDancer({ firstName: '', lastName: '' }); }}
-              className="text-xs font-semibold text-blue-600 hover:text-blue-800">
-              {showAddDancer ? 'Annuler' : '+ Ajouter'}
-            </button>
-          </div>
-          {showAddDancer && (
-            <form onSubmit={handleAddDancer} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              {fieldConfig.gender.enabled && (
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Prénom</label>
-                  <input type="text" value={newDancer.firstName} onChange={e => setNewDancer(p => ({ ...p, firstName: e.target.value }))} required
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                  <label className="block text-xs text-gray-500 mb-1">Genre{fieldConfig.gender.required && ' *'}</label>
+                  <select value={gender} onChange={e => setGender(e.target.value)}
+                    required={fieldConfig.gender.required}
+                    className={`${INPUT} appearance-none`}>
+                    <option value="">— Choisir —</option>
+                    <option value="Femme">Femme</option>
+                    <option value="Homme">Homme</option>
+                  </select>
                 </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Nom</label>
-                  <input type="text" value={newDancer.lastName} onChange={e => setNewDancer(p => ({ ...p, lastName: e.target.value }))} required
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button type="submit" disabled={addingDancer}
-                  className="flex-1 bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
-                  {addingDancer ? 'Enregistrement…' : 'Enregistrer'}
-                </button>
-                <button type="button" onClick={() => setShowAddDancer(false)}
-                  className="flex-1 border border-gray-300 text-gray-600 font-semibold py-2 rounded-lg hover:bg-gray-50 text-sm transition-colors">
-                  Annuler
-                </button>
-              </div>
-            </form>
-          )}
-          {!showAddDancer && (
-            <button onClick={() => setShowAddDancer(true)}
-              className="flex items-center justify-center gap-2 w-full py-2 text-sm text-gray-500 hover:text-blue-600 transition-colors">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-              Ajouter un danseur
-            </button>
-          )}
-        </div>
-
-
-        {/* Formulaire champs prédéfinis */}
-        <form onSubmit={handleSave} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4 mb-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Prénom *</label>
-              <input value={firstName} onChange={e => setFirstName(e.target.value)} required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+              )}
             </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Nom *</label>
-              <input value={lastName} onChange={e => setLastName(e.target.value)} required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-            </div>
-          </div>
 
-          {fieldConfig.birthDate.enabled && (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Date de naissance{fieldConfig.birthDate.required && ' *'}</label>
-              <input type="date" value={birthDate} onChange={e => setBirthDate(e.target.value)}
-                required={fieldConfig.birthDate.required}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-            </div>
-          )}
-
-          {fieldConfig.gender.enabled && (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Genre{fieldConfig.gender.required && ' *'}</label>
-              <select value={gender} onChange={e => setGender(e.target.value)}
-                required={fieldConfig.gender.required}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 bg-white">
-                <option value="">— Choisir —</option>
-                <option value="Femme">Femme</option>
-                <option value="Homme">Homme</option>
-              </select>
-            </div>
-          )}
-
-          {fieldConfig.phone.enabled && (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Téléphone{fieldConfig.phone.required && ' *'}</label>
-              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-                required={fieldConfig.phone.required}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-            </div>
-          )}
-
-          {fieldConfig.address.enabled && (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Adresse{fieldConfig.address.required && ' *'}</label>
-              <input value={address} onChange={e => setAddress(e.target.value)}
-                required={fieldConfig.address.required}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-            </div>
-          )}
-
-          {fieldConfig.emergencyContact.enabled && (
-            <div className="border-t border-gray-100 pt-4">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Contact d'urgence{fieldConfig.emergencyContact.required && ' *'}</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Nom</label>
-                  <input value={emergencyName} onChange={e => setEmergencyName(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Téléphone</label>
-                  <input type="tel" value={emergencyPhone} onChange={e => setEmergencyPhone(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {fieldConfig.profession.enabled && (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Profession{fieldConfig.profession.required && ' *'}</label>
-              <input value={profession} onChange={e => setProfession(e.target.value)}
-                required={fieldConfig.profession.required}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-            </div>
-          )}
-
-          {fieldConfig.medicalNotes.enabled && (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Notes médicales{fieldConfig.medicalNotes.required && ' *'}</label>
-              <textarea value={medicalNotes} onChange={e => setMedicalNotes(e.target.value)}
-                required={fieldConfig.medicalNotes.required} rows={3}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none" />
-            </div>
-          )}
-
-          {fieldConfig.healthCertificate.enabled && (
-            <label className="flex items-start gap-2.5 cursor-pointer">
-              <input type="checkbox" checked={healthCertificate} onChange={e => setHealthCertificate(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded flex-shrink-0" />
-              <span className="text-sm text-gray-700">
-                Certificat médical fourni{fieldConfig.healthCertificate.required && <span className="text-red-500 ml-0.5">*</span>}
-              </span>
-            </label>
-          )}
-
-          {error && <p className="text-red-600 text-sm">{error}</p>}
-          <button type="submit" disabled={saving}
-            className="w-full py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors">
-            {saving ? 'Enregistrement…' : saved ? '✓ Enregistré' : 'Enregistrer'}
-          </button>
-        </form>
-
-        {/* Champs personnalisés */}
-        {visibleFields.length > 0 && (
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Informations complémentaires</p>
-
-            {Object.entries(fieldsByCategory).map(([category, catFields]) => (
-              <div key={category} className="space-y-4">
-                {category && (
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide border-t border-gray-100 pt-3">{category}</p>
+            {/* Coordonnées */}
+            {(fieldConfig.phone.enabled || fieldConfig.address.enabled) && (
+              <div className="p-4 space-y-3">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Coordonnées</p>
+                {fieldConfig.phone.enabled && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Téléphone{fieldConfig.phone.required && ' *'}</label>
+                    <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+                      required={fieldConfig.phone.required} className={INPUT} />
+                  </div>
                 )}
-                {catFields.map(field => (
-                  <CustomFieldInput
-                    key={field.id}
-                    field={field}
-                    value={customValues[field.key]}
-                    onChange={(key, val) => setCustomValues(prev => ({ ...prev, [key]: val }))}
-                    onFileUpload={handleCustomFileUpload}
-                    editable={editableFieldKeys.has(field.key)}
-                    error={customErrors[field.key]}
-                  />
-                ))}
+                {fieldConfig.address.enabled && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Adresse{fieldConfig.address.required && ' *'}</label>
+                    <input value={address} onChange={e => setAddress(e.target.value)}
+                      required={fieldConfig.address.required} className={INPUT} />
+                  </div>
+                )}
               </div>
-            ))}
-
-            {Object.keys(customErrors).length > 0 && (
-              <p className="text-xs text-red-500">Corrigez les erreurs avant d'enregistrer.</p>
             )}
 
-            <button onClick={handleCustomSave} disabled={customSaving}
-              className="w-full py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors">
-              {customSaving ? 'Enregistrement…' : customSaved ? '✓ Enregistré' : 'Enregistrer les informations complémentaires'}
-            </button>
-          </div>
-        )}
-        {/* Changement de mot de passe */}
-        {hasEmailProvider && (
-          <form onSubmit={handlePasswordSubmit} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Mot de passe</h2>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Mot de passe actuel</label>
-              <input type="password" value={pwForm.current} onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))} required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            {/* Contact d'urgence */}
+            {fieldConfig.emergencyContact.enabled && (
+              <div className="p-4 space-y-3">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                  Contact d'urgence{fieldConfig.emergencyContact.required && ' *'}
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Nom</label>
+                    <input value={emergencyName} onChange={e => setEmergencyName(e.target.value)} className={INPUT} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Téléphone</label>
+                    <input type="tel" value={emergencyPhone} onChange={e => setEmergencyPhone(e.target.value)} className={INPUT} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Profession */}
+            {fieldConfig.profession.enabled && (
+              <div className="p-4 space-y-3">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Profession</p>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Profession{fieldConfig.profession.required && ' *'}</label>
+                  <input value={profession} onChange={e => setProfession(e.target.value)}
+                    required={fieldConfig.profession.required} className={INPUT} />
+                </div>
+              </div>
+            )}
+
+            {/* Médical */}
+            {(fieldConfig.medicalNotes.enabled || fieldConfig.healthCertificate.enabled) && (
+              <div className="p-4 space-y-3">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Médical</p>
+                {fieldConfig.medicalNotes.enabled && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Notes médicales{fieldConfig.medicalNotes.required && ' *'}</label>
+                    <textarea value={medicalNotes} onChange={e => setMedicalNotes(e.target.value)}
+                      required={fieldConfig.medicalNotes.required} rows={3}
+                      className={`${INPUT} resize-none`} />
+                  </div>
+                )}
+                {fieldConfig.healthCertificate.enabled && (
+                  <label className="flex items-center gap-3 cursor-pointer select-none">
+                    <input type="checkbox" checked={healthCertificate} onChange={e => setHealthCertificate(e.target.checked)}
+                      className="w-4 h-4 rounded accent-blue-600" />
+                    <span className="text-sm text-gray-700">
+                      Certificat médical fourni{fieldConfig.healthCertificate.required && <span className="text-red-500 ml-0.5">*</span>}
+                    </span>
+                  </label>
+                )}
+              </div>
+            )}
+
+            {/* Bouton save */}
+            <div className="p-4">
+              {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+              <button type="submit" disabled={saving}
+                className="w-full py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                {saving ? 'Enregistrement…' : saved ? '✓ Enregistré' : 'Enregistrer'}
+              </button>
             </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Nouveau mot de passe</label>
-              <input type="password" value={pwForm.next} onChange={e => setPwForm(p => ({ ...p, next: e.target.value }))} required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Confirmer le mot de passe</label>
-              <input type="password" value={pwForm.confirm} onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))} required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-            </div>
-            {pwError && <p className="text-red-600 text-sm">{pwError}</p>}
-            {pwSaved && <p className="text-green-600 text-sm">Mot de passe mis à jour.</p>}
-            <button type="submit" disabled={savingPw}
-              className="w-full py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors">
-              {savingPw ? 'Mise à jour…' : 'Changer le mot de passe'}
-            </button>
           </form>
+        </section>
+
+        {/* ── Informations complémentaires ───────────────────────────────── */}
+        {visibleFields.length > 0 && (
+          <section>
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Informations complémentaires</p>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
+              {Object.entries(fieldsByCategory).map(([category, catFields]) => (
+                <div key={category} className="p-4 space-y-3">
+                  {category && (
+                    <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{category}</p>
+                  )}
+                  {catFields.map(field => (
+                    <CustomFieldInput
+                      key={field.id}
+                      field={field}
+                      value={customValues[field.key]}
+                      onChange={(key, val) => setCustomValues(prev => ({ ...prev, [key]: val }))}
+                      onFileUpload={handleCustomFileUpload}
+                      editable={editableFieldKeys.has(field.key)}
+                      error={customErrors[field.key]}
+                    />
+                  ))}
+                </div>
+              ))}
+              <div className="p-4">
+                {Object.keys(customErrors).length > 0 && (
+                  <p className="text-xs text-red-500 mb-3">Corrigez les erreurs avant d'enregistrer.</p>
+                )}
+                <button onClick={handleCustomSave} disabled={customSaving}
+                  className="w-full py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                  {customSaving ? 'Enregistrement…' : customSaved ? '✓ Enregistré' : 'Enregistrer'}
+                </button>
+              </div>
+            </div>
+          </section>
         )}
+
+        {/* ── Compte ─────────────────────────────────────────────────────── */}
+        {hasEmailProvider && (
+          <section>
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Compte</p>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Mot de passe</p>
+                    <p className="text-xs text-gray-400">Sécurité du compte</p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setShowPwForm(v => !v)}
+                  className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors">
+                  {showPwForm ? 'Annuler' : 'Modifier'}
+                </button>
+              </div>
+
+              {showPwForm && (
+                <form onSubmit={handlePasswordSubmit} className="px-4 pb-4 pt-0 space-y-3 border-t border-gray-50">
+                  <div className="pt-3">
+                    <label className="block text-xs text-gray-500 mb-1">Mot de passe actuel</label>
+                    <input type="password" value={pwForm.current}
+                      onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))} required className={INPUT} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Nouveau mot de passe</label>
+                    <input type="password" value={pwForm.next}
+                      onChange={e => setPwForm(p => ({ ...p, next: e.target.value }))} required className={INPUT} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Confirmer le nouveau mot de passe</label>
+                    <input type="password" value={pwForm.confirm}
+                      onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))} required className={INPUT} />
+                  </div>
+                  {pwError && <p className="text-red-600 text-sm">{pwError}</p>}
+                  {pwSaved && <p className="text-green-600 text-sm">Mot de passe mis à jour.</p>}
+                  <button type="submit" disabled={savingPw}
+                    className="w-full py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                    {savingPw ? 'Mise à jour…' : 'Changer le mot de passe'}
+                  </button>
+                </form>
+              )}
+            </div>
+          </section>
+        )}
+
       </div>
     </div>
   );
