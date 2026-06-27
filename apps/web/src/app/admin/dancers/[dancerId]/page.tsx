@@ -43,6 +43,7 @@ interface Account {
   email: string;
   displayName: string;
   dancerIds: string[];
+  roles?: string[];
   phone?: string;
 }
 interface Installment { id: string; expectedDate: string; amount: number; status: string; method?: string; chequeNumber?: string; draweeBank?: string; draweeCity?: string; }
@@ -140,9 +141,23 @@ export default function DancerDetailPage() {
   const [allRoles, setAllRoles] = useState<RoleConfig[]>([]);
 
   const handleSaveRoles = async () => {
-    if (!dancerId) return;
+    if (!dancerId || !dancer) return;
     setSavingRoles(true);
     await updateDoc(doc(db, 'dancers', dancerId), { roles: pendingRoles, isActive: pendingActive });
+
+    // Sync account.roles: admin/bureau depuis le dancer vers le compte
+    if (dancer.accountId) {
+      const ACCOUNT_ROLES = ['admin', 'bureau'];
+      const newAccountRoles = pendingRoles.filter(r => ACCOUNT_ROLES.includes(r));
+      // On ne retire pas les rôles compte si un autre dancer du même compte les possède
+      const currentAccountRoles: string[] = account?.roles ?? [];
+      const merged = [...new Set([
+        ...currentAccountRoles.filter(r => !ACCOUNT_ROLES.includes(r)), // autres rôles intacts
+        ...newAccountRoles,
+      ])];
+      await updateDoc(doc(db, 'accounts', dancer.accountId), { roles: merged });
+    }
+
     setDancer(prev => prev ? { ...prev, roles: pendingRoles, isActive: pendingActive } : prev);
     setSavingRoles(false);
     setEditingRoles(false);

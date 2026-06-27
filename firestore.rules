@@ -7,8 +7,14 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuth() &&
-        get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.roles.hasAny(['admin']);
+      let acc = get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data;
+      let dIds = acc.get('dancerIds', []);
+      return isAuth() && (
+        acc.get('roles', []).hasAny(['admin']) ||
+        (dIds.size() > 0 && get(/databases/$(database)/documents/dancers/$(dIds[0])).data.get('roles', []).hasAny(['admin'])) ||
+        (dIds.size() > 1 && get(/databases/$(database)/documents/dancers/$(dIds[1])).data.get('roles', []).hasAny(['admin'])) ||
+        (dIds.size() > 2 && get(/databases/$(database)/documents/dancers/$(dIds[2])).data.get('roles', []).hasAny(['admin']))
+      );
     }
 
     function isOwner(uid) {
@@ -16,9 +22,14 @@ service cloud.firestore {
     }
 
     function isInstructor() {
+      let acc = get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data;
+      let dIds = acc.get('dancerIds', []);
       return isAuth() && (
         isAdmin() ||
-        get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.roles.hasAny(['instructor'])
+        acc.get('roles', []).hasAny(['instructor']) ||
+        (dIds.size() > 0 && get(/databases/$(database)/documents/dancers/$(dIds[0])).data.get('roles', []).hasAny(['instructor', 'admin'])) ||
+        (dIds.size() > 1 && get(/databases/$(database)/documents/dancers/$(dIds[1])).data.get('roles', []).hasAny(['instructor', 'admin'])) ||
+        (dIds.size() > 2 && get(/databases/$(database)/documents/dancers/$(dIds[2])).data.get('roles', []).hasAny(['instructor', 'admin']))
       );
     }
 
