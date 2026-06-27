@@ -175,7 +175,7 @@ export default function KioskScreen() {
       if (!cameraPermission?.granted) await requestPermission();
       setPhase('scanning');
     } catch {
-      setSetupError('Impossible d'ouvrir le kiosque. Réessaie.');
+      setSetupError("Impossible d'ouvrir le kiosque. Réessaie.");
     } finally {
       setOpening(false);
     }
