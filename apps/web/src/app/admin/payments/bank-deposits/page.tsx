@@ -224,6 +224,7 @@ export default function BankDepositsPage() {
           ) : (
             <>
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-4">
+                <div className="overflow-x-auto">
                 <div className="divide-y divide-gray-50">
                   {deposits.map(dep => (
                     <div key={dep.id} className="flex items-start gap-4 px-5 py-4">
@@ -280,6 +281,7 @@ export default function BankDepositsPage() {
                       )}
                     </div>
                   ))}
+                </div>
                 </div>
               </div>
 

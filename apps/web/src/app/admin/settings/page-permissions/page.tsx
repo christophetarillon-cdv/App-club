@@ -92,6 +92,7 @@ export default function PagePermissionsPage() {
           <div key={group.label}>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{group.label}</p>
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
               <div className="flex items-center gap-4 px-4 py-2 bg-gray-50 border-b border-gray-100">
                 <div className="flex-1 text-xs text-gray-400">Page</div>
                 {adminRoles.map(role => (
@@ -118,6 +119,7 @@ export default function PagePermissionsPage() {
                   </div>
                 );
               })}
+              </div>
             </div>
           </div>
         ))}
@@ -129,6 +131,7 @@ export default function PagePermissionsPage() {
           <div key={group.label}>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{group.label}</p>
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
               {/* En-tête colonnes */}
               <div className="flex items-center gap-4 px-4 py-2 bg-gray-50 border-b border-gray-100">
                 <div className="flex-1 text-xs text-gray-400">Page</div>
@@ -165,6 +168,7 @@ export default function PagePermissionsPage() {
                   </div>
                 );
               })}
+              </div>
             </div>
           </div>
         ))}

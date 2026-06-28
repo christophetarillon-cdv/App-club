@@ -168,13 +168,14 @@ export default function ProfileFieldsPage() {
       )}
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Champ</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Stockage</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Affiché</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Obligatoire</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Champ</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Stockage</th>
+              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Affiché</th>
+              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Obligatoire</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -186,12 +187,12 @@ export default function ProfileFieldsPage() {
 
               return (
                 <tr key={key} className={locked ? 'bg-gray-50/50' : ''}>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`font-medium ${locked ? 'text-gray-400' : 'text-gray-800'}`}>
                       {meta.label}
                     </span>
                   </td>
-                  <td className="px-4 py-3">{collectionBadge(meta.collection)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{collectionBadge(meta.collection)}</td>
                   <td className="px-4 py-3 text-center">
                     {locked ? (
                       <span className="text-xs text-gray-300">—</span>
@@ -231,6 +232,7 @@ export default function ProfileFieldsPage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       {saved && <p className="text-green-600 text-sm mb-3">Configuration sauvegardée.</p>}

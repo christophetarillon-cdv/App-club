@@ -214,28 +214,29 @@ export default function CourseRegistrationsPage() {
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Nom</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Email</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Statut</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Inscrit le</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Nom</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell whitespace-nowrap">Email</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Statut</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell whitespace-nowrap">Inscrit le</th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filtered.map(row => (
                   <tr key={row.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-3 font-medium text-gray-900">{row.user.displayName}</td>
-                    <td className="px-5 py-3 text-gray-500 hidden sm:table-cell">{row.user.email}</td>
-                    <td className="px-5 py-3">
+                    <td className="px-5 py-3 font-medium text-gray-900 whitespace-nowrap">{row.user.displayName}</td>
+                    <td className="px-5 py-3 text-gray-500 hidden sm:table-cell whitespace-nowrap">{row.user.email}</td>
+                    <td className="px-5 py-3 whitespace-nowrap">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[row.status] ?? 'bg-gray-100 text-gray-600'}`}>
                         {STATUS_LABEL[row.status] ?? row.status}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-gray-400 hidden sm:table-cell">{row.registeredAt}</td>
-                    <td className="px-5 py-3 text-right">
+                    <td className="px-5 py-3 text-gray-400 hidden sm:table-cell whitespace-nowrap">{row.registeredAt}</td>
+                    <td className="px-5 py-3 text-right whitespace-nowrap">
                       {row.status !== 'cancelled' && (
                         <button
                           onClick={() => handleCancel(row)}
@@ -250,6 +251,7 @@ export default function CourseRegistrationsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

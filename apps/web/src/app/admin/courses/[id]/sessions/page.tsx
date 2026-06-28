@@ -97,14 +97,16 @@ export default function SessionsPage() {
       </div>
 
       {loading ? <p className="text-gray-500 text-sm">Chargement…</p> : (
-        <div className="space-y-2">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+          <div className="space-y-0 divide-y divide-gray-100">
           {sessions.length === 0 && (
-            <p className="text-gray-400 text-sm">Aucune séance générée pour ce cours.</p>
+            <p className="text-gray-400 text-sm px-5 py-4">Aucune séance générée pour ce cours.</p>
           )}
           {sessions.map(s => (
             <div
               key={s.id}
-              className={`bg-white rounded-xl border shadow-sm px-5 py-3 flex items-center justify-between ${s.status === 'cancelled' ? 'border-red-100 opacity-60' : 'border-gray-200'}`}
+              className={`px-5 py-3 flex items-center justify-between ${s.status === 'cancelled' ? 'opacity-60 bg-red-50/30' : ''}`}
             >
               <div className="flex items-center gap-4">
                 {statusBadge(s)}
@@ -126,6 +128,8 @@ export default function SessionsPage() {
               )}
             </div>
           ))}
+          </div>
+          </div>
         </div>
       )}
 
