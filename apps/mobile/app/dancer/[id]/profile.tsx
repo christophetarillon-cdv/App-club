@@ -65,6 +65,15 @@ const MENU_ITEMS: MenuItem[] = [
     bgColor: '#E8F4FD',
   },
   {
+    permKey: '/instructor/stats',
+    requiredRoles: ['admin', 'instructor'],
+    label: 'Statistiques',
+    subtitle: 'Présences par cours et semaine',
+    screen: 'stats',
+    accentColor: '#7C3AED',
+    bgColor: '#EDE9FE',
+  },
+  {
     permKey: null,
     requiredRoles: ['admin', 'bureau'],
     label: 'Paramètres',
@@ -98,6 +107,13 @@ function MenuIcon({ screen, color }: { screen: string; color: string }) {
       <Rect x={1} y={4} width={22} height={16} rx={2}
         stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
       <Line x1={1} y1={10} x2={23} y2={10} stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+  if (screen === 'stats') return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path d="M18 20V10" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M12 20V4"  stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M6 20v-6"  stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
   if (screen === 'settings') return (
