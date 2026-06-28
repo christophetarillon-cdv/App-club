@@ -20,6 +20,7 @@ export const MEMBER_NAV: NavGroup[] = [
       { label: 'Médiathèque audio', href: '/audio' },
       { label: 'Trombinoscope', href: '/trombinoscope' },
       { label: 'Kiosque de pointage', href: '/kiosk' },
+      { label: 'Vue moniteur (présences)', href: '/instructor' },
     ],
   },
   {
