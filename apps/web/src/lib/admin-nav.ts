@@ -21,6 +21,7 @@ export const MEMBER_NAV: NavGroup[] = [
       { label: 'Trombinoscope', href: '/trombinoscope' },
       { label: 'Kiosque de pointage', href: '/kiosk' },
       { label: 'Vue moniteur (présences)', href: '/instructor' },
+      { label: 'Statistiques de présence', href: '/instructor/stats' },
     ],
   },
   {

@@ -52,7 +52,8 @@ const CARD_CONFIG: Record<string, Omit<CardDef, 'href' | 'label'>> = {
   '/audio':          { icon: <MusicIcon className="w-6 h-6" />,    iconBg: 'bg-pink-50',   iconColor: 'text-pink-600'   },
   '/trombinoscope':  { icon: <UsersIcon className="w-6 h-6" />,    iconBg: 'bg-teal-50',   iconColor: 'text-teal-600'   },
   '/kiosk':          { icon: <ScanIcon className="w-6 h-6" />,       iconBg: 'bg-amber-50',   iconColor: 'text-amber-600'   },
-  '/instructor':     { icon: <ClipboardIcon className="w-6 h-6" />, iconBg: 'bg-indigo-50',  iconColor: 'text-indigo-600'  },
+  '/instructor':       { icon: <ClipboardIcon className="w-6 h-6" />, iconBg: 'bg-indigo-50',  iconColor: 'text-indigo-600'  },
+  '/instructor/stats': { icon: <ClipboardIcon className="w-6 h-6" />, iconBg: 'bg-violet-50',  iconColor: 'text-violet-600'  },
 };
 
 // ── Page ──────────────────────────────────────────────────────────────────────────
@@ -110,7 +111,8 @@ export default function DancerHubPage() {
     { href: '/audio',             label: 'Audio',        permKey: '/audio' },
     { href: '/trombinoscope',     label: 'Trombinoscope', permKey: '/trombinoscope' },
     { href: '/kiosk/setup',       label: 'Kiosque',       permKey: '/kiosk' },
-    { href: '/instructor',        label: 'Mes séances',   permKey: '/instructor' },
+    { href: '/instructor',        label: 'Mes séances',       permKey: '/instructor' },
+    { href: '/instructor/stats',  label: 'Statistiques',      permKey: '/instructor/stats' },
   ].filter(item => hasPerm(item.permKey));
 
   const firstAccessibleAdminHref = (() => {
@@ -149,7 +151,8 @@ export default function DancerHubPage() {
     { href: '/audio',            label: 'Audio',    icon: <MusicIcon />,    permKey: '/audio' },
     { href: '/trombinoscope',    label: 'Trombi',   icon: <UsersIcon />,    permKey: '/trombinoscope' },
     { href: '/kiosk/setup',      label: 'Kiosque',     icon: <ScanIcon />,       permKey: '/kiosk' },
-    { href: '/instructor',       label: 'Mes séances',  icon: <ClipboardIcon />,  permKey: '/instructor' },
+    { href: '/instructor',       label: 'Mes séances',   icon: <ClipboardIcon />,  permKey: '/instructor' },
+    { href: '/instructor/stats', label: 'Statistiques',  icon: <ClipboardIcon />,  permKey: '/instructor/stats' },
   ].filter(s => !s.permKey || hasPerm(s.permKey));
 
   return (
