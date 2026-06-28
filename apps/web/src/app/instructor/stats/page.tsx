@@ -11,9 +11,17 @@ type RawAttendance = { id: string; sessionId: string; dancerId: string; method: 
 type RawDancer     = { id: string; roles: string[] };
 type RawCourse     = { id: string; name: string };
 
-type WeekStat = { label: string; total: number; unique: number };
+type WeekStat   = { label: string; total: number; unique: number };
 type CourseStat = { id: string; name: string; avg: number; sessions: number };
 type CourseWeek = { courseId: string; courseName: string; weeks: Map<string, number> };
+type SeasonEntry  = { id: string; label: string; from: string; to: string; isActive: boolean };
+type PeriodFilter = { kind: 'weeks'; weeks: number } | { kind: 'season'; id: string };
+
+const WEEK_SHORTCUTS = [
+  { weeks: 4,  label: '4 sem.' },
+  { weeks: 8,  label: '8 sem.' },
+  { weeks: 12, label: '12 sem.' },
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -31,13 +39,11 @@ function weekLabel(key: string): string {
   return `${d.getDate()}/${d.getMonth() + 1}`;
 }
 
-function fromDateForPeriod(period: string): string {
-  const d = new Date();
-  if (period === '4w')  d.setDate(d.getDate() - 28);
-  if (period === '8w')  d.setDate(d.getDate() - 56);
-  if (period === '12w') d.setDate(d.getDate() - 84);
-  if (period === '6m')  d.setMonth(d.getMonth() - 6);
-  return d.toISOString().slice(0, 10);
+function tsToDate(ts: any): string {
+  if (!ts) return '';
+  if (typeof ts.toDate === 'function') return ts.toDate().toISOString().slice(0, 10);
+  if (typeof ts.seconds === 'number')  return new Date(ts.seconds * 1000).toISOString().slice(0, 10);
+  return String(ts).slice(0, 10);
 }
 
 async function batchAttendances(sessionIds: string[]): Promise<RawAttendance[]> {
@@ -68,11 +74,12 @@ const COURSE_DASHES: number[][] = [[],[4,3],[2,2],[6,2],[3,5],[]];
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function StatsPage() {
-  const [period, setPeriod]   = useState('12w');
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter | null>(null);
+  const [seasons, setSeasons]           = useState<SeasonEntry[]>([]);
   const [courseFilter, setCourseFilter] = useState('all');
-  const [courses, setCourses] = useState<RawCourse[]>([]);
-  const [tab, setTab]         = useState<'both' | 'total' | 'unique'>('both');
-  const [loading, setLoading] = useState(true);
+  const [courses, setCourses]           = useState<RawCourse[]>([]);
+  const [tab, setTab]                   = useState<'both' | 'total' | 'unique'>('both');
+  const [loading, setLoading]           = useState(true);
 
   // Computed stats
   const [weekStats,   setWeekStats]   = useState<WeekStat[]>([]);
@@ -92,13 +99,42 @@ export default function StatsPage() {
   const c5Ref = useRef<HTMLCanvasElement>(null);
   const charts = useRef<Record<string, any>>({});
 
+  // ── Load seasons once ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'seasons'), orderBy('startDate', 'desc'))).then(snap => {
+      const list: SeasonEntry[] = snap.docs.map(d => {
+        const data = d.data() as any;
+        return { id: d.id, label: data.label ?? d.id, from: tsToDate(data.startDate), to: tsToDate(data.endDate), isActive: data.isActive ?? false };
+      });
+      setSeasons(list);
+      const active = list.find(s => s.isActive) ?? list[0];
+      if (active) setPeriodFilter({ kind: 'season', id: active.id });
+    }).catch(() => {
+      setPeriodFilter({ kind: 'weeks', weeks: 12 });
+    });
+  }, []);
+
   // ── Data load ───────────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
+    if (!periodFilter) return;
+    if (periodFilter.kind === 'season' && !seasons.length) return;
     setLoading(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const from  = fromDateForPeriod(period);
+      let from: string, to: string;
+      if (periodFilter.kind === 'weeks') {
+        const d = new Date();
+        d.setDate(d.getDate() - periodFilter.weeks * 7);
+        from = d.toISOString().slice(0, 10);
+        to   = today;
+      } else {
+        const season = seasons.find(s => s.id === periodFilter.id);
+        if (!season) return;
+        from = season.from;
+        to   = season.to < today ? season.to : today;
+      }
 
       // 1. Load all courses
       const courseSnap = await getDocs(collection(db, 'courses'));
@@ -115,7 +151,7 @@ export default function StatsPage() {
       let sessQ = query(
         collection(db, 'sessions'),
         where('date', '>=', from),
-        where('date', '<=', today),
+        where('date', '<=', to),
         orderBy('date'),
       );
       const sessSnap = await getDocs(sessQ);
@@ -241,7 +277,7 @@ export default function StatsPage() {
     } finally {
       setLoading(false);
     }
-  }, [period, courseFilter]);
+  }, [periodFilter, seasons, courseFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -390,21 +426,39 @@ export default function StatsPage() {
       <h1 className="text-lg font-semibold text-gray-800">Statistiques de présence</h1>
 
       {/* ── Filtres ── */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <select value={period} onChange={e => setPeriod(e.target.value)} className={INPUT}>
-          <option value="4w">4 dernières semaines</option>
-          <option value="8w">8 dernières semaines</option>
-          <option value="12w">12 dernières semaines</option>
-          <option value="6m">6 derniers mois</option>
-        </select>
+      <div className="space-y-2">
+        {/* Période : raccourcis semaines + saisons */}
+        <div className="flex flex-wrap items-center gap-2">
+          {WEEK_SHORTCUTS.map(w => {
+            const active = periodFilter?.kind === 'weeks' && periodFilter.weeks === w.weeks;
+            return (
+              <button key={w.weeks} onClick={() => setPeriodFilter({ kind: 'weeks', weeks: w.weeks })}
+                className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${active ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-semibold' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                {w.label}
+              </button>
+            );
+          })}
+          {seasons.length > 0 && <span className="w-px h-4 bg-gray-200 mx-1" />}
+          {seasons.map(season => {
+            const active = periodFilter?.kind === 'season' && periodFilter.id === season.id;
+            return (
+              <button key={season.id} onClick={() => setPeriodFilter({ kind: 'season', id: season.id })}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors ${active ? 'bg-blue-50 text-blue-700 border-blue-300 font-semibold' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                {season.isActive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+                {season.label}
+              </button>
+            );
+          })}
+          {loading && <span className="text-xs text-gray-400 flex items-center gap-1.5 ml-1">
+            <span className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin inline-block" />
+            Chargement…
+          </span>}
+        </div>
+        {/* Filtre cours */}
         <select value={courseFilter} onChange={e => setCourseFilter(e.target.value)} className={INPUT}>
           <option value="all">Tous les cours</option>
           {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        {loading && <span className="text-xs text-gray-400 flex items-center gap-1.5">
-          <span className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin inline-block" />
-          Chargement…
-        </span>}
       </div>
 
       {/* ── Métriques ── */}
