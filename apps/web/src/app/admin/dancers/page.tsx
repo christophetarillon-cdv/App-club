@@ -175,22 +175,24 @@ export default function AdminDancersPage() {
         <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-4 py-3 w-10"></th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Nom</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Prénom</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Plan</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Montant</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Statut</th>
-                <th className="px-4 py-3"></th>
+                <th className="px-3 py-3 w-10"></th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Nom</th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Prénom</th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Plan</th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Méthode</th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Montant</th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Statut</th>
+                <th className="px-3 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.map(row => (
                 <tr key={row.id} className="hover:bg-gray-50/50">
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-2">
                     {row.photoUrl ? (
                       <img src={row.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
                     ) : (
@@ -199,25 +201,29 @@ export default function AdminDancersPage() {
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{row.lastName}</td>
-                  <td className="px-4 py-3 text-gray-700">{row.firstName}</td>
-                  <td className="px-4 py-3 text-gray-600 hidden sm:table-cell">
+                  <td className="px-3 py-3 font-medium text-gray-900 whitespace-nowrap">{row.lastName}</td>
+                  <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{row.firstName}</td>
+                  <td className="px-3 py-3 text-gray-600 hidden sm:table-cell max-w-[160px]">
                     {row.info ? (
                       <span className="flex items-center gap-1.5 flex-wrap">
                         {row.info.isGroup && (
                           <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Groupe</span>
                         )}
-                        {row.info.planLabel && <span>{row.info.planLabel}</span>}
-                        {row.info.paymentMethod && (
-                          <span className="text-gray-400">· {METHOD_LABEL[row.info.paymentMethod] ?? row.info.paymentMethod}</span>
+                        {row.info.planLabel && (
+                          <span className="truncate max-w-[120px]" title={row.info.planLabel}>{row.info.planLabel}</span>
                         )}
                       </span>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="px-4 py-3 text-gray-700 hidden md:table-cell">
+                  <td className="px-3 py-3 text-gray-500 hidden sm:table-cell whitespace-nowrap">
+                    {row.info?.paymentMethod
+                      ? METHOD_LABEL[row.info.paymentMethod] ?? row.info.paymentMethod
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-3 text-gray-700 hidden md:table-cell whitespace-nowrap">
                     {row.info ? `${(row.info.totalDue / 100).toFixed(2)} €` : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3 whitespace-nowrap">
                     {row.info ? (
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[row.info.status] ?? 'bg-gray-100 text-gray-500'}`}>
                         {STATUS_LABEL[row.info.status] ?? row.info.status}
@@ -226,23 +232,24 @@ export default function AdminDancersPage() {
                       <span className="text-xs text-gray-300">Pas de cotisation</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-3 py-3 text-right whitespace-nowrap">
                     <Link href={`/admin/dancers/${row.id}`}
                       className="text-xs font-medium text-blue-600 hover:text-blue-800">
-                      Détail
+                      Détail →
                     </Link>
                   </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">
+                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-400">
                     Aucun danseur trouvé.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
