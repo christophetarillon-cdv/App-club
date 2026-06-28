@@ -120,7 +120,6 @@ export default function SessionAttendancePage() {
         <div className="space-y-2">
           {attendances.map((a, i) => {
             const isTrial = a.dancer?.roles.includes('trial');
-            const isWalkIn = a.status === 'walk-in';
             return (
               <div key={a.id} className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3">
                 <span className="text-sm font-mono text-gray-300 w-6 text-right">{i + 1}</span>
@@ -144,9 +143,6 @@ export default function SessionAttendancePage() {
                   <div className="flex gap-1">
                     {isTrial && (
                       <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">Essai</span>
-                    )}
-                    {isWalkIn && (
-                      <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">Visiteur</span>
                     )}
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                       a.method === 'qr' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
