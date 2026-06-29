@@ -53,7 +53,7 @@ export default function MediaPage() {
   const [hasActiveTrial, setHasActiveTrial] = useState(false);
   const [loading, setLoading]             = useState(true);
 
-  const [filterSeason, setFilterSeason]   = useState('active');
+  const [filterSeason, setFilterSeason]   = useState('');
   const [filterCourse, setFilterCourse]   = useState('');
   const [expanded, setExpanded]           = useState<string | null>(null);
   const [speeds, setSpeeds]               = useState<Map<string, number>>(new Map());
@@ -97,6 +97,8 @@ export default function MediaPage() {
       const s = seasonSnap.docs.map(d => ({ id: d.id, label: d.data().label ?? d.id, isActive: d.data().isActive === true }))
         .sort((a, b) => b.label > a.label ? 1 : -1);
       setSeasons(s);
+      const active = s.find(s2 => s2.isActive);
+      setFilterSeason(active?.id ?? s[0]?.id ?? '');
 
       setStyles(styleSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '', color: d.data().color })));
       setCourses(courseSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '', danceStyleId: d.data().danceStyleId ?? '', levelId: d.data().levelId ?? '' })));
@@ -116,7 +118,6 @@ export default function MediaPage() {
     return paidSeasonIds.includes(m.seasonId);
   };
 
-  const activeSeason = seasons.find(s => s.isActive);
   const styleMap  = new Map(styles.map(s => [s.id, s]));
   const courseMap = new Map(courses.map(c => [c.id, c]));
   const levelMap  = new Map(levels.map(l => [l.id, l]));
@@ -134,16 +135,17 @@ export default function MediaPage() {
     if (m.type !== 'video') return false;
     if (!canAccess(m)) return false;
     if (filterCourse && m.courseId !== filterCourse) return false;
-    if (filterSeason === 'active') return !m.seasonId || m.seasonId === activeSeason?.id;
     if (filterSeason === 'intemporel') return !m.seasonId;
     if (filterSeason) return m.seasonId === filterSeason;
     return true;
   });
 
-  // locked media (no access but exists)
-  const locked = allMedia.filter(m => m.type === 'video' && !canAccess(m) && (
-    filterSeason === 'active' ? (!m.seasonId || m.seasonId === activeSeason?.id) : true
-  )).length;
+  const locked = allMedia.filter(m => {
+    if (m.type !== 'video' || canAccess(m)) return false;
+    if (filterSeason === 'intemporel') return !m.seasonId;
+    if (filterSeason) return m.seasonId === filterSeason;
+    return true;
+  }).length;
 
   return (
     <AppShell>
@@ -168,10 +170,9 @@ export default function MediaPage() {
           </div>
           <select value={filterSeason} onChange={e => setFilterSeason(e.target.value)}
             className="ml-auto border border-gray-200 rounded-xl px-3 py-1.5 text-xs bg-white focus:outline-none">
-            <option value="active">Saison en cours</option>
             <option value="">Toutes saisons</option>
             <option value="intemporel">Intemporels</option>
-            {seasons.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+            {seasons.map(s => <option key={s.id} value={s.id}>{s.label}{s.isActive ? ' · en cours' : ''}</option>)}
           </select>
         </div>
 
