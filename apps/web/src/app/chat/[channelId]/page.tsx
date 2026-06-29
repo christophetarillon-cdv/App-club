@@ -53,7 +53,8 @@ export default function ChatChannelPage() {
     }).catch(() => {});
   }, [channelId, selectedDancer?.id]);
 
-  // Calcul du plancher de date : plus ancienne saison validée par l'utilisateur
+  // Plancher de date : début du bloc de saisons consécutives le plus récent de l'utilisateur.
+  // Exemple : validé 2024-25 ✓, 2025-26 ✗, 2026-27 ✓ → plancher = début 2026-27 (le trou bloque).
   useEffect(() => {
     if (!user) return;
     const isAdminOrInstructor =
@@ -70,10 +71,29 @@ export default function ChatChannelPage() {
           .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
           .map(d => d.data().seasonId as string).filter(Boolean),
       );
-      const seasonMap = new Map(seasonSnap.docs.map(d => [d.id, d.data().startDate?.seconds ?? 0]));
-      const times = [...paidIds].map(id => seasonMap.get(id) ?? Infinity);
-      const floorSec = times.length > 0 ? Math.min(...times) : Infinity;
-      setSeasonFloorMs(isFinite(floorSec) ? floorSec * 1000 : Date.now());
+      // Trier toutes les saisons par startDate, en ignorant celles sans date
+      const sortedSeasons = seasonSnap.docs
+        .map(d => ({ id: d.id, startSec: d.data().startDate?.seconds ?? 0 }))
+        .filter(s => s.startSec > 0)
+        .sort((a, b) => a.startSec - b.startSec);
+
+      if (sortedSeasons.length === 0 || paidIds.size === 0) {
+        setSeasonFloorMs(Date.now());
+        return;
+      }
+      // Saisons validées par l'utilisateur, triées
+      const userSeasons = sortedSeasons.filter(s => paidIds.has(s.id));
+      if (userSeasons.length === 0) { setSeasonFloorMs(Date.now()); return; }
+
+      // Partir de la saison la plus récente et remonter tant que les saisons sont consécutives
+      const mostRecent = userSeasons[userSeasons.length - 1]!;
+      let floorSec = mostRecent.startSec;
+      let idx = sortedSeasons.findIndex(s => s.id === mostRecent.id);
+      while (idx > 0) {
+        const prev = sortedSeasons[idx - 1]!;
+        if (paidIds.has(prev.id)) { floorSec = prev.startSec; idx--; } else break;
+      }
+      setSeasonFloorMs(floorSec * 1000);
     });
   }, [user?.uid, account?.roles?.join(','), selectedDancer?.id]);
 
