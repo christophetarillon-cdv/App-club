@@ -27,6 +27,7 @@ export default function AdminChatChannelsPage() {
   const [description, setDescription] = useState('');
   const [publisherType, setPublisherType] = useState<ChatPublisherType>('admins_only');
   const [publisherIds, setPublisherIds] = useState<string[]>([]);
+  const [newMembersAccess, setNewMembersAccess] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -41,13 +42,14 @@ export default function AdminChatChannelsPage() {
   }, []);
 
   const resetForm = () => {
-    setName(''); setDescription(''); setPublisherType('admins_only'); setPublisherIds([]);
+    setName(''); setDescription(''); setPublisherType('admins_only'); setPublisherIds([]); setNewMembersAccess(true);
     setEditingId(null); setShowForm(false);
   };
 
   const openEdit = (ch: ChatChannel) => {
     setEditingId(ch.id); setName(ch.name); setDescription(ch.description ?? '');
     setPublisherType(ch.publisherType); setPublisherIds(ch.publisherIds ?? []);
+    setNewMembersAccess(ch.newMembersAccess !== false);
     setShowForm(true);
   };
 
@@ -60,6 +62,7 @@ export default function AdminChatChannelsPage() {
       description: description.trim(),
       publisherType,
       publisherIds: publisherType === 'specific_dancers' ? publisherIds : [],
+      newMembersAccess,
       isActive: true,
     };
     try {
@@ -131,6 +134,17 @@ export default function AdminChatChannelsPage() {
               </div>
             </div>
 
+            <div>
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input type="checkbox" checked={newMembersAccess} onChange={e => setNewMembersAccess(e.target.checked)}
+                  className="text-blue-600" />
+                <div>
+                  <span className="text-sm text-gray-700 font-medium">Accessible aux nouveaux membres</span>
+                  <p className="text-xs text-gray-400 mt-0.5">Si désactivé, le canal est réservé aux admins et instructeurs</p>
+                </div>
+              </label>
+            </div>
+
             {publisherType === 'specific_dancers' && (
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Sélectionner les danseurs</label>
@@ -174,6 +188,7 @@ export default function AdminChatChannelsPage() {
                   <div className="flex items-center gap-2">
                     <p className="font-semibold text-gray-900 text-sm">{ch.name}</p>
                     {!ch.isActive && <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded">Inactif</span>}
+                  {ch.newMembersAccess === false && <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded">Admins seulement</span>}
                   </div>
                   {ch.description && <p className="text-xs text-gray-400 mt-0.5">{ch.description}</p>}
                   <p className="text-xs text-gray-400 mt-0.5">{PUBLISHER_LABELS[ch.publisherType]}</p>

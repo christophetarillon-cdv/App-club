@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   collection, query, where, orderBy, onSnapshot,
-  addDoc, serverTimestamp, getDoc, doc, updateDoc,
+  addDoc, serverTimestamp, getDoc, getDocs, doc, updateDoc, Timestamp,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
@@ -35,6 +35,7 @@ export default function ChatChannelPage() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [seasonFloorMs, setSeasonFloorMs] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -52,17 +53,47 @@ export default function ChatChannelPage() {
     }).catch(() => {});
   }, [channelId, selectedDancer?.id]);
 
+  // Calcul du plancher de date : plus ancienne saison validée par l'utilisateur
   useEffect(() => {
-    const unsub = onSnapshot(
-      query(collection(db, 'chatMessages'), where('channelId', '==', channelId), orderBy('sentAt', 'asc')),
-      snap => {
-        setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage)));
-        setLoading(false);
-        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-      }
-    );
+    if (!user) return;
+    const isAdminOrInstructor =
+      (account?.roles ?? []).includes('admin') ||
+      (selectedDancer?.roles ?? []).includes('admin') ||
+      (selectedDancer?.roles ?? []).includes('instructor');
+    if (isAdminOrInstructor) { setSeasonFloorMs(0); return; }
+    Promise.all([
+      getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
+      getDocs(collection(db, 'seasons')),
+    ]).then(([membershipSnap, seasonSnap]) => {
+      const paidIds = new Set(
+        membershipSnap.docs
+          .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
+          .map(d => d.data().seasonId as string).filter(Boolean),
+      );
+      const seasonMap = new Map(seasonSnap.docs.map(d => [d.id, d.data().startDate?.seconds ?? 0]));
+      const times = [...paidIds].map(id => seasonMap.get(id) ?? Infinity);
+      const floorSec = times.length > 0 ? Math.min(...times) : Infinity;
+      setSeasonFloorMs(isFinite(floorSec) ? floorSec * 1000 : Date.now());
+    });
+  }, [user?.uid, account?.roles?.join(','), selectedDancer?.id]);
+
+  useEffect(() => {
+    if (seasonFloorMs === null) return;
+    const q = seasonFloorMs > 0
+      ? query(
+          collection(db, 'chatMessages'),
+          where('channelId', '==', channelId),
+          where('sentAt', '>=', Timestamp.fromMillis(seasonFloorMs)),
+          orderBy('sentAt', 'asc'),
+        )
+      : query(collection(db, 'chatMessages'), where('channelId', '==', channelId), orderBy('sentAt', 'asc'));
+    const unsub = onSnapshot(q, snap => {
+      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage)));
+      setLoading(false);
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    });
     return unsub;
-  }, [channelId]);
+  }, [channelId, seasonFloorMs]);
 
   const isAdmin = account?.roles?.includes('admin');
   const canPublish = (() => {

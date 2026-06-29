@@ -9,6 +9,7 @@ export interface ChatChannel {
   isActive: boolean;
   publisherType: ChatPublisherType;
   publisherIds?: string[]; // dancerIds when publisherType === 'specific_dancers'
+  newMembersAccess?: boolean; // false = admins/instructeurs seulement ; true (défaut) = tous les membres actuels
   createdAt: FirestoreTimestamp;
   createdBy: string; // accountId
 }

@@ -28,10 +28,29 @@ export default function ChatPage() {
   useEffect(() => {
     if (!user || !selectedDancer) return;
     (async () => {
-      const snap = await getDocs(
-        query(collection(db, 'chatChannels'), where('isActive', '==', true), orderBy('createdAt', 'asc'))
+      const [snap, membershipSnap, seasonSnap] = await Promise.all([
+        getDocs(query(collection(db, 'chatChannels'), where('isActive', '==', true), orderBy('createdAt', 'asc'))),
+        getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
+        getDocs(collection(db, 'seasons')),
+      ]);
+
+      const isAdminOrInstructor =
+        selectedDancer.roles.includes('admin') || selectedDancer.roles.includes('instructor');
+      const paidIds = new Set(
+        membershipSnap.docs
+          .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
+          .map(d => d.data().seasonId as string).filter(Boolean),
       );
-      const chans = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatChannel));
+      const currentSeasonId = seasonSnap.docs.find(d => d.data().isActive === true)?.id ?? null;
+      const hasCurrentSeason = currentSeasonId ? paidIds.has(currentSeasonId) : false;
+
+      const chans = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as ChatChannel))
+        .filter(ch => {
+          if (isAdminOrInstructor) return true;
+          if (ch.newMembersAccess === false) return false;
+          return hasCurrentSeason;
+        });
       setChannels(chans);
 
       const dancerSnap = await getDoc(doc(db, 'dancers', selectedDancer.id));

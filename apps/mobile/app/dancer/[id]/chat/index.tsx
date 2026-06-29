@@ -48,9 +48,29 @@ export default function ChatListScreen() {
   const [sendingAdmin, setSendingAdmin] = useState(false);
 
   const load = useCallback(async () => {
-    if (!selectedDancer) return;
-    const chSnap = await getDocs(query(collection(db, 'chatChannels'), where('isActive', '==', true), orderBy('createdAt', 'asc')));
-    const channels = chSnap.docs.map(d => ({ id: d.id, ...d.data() } as ChatChannel));
+    if (!selectedDancer || !user) return;
+    const [chSnap, membershipSnap, seasonSnap] = await Promise.all([
+      getDocs(query(collection(db, 'chatChannels'), where('isActive', '==', true), orderBy('createdAt', 'asc'))),
+      getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
+      getDocs(collection(db, 'seasons')),
+    ]);
+
+    const isAdminOrInstructor = selectedDancer.roles.includes('admin') || selectedDancer.roles.includes('instructor');
+    const paidIds = new Set(
+      membershipSnap.docs
+        .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
+        .map(d => d.data().seasonId as string).filter(Boolean),
+    );
+    const currentSeasonId = seasonSnap.docs.find(d => d.data().isActive === true)?.id ?? null;
+    const hasCurrentSeason = currentSeasonId ? paidIds.has(currentSeasonId) : false;
+
+    const channels = chSnap.docs
+      .map(d => ({ id: d.id, ...d.data() } as ChatChannel))
+      .filter(ch => {
+        if (isAdminOrInstructor) return true;
+        if (ch.newMembersAccess === false) return false;
+        return hasCurrentSeason;
+      });
 
     const dancerSnap = await getDoc(doc(db, 'dancers', selectedDancer.id));
     const lastRead: Record<string, number> = (dancerSnap.data()?.chatLastRead as Record<string, number>) ?? {};
@@ -63,7 +83,7 @@ export default function ChatListScreen() {
     }));
     setRows(built);
     setLoading(false);
-  }, [selectedDancer?.id]);
+  }, [selectedDancer?.id, user?.uid]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
