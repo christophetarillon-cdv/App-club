@@ -66,11 +66,16 @@ export default function ChatChannelPage() {
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
       getDocs(collection(db, 'seasons')),
     ]).then(([membershipSnap, seasonSnap]) => {
-      const paidIds = new Set(
-        membershipSnap.docs
-          .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
-          .map(d => d.data().seasonId as string).filter(Boolean),
-      );
+      // Map seasonId → createdAt (date d'adhésion effective)
+      const membershipBySeason = new Map<string, number | undefined>();
+      membershipSnap.docs
+        .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
+        .forEach(d => {
+          const sid = d.data().seasonId as string | undefined;
+          if (sid) membershipBySeason.set(sid, d.data().createdAt?.seconds as number | undefined);
+        });
+      const paidIds = new Set(membershipBySeason.keys());
+
       // Trier toutes les saisons par startDate, en ignorant celles sans date
       const sortedSeasons = seasonSnap.docs
         .map(d => ({ id: d.id, startSec: d.data().startDate?.seconds ?? 0 }))
@@ -87,7 +92,13 @@ export default function ChatChannelPage() {
 
       // Partir de la saison la plus récente et remonter tant que les saisons sont consécutives
       const mostRecent = userSeasons[userSeasons.length - 1]!;
-      let floorSec = mostRecent.startSec;
+      // Pour la saison la plus récente : plancher = max(début de saison, date d'adhésion)
+      // → un nouveau membre ne voit pas les messages antérieurs à son adhésion
+      const joinedAtSec = membershipBySeason.get(mostRecent.id);
+      let floorSec = joinedAtSec != null && joinedAtSec > mostRecent.startSec
+        ? joinedAtSec
+        : mostRecent.startSec;
+
       let idx = sortedSeasons.findIndex(s => s.id === mostRecent.id);
       while (idx > 0) {
         const prev = sortedSeasons[idx - 1]!;
