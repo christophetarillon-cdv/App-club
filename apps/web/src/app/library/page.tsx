@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, orderBy, getDocs, doc, updateDoc, increment } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -44,34 +44,43 @@ export default function LibraryPage() {
   const { selectedDancer } = useDancer();
   const router = useRouter();
 
-  const [documents, setDocuments] = useState<DocumentLibrary[]>([]);
+  const [allDocs, setAllDocs] = useState<DocumentLibrary[]>([]);
+  const [paidSeasonIds, setPaidSeasonIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<DocCategory | 'all'>('all');
 
-  const isAdmin = account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin'));
+  const isAdmin = !!(account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin')));
   const isMember = dancers.some(d => d.roles.some(r => ['member', 'trial', 'instructor', 'bureau', 'admin'].includes(r)));
   const dancerRoles: string[] = dancers.flatMap(d => d.roles);
 
   useEffect(() => {
     if (!user) return;
-    getDocs(query(collection(db, 'documentLibrary'), where('isActive', '==', true), orderBy('category', 'asc')))
-      .then(snap => {
-        const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentLibrary));
-        // Filter by access level client-side
-        const accessible = docs.filter(doc => {
-          if (isAdmin) return true;
-          if (doc.accessLevel === 'public') return true;
-          if (!user) return false;
-          if (doc.accessLevel === 'members' && isMember) return true;
-          if (doc.accessLevel === 'paid-members' && isMember) return true; // simplified
-          if (doc.accessLevel === 'specific-roles' && doc.allowedRoles?.some(r => dancerRoles.includes(r))) return true;
-          return false;
-        });
-        setDocuments(accessible);
-        setLoading(false);
-      });
+    Promise.all([
+      getDocs(query(collection(db, 'documentLibrary'), where('isActive', '==', true), orderBy('category', 'asc'))),
+      getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
+    ]).then(([docsSnap, membershipSnap]) => {
+      setAllDocs(docsSnap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentLibrary)));
+      const paid = membershipSnap.docs
+        .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
+        .map(d => d.data().seasonId as string).filter(Boolean);
+      setPaidSeasonIds([...new Set(paid)]);
+      setLoading(false);
+    });
   }, [user]);
+
+  const documents = useMemo(() => allDocs.filter(doc => {
+    if (isAdmin) return true;
+    if (doc.accessLevel === 'public') return true;
+    if (!user) return false;
+    if (doc.accessLevel === 'members' && isMember) return true;
+    if (doc.accessLevel === 'paid-members') {
+      const hasAccess = doc.seasonId ? paidSeasonIds.includes(doc.seasonId) : paidSeasonIds.length > 0;
+      return hasAccess;
+    }
+    if (doc.accessLevel === 'specific-roles' && doc.allowedRoles?.some(r => dancerRoles.includes(r))) return true;
+    return false;
+  }), [allDocs, isAdmin, isMember, dancerRoles, paidSeasonIds, user]);
 
   const handleDownload = async (doc: DocumentLibrary) => {
     if (!doc.currentFileUrl) return;

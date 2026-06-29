@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
-  ActivityIndicator, Linking,
+  ActivityIndicator, Linking, ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
@@ -12,6 +12,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import type { PersonalDocument } from '@cdv/types';
+
+interface Season { id: string; label: string; startDateSeconds: number; isActive: boolean; }
 
 const TYPE_CONFIG = {
   receipt:     { label: 'Reçu de paiement', color: '#3B6D11', bg: '#EAF3DE' },
@@ -95,24 +97,57 @@ export default function MyDocumentsScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
-  const [docs, setDocs] = useState<PersonalDocument[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [allDocs, setAllDocs]             = useState<PersonalDocument[]>([]);
+  const [validatedSeasons, setValidatedSeasons] = useState<Season[]>([]);
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
+  const [loading, setLoading]             = useState(true);
 
   useEffect(() => {
     if (!user) return;
-    getDocs(
-      query(
-        collection(db, 'documents'),
-        where('userId', '==', user.uid),
-        orderBy('generatedAt', 'desc'),
-      ),
-    )
-      .then(snap => {
-        setDocs(snap.docs.map(d => ({ id: d.id, ...d.data() } as PersonalDocument)));
-      })
+    Promise.all([
+      getDocs(query(collection(db, 'documents'), where('userId', '==', user.uid), orderBy('generatedAt', 'desc'))),
+      getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
+      getDocs(collection(db, 'seasons')),
+    ]).then(([docsSnap, membershipSnap, seasonSnap]) => {
+      setAllDocs(docsSnap.docs.map(d => ({ id: d.id, ...d.data() } as PersonalDocument)));
+
+      const paidIds = new Set(
+        membershipSnap.docs
+          .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
+          .map(d => d.data().seasonId as string).filter(Boolean),
+      );
+
+      const validated: Season[] = seasonSnap.docs
+        .filter(d => paidIds.has(d.id))
+        .map(d => ({
+          id: d.id,
+          label: d.data().label ?? d.id,
+          startDateSeconds: d.data().startDate?.seconds ?? 0,
+          isActive: d.data().isActive === true,
+        }))
+        .sort((a, b) => b.startDateSeconds - a.startDateSeconds); // plus récente en premier
+
+      setValidatedSeasons(validated);
+
+      const defaultSeason = validated.find(s => s.isActive) ?? validated[0];
+      if (defaultSeason) setSelectedSeasonId(defaultSeason.id);
+    })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [user]);
+
+  const selectedSeason = validatedSeasons.find(s => s.id === selectedSeasonId);
+
+  // Sélecteur visible uniquement si le danseur a au moins une saison précédente validée
+  const showSeasonSelector = validatedSeasons.length > 1;
+
+  const visibleDocs = useMemo(() => {
+    if (!showSeasonSelector || !selectedSeason) return allDocs;
+    return allDocs.filter(d => {
+      if (!d.seasonLabel) return true; // documents sans saison → toujours visibles
+      return d.seasonLabel === selectedSeason.label;
+    });
+  }, [allDocs, showSeasonSelector, selectedSeason]);
 
   return (
     <View style={styles.root}>
@@ -135,13 +170,40 @@ export default function MyDocumentsScreen() {
         </TouchableOpacity>
       </View>
 
+      {showSeasonSelector && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.seasonRow}
+        >
+          {validatedSeasons.map(s => {
+            const active = s.id === selectedSeasonId;
+            return (
+              <TouchableOpacity
+                key={s.id}
+                style={[styles.seasonChip, active && styles.seasonChipActive]}
+                onPress={() => setSelectedSeasonId(s.id)}
+                activeOpacity={0.75}
+              >
+                {s.isActive && (
+                  <View style={[styles.seasonDot, active && styles.seasonDotActive]} />
+                )}
+                <Text style={[styles.seasonChipText, active && styles.seasonChipTextActive]}>
+                  {s.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
       {loading ? (
         <View style={styles.loader}>
           <ActivityIndicator color={Colors.primary} size="large" />
         </View>
       ) : (
         <FlatList
-          data={docs}
+          data={visibleDocs}
           keyExtractor={d => d.id}
           contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 32 }]}
           ListEmptyComponent={<EmptyState />}
@@ -161,6 +223,37 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   backChevron: { color: '#fff', fontSize: 26, marginTop: -2 },
   headerTitle: { color: '#fff', fontSize: 20, fontWeight: '600' },
+
+  seasonRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+    alignItems: 'center',
+  },
+  seasonChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  seasonChipActive: {
+    backgroundColor: '#185FA5',
+    borderColor: '#185FA5',
+  },
+  seasonChipText: { fontSize: 13, fontWeight: '500', color: Colors.textSecondary },
+  seasonChipTextActive: { color: '#fff', fontWeight: '600' },
+  seasonDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#22C55E',
+  },
+  seasonDotActive: { backgroundColor: 'rgba(255,255,255,0.8)' },
 
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 

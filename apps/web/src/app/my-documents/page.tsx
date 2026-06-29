@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
-import { useDancer } from '@/contexts/DancerContext';
 import { useRouter } from 'next/navigation';
 import type { PersonalDocument } from '@cdv/types';
+
+interface Season { id: string; label: string; startDateSeconds: number; isActive: boolean; }
 
 const TYPE_LABELS: Record<string, string> = {
   receipt: 'Reçu de paiement',
@@ -32,20 +33,55 @@ function formatAmount(cents: number): string {
 
 export default function MyDocumentsPage() {
   const { user } = useAuth();
-  const { selectedDancer } = useDancer();
   const router = useRouter();
-  const [documents, setDocuments] = useState<PersonalDocument[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const [allDocuments, setAllDocuments]         = useState<PersonalDocument[]>([]);
+  const [validatedSeasons, setValidatedSeasons] = useState<Season[]>([]);
+  const [selectedSeasonId, setSelectedSeasonId] = useState('');
+  const [loading, setLoading]                   = useState(true);
 
   useEffect(() => {
     if (!user) return;
-    getDocs(
-      query(collection(db, 'documents'), where('userId', '==', user.uid), orderBy('generatedAt', 'desc'))
-    ).then(snap => {
-      setDocuments(snap.docs.map(d => ({ id: d.id, ...d.data() } as PersonalDocument)));
+    Promise.all([
+      getDocs(query(collection(db, 'documents'), where('userId', '==', user.uid), orderBy('generatedAt', 'desc'))),
+      getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
+      getDocs(collection(db, 'seasons')),
+    ]).then(([docsSnap, membershipSnap, seasonSnap]) => {
+      setAllDocuments(docsSnap.docs.map(d => ({ id: d.id, ...d.data() } as PersonalDocument)));
+
+      const paidIds = new Set(
+        membershipSnap.docs
+          .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
+          .map(d => d.data().seasonId as string).filter(Boolean),
+      );
+
+      const validated: Season[] = seasonSnap.docs
+        .filter(d => paidIds.has(d.id))
+        .map(d => ({
+          id: d.id,
+          label: d.data().label ?? d.id,
+          startDateSeconds: d.data().startDate?.seconds ?? 0,
+          isActive: d.data().isActive === true,
+        }))
+        .sort((a, b) => b.startDateSeconds - a.startDateSeconds);
+
+      setValidatedSeasons(validated);
+      const defaultSeason = validated.find(s => s.isActive) ?? validated[0];
+      if (defaultSeason) setSelectedSeasonId(defaultSeason.id);
       setLoading(false);
     });
   }, [user]);
+
+  const selectedSeason = validatedSeasons.find(s => s.id === selectedSeasonId);
+  const showSeasonSelector = validatedSeasons.length > 1;
+
+  const documents = useMemo(() => {
+    if (!showSeasonSelector || !selectedSeason) return allDocuments;
+    return allDocuments.filter(d => {
+      if (!d.seasonLabel) return true;
+      return d.seasonLabel === selectedSeason.label;
+    });
+  }, [allDocuments, showSeasonSelector, selectedSeason]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -54,6 +90,28 @@ export default function MyDocumentsPage() {
           <button onClick={() => router.back()} className="text-sm text-gray-400 hover:text-gray-700">← Retour</button>
           <h1 className="text-xl font-bold text-gray-900">Mes documents</h1>
         </div>
+
+        {/* Sélecteur de saison — visible uniquement si plusieurs saisons validées */}
+        {showSeasonSelector && (
+          <div className="flex gap-2 flex-wrap mb-5">
+            {validatedSeasons.map(s => (
+              <button
+                key={s.id}
+                onClick={() => setSelectedSeasonId(s.id)}
+                className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
+                  s.id === selectedSeasonId
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                }`}
+              >
+                {s.isActive && (
+                  <span className={`w-1.5 h-1.5 rounded-full ${s.id === selectedSeasonId ? 'bg-white/80' : 'bg-green-500'}`} />
+                )}
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>

@@ -156,34 +156,43 @@ export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
   const { user, account, dancers } = useAuth();
 
-  const [allDocs, setAllDocs]   = useState<DocumentLibrary[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [search, setSearch]     = useState('');
+  const [allDocs, setAllDocs]       = useState<DocumentLibrary[]>([]);
+  const [paidSeasonIds, setPaidSeasonIds] = useState<string[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [search, setSearch]         = useState('');
   const [activeCategory, setActiveCategory] = useState<DocCategory | 'all'>('all');
 
-  // Rôles utilisateur (même logique que la web app)
-  const isAdmin    = !!(account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin')));
-  const isMember   = dancers.some(d => d.roles.some(r => ['member', 'trial', 'instructor', 'bureau', 'admin'].includes(r)));
-  const userRoles  = dancers.flatMap(d => d.roles);
+  const isAdmin   = !!(account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin')));
+  const isMember  = dancers.some(d => d.roles.some(r => ['member', 'trial', 'instructor', 'bureau', 'admin'].includes(r)));
+  const userRoles = dancers.flatMap(d => d.roles);
 
   useEffect(() => {
     if (!user) return;
-    getDocs(query(collection(db, 'documentLibrary'), where('isActive', '==', true)))
-      .then(snap => {
-        setAllDocs(snap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentLibrary)));
-      })
+    Promise.all([
+      getDocs(query(collection(db, 'documentLibrary'), where('isActive', '==', true))),
+      getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
+    ]).then(([docsSnap, membershipSnap]) => {
+      setAllDocs(docsSnap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentLibrary)));
+      const paid = membershipSnap.docs
+        .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
+        .map(d => d.data().seasonId as string).filter(Boolean);
+      setPaidSeasonIds([...new Set(paid)]);
+    })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [user]);
 
   const visible = useMemo(() => {
-    // Filtre accessLevel (identique à la web app)
     const accessible = allDocs.filter(d => {
       if (isAdmin) return true;
       if (d.accessLevel === 'public') return true;
       if (d.accessLevel === 'members' && isMember) return true;
-      if (d.accessLevel === 'paid-members' && isMember) return true;
-      if (d.accessLevel === 'specific-roles' && d.allowedRoles?.some(r => userRoles.includes(r))) return true;
+      if (d.accessLevel === 'paid-members') {
+        // Pour les docs liés à une saison, vérifie que le danseur a une adhésion valide pour cette saison
+        const hasAccess = d.seasonId ? paidSeasonIds.includes(d.seasonId) : paidSeasonIds.length > 0;
+        return hasAccess;
+      }
+      if (d.accessLevel === 'specific-roles' && d.allowedRoles?.some(r => (userRoles as string[]).includes(r))) return true;
       return false;
     });
 
@@ -200,7 +209,7 @@ export default function LibraryScreen() {
       d.description?.toLowerCase().includes(q) ||
       d.tags?.some(t => t.toLowerCase().includes(q)),
     );
-  }, [allDocs, isAdmin, isMember, userRoles, activeCategory, search]);
+  }, [allDocs, isAdmin, isMember, userRoles, paidSeasonIds, activeCategory, search]);
 
   return (
     <View style={styles.root}>
