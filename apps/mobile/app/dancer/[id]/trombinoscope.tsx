@@ -4,9 +4,10 @@ import {
   TextInput, Image, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDancer } from '@/contexts/DancerContext';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -38,9 +39,13 @@ export default function TrombinoscopeScreen() {
   const { width } = useWindowDimensions();
   const itemWidth = (width - H_PAD * 2 - GAP * (NUM_COLS - 1)) / NUM_COLS;
 
+  const { selectedDancer } = useDancer();
+  const isAdmin = selectedDancer?.roles?.includes('admin') ?? false;
+
   const [dancers, setDancers] = useState<Dancer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState('');
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -57,23 +62,22 @@ export default function TrombinoscopeScreen() {
 
         if (!seasonSnap.empty) {
           const allSeasons = seasonSnap.docs.map(d => ({ id: d.id, ...d.data() } as { id: string; label: string; isActive?: boolean; registrationOpen?: boolean }));
-          // Priorité : saison active > inscriptions ouvertes > plus récente (startDate desc = index 0)
           const season =
             allSeasons.find(s => s.isActive) ??
             allSeasons.find(s => s.registrationOpen) ??
             allSeasons[0]!;
-          const memberSnap = await getDocs(
-            query(collection(db, 'memberships'), where('seasonId', '==', season.id)),
-          );
-          const seasonAccountIds = new Set<string>();
-          memberSnap.docs.forEach(d => {
-            if (d.data().paymentPlanStatus === 'approved') {
-              seasonAccountIds.add(d.data().userId as string);
-            }
-          });
+
+          // Règle d'accès : le danseur courant doit avoir un plan approuvé pour cette saison
+          const currentDancer = allDancers.find(d => d.id === selectedDancer?.id);
+          const hasAccess = isAdmin || (currentDancer?.validatedSeasonIds?.includes(season.id) ?? false);
+          if (!hasAccess) {
+            setAccessDenied(true);
+            return;
+          }
+
           setDancers(
             allDancers
-              .filter(d => d.accountId && seasonAccountIds.has(d.accountId))
+              .filter(d => d.validatedSeasonIds?.includes(season.id))
               .sort((a, b) => a.firstName.localeCompare(b.firstName, 'fr')),
           );
         } else {
@@ -115,7 +119,7 @@ export default function TrombinoscopeScreen() {
             <Text style={styles.backChevron}>‹</Text>
             <Text style={styles.headerTitle}>Trombinoscope</Text>
           </TouchableOpacity>
-          {!loading && (
+          {!loading && !accessDenied && (
             <View style={styles.countBadge}>
               <Text style={styles.countText}>{filtered.length}</Text>
             </View>
@@ -151,6 +155,11 @@ export default function TrombinoscopeScreen() {
       {loading ? (
         <View style={styles.loader}>
           <ActivityIndicator color={Colors.primary} size="large" />
+        </View>
+      ) : accessDenied ? (
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>Accès réservé</Text>
+          <Text style={styles.emptySub}>Votre cotisation doit être validée{'\n'}pour accéder au trombinoscope.</Text>
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.empty}>

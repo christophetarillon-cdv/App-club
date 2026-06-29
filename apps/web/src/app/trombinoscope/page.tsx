@@ -1,29 +1,52 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDancer } from '@/contexts/DancerContext';
 import { AppShell } from '@/components/AppShell';
 import type { Dancer } from '@cdv/types';
 
 export default function TrombinoscOpePage() {
-  const { user } = useAuth();
+  const { user, account, dancers: myDancers } = useAuth();
+  const { selectedDancer } = useDancer();
   const [dancers, setDancers] = useState<Dancer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [accessDenied, setAccessDenied] = useState(false);
+
+  const isAdmin =
+    (account?.roles?.includes('admin') ?? false) ||
+    myDancers.some(d => d.roles.includes('admin'));
 
   useEffect(() => {
     if (!user) return;
-    getDocs(query(collection(db, 'dancers'), where('isActive', '!=', false)))
-      .then(snap => {
-        setDancers(
-          snap.docs.map(d => ({ id: d.id, ...d.data() } as Dancer))
-            .sort((a, b) => a.firstName.localeCompare(b.firstName, 'fr'))
-        );
-      })
-      .finally(() => setLoading(false));
-  }, [user]);
+    Promise.all([
+      getDocs(query(collection(db, 'dancers'), where('isActive', '!=', false))),
+      getDocs(query(collection(db, 'seasons'), orderBy('startDate', 'desc'))),
+    ]).then(([dancerSnap, seasonSnap]) => {
+      const allDancers = dancerSnap.docs
+        .map(d => ({ id: d.id, ...d.data() } as Dancer))
+        .sort((a, b) => a.firstName.localeCompare(b.firstName, 'fr'));
+
+      if (!seasonSnap.empty) {
+        const allSeasons = seasonSnap.docs.map(d => ({ id: d.id, ...d.data() } as { id: string; isActive?: boolean; registrationOpen?: boolean }));
+        const season =
+          allSeasons.find(s => s.isActive) ??
+          allSeasons.find(s => s.registrationOpen) ??
+          allSeasons[0]!;
+
+        const currentDancer = allDancers.find(d => d.id === selectedDancer?.id);
+        const hasAccess = isAdmin || (currentDancer?.validatedSeasonIds?.includes(season.id) ?? false);
+        if (!hasAccess) { setAccessDenied(true); return; }
+
+        setDancers(allDancers.filter(d => d.validatedSeasonIds?.includes(season.id)));
+      } else {
+        setDancers(allDancers);
+      }
+    }).finally(() => setLoading(false));
+  }, [user, selectedDancer?.id, isAdmin]);
 
   const filtered = search.trim()
     ? dancers.filter(d => d.firstName.toLowerCase().includes(search.toLowerCase()) ||
@@ -61,6 +84,11 @@ export default function TrombinoscOpePage() {
 
         {loading ? (
           <div className="text-center py-16 text-gray-400 text-sm">Chargement…</div>
+        ) : accessDenied ? (
+          <div className="bg-white rounded-2xl border border-gray-200 px-6 py-16 text-center">
+            <p className="text-gray-800 font-semibold mb-1">Accès réservé</p>
+            <p className="text-gray-400 text-sm">Votre cotisation doit être validée pour accéder au trombinoscope.</p>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-200 px-6 py-12 text-center">
             <p className="text-gray-500">Aucun danseur trouvé.</p>

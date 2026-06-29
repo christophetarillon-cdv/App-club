@@ -1563,6 +1563,13 @@ export const onMembershipApproved = onDocumentUpdated(
       }
     }
 
+    // Ajoute la saison aux validatedSeasonIds du danseur (pour le trombinoscope)
+    if (dancerId && seasonId) {
+      await db.doc(`dancers/${dancerId}`).update({
+        validatedSeasonIds: admin.firestore.FieldValue.arrayUnion(seasonId),
+      });
+    }
+
     const accountData = accountSnap.data() ?? {};
     const memberName = dancerData.firstName && dancerData.lastName
       ? `${dancerData.firstName} ${dancerData.lastName}`

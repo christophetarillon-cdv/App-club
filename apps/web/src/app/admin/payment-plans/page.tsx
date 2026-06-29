@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-  collection, getDocs, query, where, doc, getDoc, updateDoc, writeBatch, serverTimestamp,
+  collection, getDocs, query, where, doc, getDoc, updateDoc, writeBatch, arrayUnion, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
@@ -33,6 +33,7 @@ interface Row extends Membership {
   displayName: string;
   email: string;
   dancerName: string;
+  resolvedDancerId?: string;
   seasonLabel: string;
   planLabel: string;
   installments: Installment[];
@@ -55,6 +56,7 @@ interface GroupRow extends PaymentGroupDoc {
   email: string;
   seasonLabel: string;
   dancers: { name: string; planLabel: string }[];
+  dancerIds: string[];
   installments: Installment[];
 }
 
@@ -67,6 +69,7 @@ export default function AdminPaymentPlansPage() {
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [actionId, setActionId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [backfilling, setBackfilling] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -108,6 +111,7 @@ export default function AdminPaymentPlansPage() {
         displayName: accountSnap.exists() ? accountSnap.data().displayName : m.userId,
         email: accountSnap.exists() ? accountSnap.data().email : '—',
         dancerName,
+        resolvedDancerId: dancerId,
         seasonLabel: seasonSnap.exists() ? seasonSnap.data().label : m.seasonId,
         planLabel: planSnap.exists() ? planSnap.data().label : m.pricingPlanId,
         installments,
@@ -139,7 +143,7 @@ export default function AdminPaymentPlansPage() {
             const pSnap = await getDoc(doc(db, 'pricingPlans', md.pricingPlanId));
             if (pSnap.exists()) planLabel = pSnap.data().label;
           }
-          return { name, planLabel };
+          return { name, planLabel, dancerId: md.dancerId as string | undefined };
         })
       );
       const installments: Installment[] = await Promise.all(
@@ -155,7 +159,9 @@ export default function AdminPaymentPlansPage() {
         displayName: accountSnap.exists() ? accountSnap.data().displayName : g.userId,
         email: accountSnap.exists() ? accountSnap.data().email : '—',
         seasonLabel: seasonSnap.exists() ? seasonSnap.data().label : g.seasonId,
-        dancers, installments,
+        dancers: dancers.map(d => ({ name: d.name, planLabel: d.planLabel })),
+        dancerIds: dancers.map(d => d.dancerId).filter((id): id is string => !!id),
+        installments,
       };
     }));
     setGroupRows(enrichedGroups);
@@ -166,11 +172,18 @@ export default function AdminPaymentPlansPage() {
 
   const handleApprove = async (row: Row) => {
     setActionId(row.id);
-    await updateDoc(doc(db, 'memberships', row.id), {
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'memberships', row.id), {
       paymentPlanStatus: 'approved',
       status: 'active',
       updatedAt: serverTimestamp(),
     });
+    if (row.resolvedDancerId && row.seasonId) {
+      batch.update(doc(db, 'dancers', row.resolvedDancerId), {
+        validatedSeasonIds: arrayUnion(row.seasonId),
+      });
+    }
+    await batch.commit();
     setActionId(null);
     setRows(prev => prev.filter(r => r.id !== row.id));
   };
@@ -196,6 +209,11 @@ export default function AdminPaymentPlansPage() {
         updatedAt: serverTimestamp(),
       });
     }
+    for (const dancerId of g.dancerIds) {
+      batch.update(doc(db, 'dancers', dancerId), {
+        validatedSeasonIds: arrayUnion(g.seasonId),
+      });
+    }
     batch.update(doc(db, 'paymentGroups', g.id), {
       paymentPlanStatus: 'approved',
       updatedAt: serverTimestamp(),
@@ -203,6 +221,36 @@ export default function AdminPaymentPlansPage() {
     await batch.commit();
     setActionId(null);
     setGroupRows(prev => prev.filter(r => r.id !== g.id));
+  };
+
+  // Backfill validatedSeasonIds sur les danseurs à partir des adhésions déjà approuvées
+  const handleBackfill = async () => {
+    if (!confirm('Synchroniser validatedSeasonIds pour toutes les adhésions approuvées ?')) return;
+    setBackfilling(true);
+    try {
+      const snap = await getDocs(query(collection(db, 'memberships'), where('paymentPlanStatus', '==', 'approved')));
+      const batch = writeBatch(db);
+      let count = 0;
+      for (const mDoc of snap.docs) {
+        const m = mDoc.data();
+        const seasonId = m.seasonId as string | undefined;
+        if (!seasonId) continue;
+        let dancerId = m.dancerId as string | undefined;
+        if (!dancerId) {
+          const accountSnap = await getDoc(doc(db, 'accounts', m.userId));
+          if (accountSnap.exists()) {
+            dancerId = (accountSnap.data().dancerIds as string[] ?? [])[0];
+          }
+        }
+        if (!dancerId) continue;
+        batch.update(doc(db, 'dancers', dancerId), { validatedSeasonIds: arrayUnion(seasonId) });
+        count++;
+      }
+      await batch.commit();
+      alert(`Synchronisation terminée : ${count} danseur(s) mis à jour.`);
+    } finally {
+      setBackfilling(false);
+    }
   };
 
   const handleRejectGroup = async (g: GroupRow) => {
@@ -230,10 +278,16 @@ export default function AdminPaymentPlansPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Plans de paiement</h1>
-        <Link href="/admin/payment-plans/new"
-          className="text-sm bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 font-medium transition-colors">
-          + Nouveau plan
-        </Link>
+        <div className="flex gap-2">
+          <button onClick={handleBackfill} disabled={backfilling}
+            className="text-sm border border-gray-300 text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-50 font-medium transition-colors">
+            {backfilling ? 'Synchronisation…' : '↻ Sync trombinoscope'}
+          </button>
+          <Link href="/admin/payment-plans/new"
+            className="text-sm bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 font-medium transition-colors">
+            + Nouveau plan
+          </Link>
+        </div>
       </div>
 
       <div className="flex gap-2 mb-4">

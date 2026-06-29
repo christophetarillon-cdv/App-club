@@ -28,5 +28,6 @@ export interface Dancer extends WithTimestamps {
   customFields?: Record<string, unknown>;
   notificationPreferences?: Record<string, boolean>;
   chatLastRead?: Record<string, number>;
+  validatedSeasonIds?: string[];
   isActive: boolean;
 }
