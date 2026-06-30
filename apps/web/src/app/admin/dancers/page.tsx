@@ -124,15 +124,22 @@ export default function AdminDancersPage() {
         });
       });
 
-      const dancers: DancerRow[] = dancerSnap.docs.map(d => ({
-        id: d.id,
-        firstName: d.data().firstName ?? '',
-        lastName: d.data().lastName ?? '',
-        photoUrl: d.data().photoUrl,
-        roles: d.data().roles ?? [],
-        isActive: d.data().isActive !== false,
-        info: infoByDancer.get(d.id),
-      }));
+      const dancers: DancerRow[] = dancerSnap.docs
+        .map(d => ({
+          id: d.id,
+          firstName: d.data().firstName ?? '',
+          lastName: d.data().lastName ?? '',
+          photoUrl: d.data().photoUrl,
+          roles: d.data().roles ?? [],
+          isActive: d.data().isActive !== false,
+          info: infoByDancer.get(d.id),
+        }))
+        .filter(d =>
+          // A une cotisation sur la saison sélectionnée
+          infoByDancer.has(d.id) ||
+          // Ou est en essai (pas lié à une saison via cotisation)
+          d.roles.includes('trial')
+        );
       dancers.sort((a, b) =>
         a.lastName.localeCompare(b.lastName, 'fr') || a.firstName.localeCompare(b.firstName, 'fr')
       );
