@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-  collection, getDocs, query, where, doc, getDoc, updateDoc, writeBatch, arrayUnion, deleteField, serverTimestamp,
+  collection, getDocs, query, where, doc, getDoc, updateDoc, writeBatch, arrayUnion, deleteField, serverTimestamp, orderBy,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
@@ -72,12 +72,14 @@ export default function AdminPaymentPlansPage() {
   const [actionId, setActionId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [backfilling, setBackfilling] = useState(false);
+  const [seasons, setSeasons] = useState<{ id: string; label: string }[]>([]);
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
 
   const load = async () => {
     setLoading(true);
 
     // Solo memberships (not part of a group)
-    const snap = await getDocs(query(collection(db, 'memberships'), where('paymentPlanStatus', '==', filter)));
+    const snap = await getDocs(query(collection(db, 'memberships'), where('paymentPlanStatus', '==', filter), where('seasonId', '==', selectedSeasonId)));
     const mems = snap.docs
       .map(d => ({ id: d.id, ...d.data() as Omit<Membership, 'id'> }))
       .filter(m => !m.paymentGroupId);
@@ -125,7 +127,7 @@ export default function AdminPaymentPlansPage() {
     setRows(enriched);
 
     // Payment groups
-    const groupSnap = await getDocs(query(collection(db, 'paymentGroups'), where('paymentPlanStatus', '==', filter)));
+    const groupSnap = await getDocs(query(collection(db, 'paymentGroups'), where('paymentPlanStatus', '==', filter), where('seasonId', '==', selectedSeasonId)));
     const groups = groupSnap.docs.map(d => ({ id: d.id, ...d.data() as Omit<PaymentGroupDoc, 'id'> }));
 
     const enrichedGroups = await Promise.all(groups.map(async (g) => {
@@ -179,7 +181,16 @@ export default function AdminPaymentPlansPage() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [filter]);
+  useEffect(() => {
+    getDocs(query(collection(db, 'seasons'), orderBy('startDate', 'desc'))).then(snap => {
+      const list = snap.docs.map(d => ({ id: d.id, label: d.data().label ?? d.id, isActive: d.data().isActive === true }));
+      setSeasons(list);
+      const active = list.find(s => s.isActive);
+      setSelectedSeasonId(active?.id ?? list[0]?.id ?? '');
+    });
+  }, []);
+
+  useEffect(() => { if (selectedSeasonId) load(); }, [filter, selectedSeasonId]);
 
   const handleApprove = async (row: Row) => {
     setActionId(row.id);
@@ -319,13 +330,23 @@ export default function AdminPaymentPlansPage() {
         </div>
       </div>
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <select
+          value={selectedSeasonId}
+          onChange={e => setSelectedSeasonId(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+        >
+          {seasons.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+        </select>
+
+        <div className="flex gap-2">
         {(['pending', 'approved', 'rejected'] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)}
             className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${filter === f ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
             {f === 'pending' ? 'En attente' : f === 'approved' ? 'Approuvés' : 'Rejetés'}
           </button>
         ))}
+        </div>
       </div>
 
       {loading ? <p className="text-gray-500 text-sm">Chargement…</p> : totalItems === 0 ? (
