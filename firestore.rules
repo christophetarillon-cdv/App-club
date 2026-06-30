@@ -221,6 +221,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── announcements (actualités home) ──────────────────────────────────────
+    match /announcements/{id} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
     // ── notifications (annonces + system) ─────────────────────────────────────
     match /notifications/{id} {
       allow read: if isAuth();
