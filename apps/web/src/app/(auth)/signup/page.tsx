@@ -22,8 +22,10 @@ function mergeWithDefaults(saved: Partial<ProfileFieldsConfig> | undefined): Pro
 export default function SignupPage() {
   const router = useRouter();
   const [isTrial, setIsTrial] = useState(false);
+  const [trialMode, setTrialMode] = useState<'sessions' | 'days' | 'fixed'>('sessions');
   const [trialMaxSessions, setTrialMaxSessions] = useState(3);
   const [trialMaxDays, setTrialMaxDays] = useState(30);
+  const [trialEndDate, setTrialEndDate] = useState('');
   const [fieldConfig, setFieldConfig] = useState<ProfileFieldsConfig>(DEFAULT_PROFILE_FIELDS);
   const [form, setForm] = useState({
     displayName: '', firstName: '', lastName: '', email: '', password: '', confirm: '',
@@ -37,8 +39,10 @@ export default function SignupPage() {
     getDoc(doc(db, 'appSettings', 'main')).then(snap => {
       if (snap.exists()) {
         const data = snap.data();
+        if (data.trialMode) setTrialMode(data.trialMode);
         if (data.trialMaxSessions) setTrialMaxSessions(data.trialMaxSessions);
         if (data.trialMaxDays) setTrialMaxDays(data.trialMaxDays);
+        if (data.trialEndDate) setTrialEndDate(data.trialEndDate);
         setFieldConfig(mergeWithDefaults(data.profileFields));
       }
     });
@@ -68,7 +72,9 @@ export default function SignupPage() {
       if (isTrial) {
         await signUpTrial(
           form.displayName.trim(), form.firstName.trim(), form.lastName.trim(),
-          form.email.trim(), form.password, trialMaxDays, options,
+          form.email.trim(), form.password,
+          { mode: trialMode, maxSessions: trialMaxSessions, maxDays: trialMaxDays, endDate: trialEndDate },
+          options,
         );
       } else {
         await signUpWithEmail(
@@ -119,7 +125,9 @@ export default function SignupPage() {
           </div>
           {isTrial && (
             <p className="text-xs text-orange-600 mt-2 bg-orange-50 rounded-lg px-3 py-2">
-              Accès à {trialMaxSessions} séance{trialMaxSessions > 1 ? 's' : ''} d'essai pendant {trialMaxDays} jours. Vous pourrez rejoindre le club ensuite.
+              {trialMode === 'sessions' && `Accès à ${trialMaxSessions} séance${trialMaxSessions > 1 ? 's' : ''} d'essai. Vous pourrez rejoindre le club ensuite.`}
+              {trialMode === 'days' && `Accès d'essai pendant ${trialMaxDays} jour${trialMaxDays > 1 ? 's' : ''}. Vous pourrez rejoindre le club ensuite.`}
+              {trialMode === 'fixed' && trialEndDate && `Accès d'essai jusqu'au ${new Date(trialEndDate).toLocaleDateString('fr-FR')}. Vous pourrez rejoindre le club ensuite.`}
             </p>
           )}
         </div>

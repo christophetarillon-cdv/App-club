@@ -25,8 +25,10 @@ export default function WelcomePage() {
 
   const [clubName, setClubName] = useState('CDV');
   const [clubDesc, setClubDesc] = useState('');
+  const [trialMode, setTrialMode] = useState<'sessions' | 'days' | 'fixed'>('sessions');
   const [trialMaxSessions, setTrialMaxSessions] = useState(3);
   const [trialMaxDays, setTrialMaxDays] = useState(30);
+  const [trialEndDate, setTrialEndDate] = useState('');
   const [fieldConfig, setFieldConfig] = useState<ProfileFieldsConfig>(DEFAULT_PROFILE_FIELDS);
 
   const [dancers, setDancers] = useState<DancerInput[]>([{ firstName: '', lastName: '' }]);
@@ -53,8 +55,10 @@ export default function WelcomePage() {
       }
       if (settingsSnap.exists()) {
         const d = settingsSnap.data();
+        if (d.trialMode) setTrialMode(d.trialMode);
         if (d.trialMaxSessions) setTrialMaxSessions(d.trialMaxSessions);
         if (d.trialMaxDays) setTrialMaxDays(d.trialMaxDays);
+        if (d.trialEndDate) setTrialEndDate(d.trialEndDate);
         setFieldConfig(mergeWithDefaults(d.profileFields));
       }
     });
@@ -110,7 +114,13 @@ export default function WelcomePage() {
         email.trim(),
         password,
         selectedType,
-        { trialMaxDays: selectedType === 'trial' ? trialMaxDays : undefined, options },
+        {
+          trialMode: selectedType === 'trial' ? trialMode : undefined,
+          trialMaxSessions: selectedType === 'trial' ? trialMaxSessions : undefined,
+          trialMaxDays: selectedType === 'trial' ? trialMaxDays : undefined,
+          trialEndDate: selectedType === 'trial' ? trialEndDate : undefined,
+          options,
+        },
       );
 
       const params = new URLSearchParams({ dancerIds: dancerIds.join(','), type: selectedType });
@@ -265,7 +275,9 @@ export default function WelcomePage() {
                     <div>
                       <p className="font-semibold text-gray-900">Période d'essai</p>
                       <p className="text-sm text-gray-500 mt-0.5">
-                        {trialMaxSessions} séance{trialMaxSessions > 1 ? 's' : ''} · {trialMaxDays} jours · gratuit
+                        {trialMode === 'sessions' && `${trialMaxSessions} séance${trialMaxSessions > 1 ? 's' : ''} · gratuit`}
+                        {trialMode === 'days' && `${trialMaxDays} jour${trialMaxDays > 1 ? 's' : ''} · gratuit`}
+                        {trialMode === 'fixed' && trialEndDate && `Jusqu'au ${new Date(trialEndDate).toLocaleDateString('fr-FR')} · gratuit`}
                       </p>
                     </div>
                     <span className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${

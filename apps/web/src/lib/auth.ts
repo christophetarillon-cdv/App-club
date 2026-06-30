@@ -106,13 +106,17 @@ export const signUpTrial = async (
   lastName: string,
   email: string,
   password: string,
-  trialMaxDays: number,
+  trialConfig: { mode: 'sessions' | 'days' | 'fixed'; maxSessions?: number; maxDays?: number; endDate?: string },
   options?: SignUpOptions,
 ) => {
   const { user } = await createUserWithEmailAndPassword(auth, email, password);
 
   const dancerRef = doc(collection(db, 'dancers'));
-  const trialExpiresAt = new Date(Date.now() + trialMaxDays * 24 * 60 * 60 * 1000);
+  const trialExpiresAt = trialConfig.mode === 'days' && trialConfig.maxDays
+    ? new Date(Date.now() + trialConfig.maxDays * 24 * 60 * 60 * 1000)
+    : trialConfig.mode === 'fixed' && trialConfig.endDate
+    ? new Date(trialConfig.endDate)
+    : undefined;
 
   await Promise.all([
     setDoc(doc(db, 'accounts', user.uid), {
@@ -139,7 +143,9 @@ export const signUpTrial = async (
       roles: ['trial'],
       isActive: true,
       trialStartDate: serverTimestamp(),
-      trialExpiresAt,
+      trialMode: trialConfig.mode,
+      ...(trialExpiresAt ? { trialExpiresAt } : {}),
+      ...(trialConfig.mode === 'sessions' ? { trialMaxSessions: trialConfig.maxSessions ?? 3 } : {}),
       trialSessionsUsed: 0,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -248,15 +254,19 @@ export const signUpWithDancers = async (
   email: string,
   password: string,
   type: 'member' | 'trial',
-  config: { trialMaxDays?: number; options?: SignUpOptions } = {},
+  config: { trialMode?: 'sessions' | 'days' | 'fixed'; trialMaxSessions?: number; trialMaxDays?: number; trialEndDate?: string; options?: SignUpOptions } = {},
 ) => {
   const { user } = await createUserWithEmailAndPassword(auth, email, password);
 
   const first = dancers[0]!;
   const displayName = `${first.firstName.trim()} ${first.lastName.trim()}`.trim();
   const dancerRefs = dancers.map(() => doc(collection(db, 'dancers')));
-  const trialExpiresAt = type === 'trial' && config.trialMaxDays
-    ? new Date(Date.now() + config.trialMaxDays * 24 * 60 * 60 * 1000)
+  const trialExpiresAt = type === 'trial'
+    ? config.trialMode === 'days' && config.trialMaxDays
+      ? new Date(Date.now() + config.trialMaxDays * 24 * 60 * 60 * 1000)
+      : config.trialMode === 'fixed' && config.trialEndDate
+      ? new Date(config.trialEndDate)
+      : undefined
     : undefined;
 
   await Promise.all([
@@ -284,9 +294,11 @@ export const signUpWithDancers = async (
         isMinor: false,
         roles: [type === 'trial' ? 'trial' : 'member'],
         isActive: true,
-        ...(type === 'trial' && trialExpiresAt ? {
+        ...(type === 'trial' ? {
           trialStartDate: serverTimestamp(),
-          trialExpiresAt,
+          trialMode: config.trialMode ?? 'sessions',
+          ...(trialExpiresAt ? { trialExpiresAt } : {}),
+          ...((config.trialMode === 'sessions' || !config.trialMode) ? { trialMaxSessions: config.trialMaxSessions ?? 3 } : {}),
           trialSessionsUsed: 0,
         } : {}),
         createdAt: serverTimestamp(),
