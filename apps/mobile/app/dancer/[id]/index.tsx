@@ -202,7 +202,9 @@ export default function DancerHomeScreen() {
               </View>
               {isAdmin && (
                 <TouchableOpacity style={styles.actuAddBtn} onPress={openSheet} activeOpacity={0.75}>
-                  <Text style={styles.actuAddBtnText}>+</Text>
+                  <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
+                    <Path d="M7 1v12M1 7h12" stroke="white" strokeWidth={2} strokeLinecap="round"/>
+                  </Svg>
                 </TouchableOpacity>
               )}
             </View>
@@ -400,7 +402,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actuAddBtnText: { color: '#fff', fontSize: 20, fontWeight: '300', lineHeight: 28, textAlign: 'center', includeFontPadding: false },
   actuCard: {
     backgroundColor: Colors.white,
     borderRadius: 18,
