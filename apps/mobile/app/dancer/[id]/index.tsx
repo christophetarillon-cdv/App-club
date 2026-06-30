@@ -11,7 +11,6 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useDancer } from '@/contexts/DancerContext';
-import { useAuth } from '@/contexts/AuthContext';
 import { usePagePermissions } from '@/contexts/PagePermissionsContext';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -67,7 +66,6 @@ function CardWaves() {
 export default function DancerHomeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { selectedDancer } = useDancer();
-  const { account, dancers } = useAuth();
   const { hasPerm } = usePagePermissions();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -78,10 +76,7 @@ export default function DancerHomeScreen() {
   const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const isAdmin = [
-    ...(account?.roles ?? []),
-    ...dancers.flatMap(d => d.roles),
-  ].includes('admin');
+  const isAdmin = selectedDancer?.roles?.includes('admin') ?? false;
 
   const loadAnnouncements = () => {
     getDocs(
@@ -114,7 +109,7 @@ export default function DancerHomeScreen() {
         title: title.trim(),
         body: body.trim(),
         sentAt: serverTimestamp(),
-        sentBy: account?.id ?? '',
+        sentBy: selectedDancer?.id ?? '',
         channelId: '',
         recipientCount: 0,
       });
@@ -405,7 +400,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actuAddBtnText: { color: '#fff', fontSize: 20, fontWeight: '300', lineHeight: 26 },
+  actuAddBtnText: { color: '#fff', fontSize: 20, fontWeight: '300', lineHeight: 28, textAlign: 'center', includeFontPadding: false },
   actuCard: {
     backgroundColor: Colors.white,
     borderRadius: 18,
