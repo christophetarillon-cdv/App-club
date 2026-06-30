@@ -262,12 +262,13 @@ export default function DancerHomeScreen() {
 
       {/* ── Bottom sheet création actualité ── */}
       {sheetOpen && (
-        <View style={styles.sheetOverlay} onStartShouldSetResponder={() => true} onResponderRelease={closeSheet}>
+        <View style={styles.sheetOverlay} pointerEvents="box-none">
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={closeSheet} />
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.sheetKAV}
           >
-            <View style={styles.sheet} onStartShouldSetResponder={() => true} onResponderRelease={e => e.stopPropagation()}>
+            <View style={styles.sheet}>
               <View style={styles.sheetHandle} />
               <Text style={styles.sheetTitle}>Nouvelle actualité</Text>
 
