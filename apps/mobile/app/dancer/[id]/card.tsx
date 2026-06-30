@@ -55,8 +55,8 @@ export default function CardScreen() {
         <QRCode
           value={item.id}
           size={200}
-          color="white"
-          backgroundColor={Colors.orange}
+          color="#000000"
+          backgroundColor="#FFFFFF"
           getRef={(c: any) => { qrRefs.current[item.id] = c; }}
         />
       </View>
@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   qrWrap: {
-    backgroundColor: Colors.orange,
+    backgroundColor: '#FFFFFF',
     borderRadius: 22,
     padding: 18,
     shadowColor: Colors.orange,

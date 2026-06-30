@@ -181,8 +181,8 @@ export default function DancerHomeScreen() {
                   <QRCode
                     value={selectedDancer.id}
                     size={80}
-                    color="white"
-                    backgroundColor={Colors.orange}
+                    color="#000000"
+                    backgroundColor="#FFFFFF"
                   />
                 </View>
               </TouchableOpacity>
@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
   qrBox: {
     borderRadius: 14,
     overflow: 'hidden',
-    backgroundColor: Colors.orange,
+    backgroundColor: '#FFFFFF',
     padding: 8,
   },
   welcome: {
