@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity,
-  StyleSheet,
+  StyleSheet, TextInput, KeyboardAvoidingView, Platform,
+  Alert, Keyboard, ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import {
+  collection, query, orderBy, limit, getDocs,
+  addDoc, deleteDoc, doc, serverTimestamp,
+} from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useDancer } from '@/contexts/DancerContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { usePagePermissions } from '@/contexts/PagePermissionsContext';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -62,21 +67,80 @@ function CardWaves() {
 export default function DancerHomeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { selectedDancer } = useDancer();
+  const { account, dancers } = useAuth();
   const { hasPerm } = usePagePermissions();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const isAdmin = [
+    ...(account?.roles ?? []),
+    ...dancers.flatMap(d => d.roles),
+  ].includes('admin');
+
+  const loadAnnouncements = () => {
     getDocs(
-      query(collection(db, 'announcements'), orderBy('sentAt', 'desc'), limit(3))
+      query(collection(db, 'announcements'), orderBy('sentAt', 'desc'), limit(5))
     ).then(snap => {
       setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Announcement)));
     }).catch(() => {});
-  }, []);
+  };
+
+  useEffect(() => { loadAnnouncements(); }, []);
 
   const nav = (screen: string) => router.push(`/dancer/${id}/${screen}` as any);
+
+  const openSheet = () => {
+    setTitle('');
+    setBody('');
+    setSheetOpen(true);
+  };
+
+  const closeSheet = () => {
+    Keyboard.dismiss();
+    setSheetOpen(false);
+  };
+
+  const handlePublish = async () => {
+    if (!title.trim() || !body.trim() || saving) return;
+    setSaving(true);
+    try {
+      await addDoc(collection(db, 'announcements'), {
+        title: title.trim(),
+        body: body.trim(),
+        sentAt: serverTimestamp(),
+        sentBy: account?.id ?? '',
+        channelId: '',
+        recipientCount: 0,
+      });
+      closeSheet();
+      loadAnnouncements();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = (a: Announcement) => {
+    Alert.alert(
+      'Supprimer cette actualité ?',
+      `"${a.title}"`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer', style: 'destructive',
+          onPress: async () => {
+            await deleteDoc(doc(db, 'announcements', a.id));
+            loadAnnouncements();
+          },
+        },
+      ]
+    );
+  };
 
   if (!selectedDancer) return null;
 
@@ -90,14 +154,12 @@ export default function DancerHomeScreen() {
       >
         {/* ── Header bleu ── */}
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-          {/* Dégradé bleu → crème */}
           <LinearGradient
             colors={['#2F86C0', '#7FBFE3', '#D8EAF3', Colors.background]}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
-          {/* Vague douce en bas */}
           <View style={styles.headerWave} pointerEvents="none">
             <Svg width="100%" height="100%" viewBox="0 0 400 44" preserveAspectRatio="none">
               <Path d="M0 22 Q100 2 200 18 Q300 32 400 12 L400 44 L0 44 Z" fill={Colors.background} />
@@ -105,7 +167,6 @@ export default function DancerHomeScreen() {
           </View>
 
           <View style={styles.headerTop}>
-            {/* Photo */}
             <TouchableOpacity style={styles.photoWrapper} onPress={() => nav('infos')} activeOpacity={0.85}>
               {selectedDancer.photoUrl ? (
                 <Image source={{ uri: selectedDancer.photoUrl }} style={styles.photo} />
@@ -118,7 +179,6 @@ export default function DancerHomeScreen() {
               )}
             </TouchableOpacity>
 
-            {/* QR Code */}
             {hasPerm('/dancer/card') && (
               <TouchableOpacity style={styles.qrBlock} onPress={() => nav('card')} activeOpacity={0.85}>
                 <Text style={styles.qrLabel}>Mon QR Code</Text>
@@ -141,18 +201,34 @@ export default function DancerHomeScreen() {
         {/* ── Actualités ── */}
         <View style={[styles.section, { marginTop: 42 }]}>
           <View style={styles.actu}>
-            <View style={styles.actuBadge}>
-              <Text style={styles.actuBadgeText}>Actualités</Text>
+            <View style={styles.actuBadgeRow}>
+              <View style={styles.actuBadge}>
+                <Text style={styles.actuBadgeText}>Actualités</Text>
+              </View>
+              {isAdmin && (
+                <TouchableOpacity style={styles.actuAddBtn} onPress={openSheet} activeOpacity={0.75}>
+                  <Text style={styles.actuAddBtnText}>+</Text>
+                </TouchableOpacity>
+              )}
             </View>
             <View style={styles.actuCard}>
               {announcements.length === 0 ? (
                 <Text style={styles.actuEmpty}>Aucune actualité pour le moment.</Text>
               ) : (
-                announcements.map(a => (
-                  <View key={a.id} style={styles.actuItem}>
+                announcements.map((a, i) => (
+                  <TouchableOpacity
+                    key={a.id}
+                    style={[styles.actuItem, i < announcements.length - 1 && styles.actuItemBorder]}
+                    onLongPress={isAdmin ? () => handleDelete(a) : undefined}
+                    activeOpacity={isAdmin ? 0.6 : 1}
+                    delayLongPress={400}
+                  >
                     <Text style={styles.actuTitle}>{a.title}</Text>
                     <Text style={styles.actuBody}>{a.body}</Text>
-                  </View>
+                    {isAdmin && (
+                      <Text style={styles.actuHint}>Appui long pour supprimer</Text>
+                    )}
+                  </TouchableOpacity>
                 ))
               )}
             </View>
@@ -186,6 +262,60 @@ export default function DancerHomeScreen() {
       </ScrollView>
 
       <BottomTabBar dancerId={id!} bottomInset={insets.bottom} />
+
+      {/* ── Bottom sheet création actualité ── */}
+      {sheetOpen && (
+        <View style={styles.sheetOverlay} onStartShouldSetResponder={() => true} onResponderRelease={closeSheet}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.sheetKAV}
+          >
+            <View style={styles.sheet} onStartShouldSetResponder={() => true} onResponderRelease={e => e.stopPropagation()}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>Nouvelle actualité</Text>
+
+              <Text style={styles.sheetLabel}>Titre</Text>
+              <TextInput
+                style={styles.sheetInput}
+                value={title}
+                onChangeText={setTitle}
+                placeholder="Titre de l'actualité"
+                placeholderTextColor={Colors.textSecondary}
+                maxLength={100}
+                returnKeyType="next"
+              />
+
+              <Text style={styles.sheetLabel}>Contenu</Text>
+              <TextInput
+                style={[styles.sheetInput, styles.sheetTextarea]}
+                value={body}
+                onChangeText={setBody}
+                placeholder="Texte de l'actualité…"
+                placeholderTextColor={Colors.textSecondary}
+                maxLength={500}
+                multiline
+                returnKeyType="done"
+              />
+
+              <View style={styles.sheetActions}>
+                <TouchableOpacity style={styles.sheetCancel} onPress={closeSheet}>
+                  <Text style={styles.sheetCancelText}>Annuler</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.sheetPublish, (!title.trim() || !body.trim() || saving) && styles.sheetPublishDisabled]}
+                  onPress={handlePublish}
+                  disabled={!title.trim() || !body.trim() || saving}
+                >
+                  {saving
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={styles.sheetPublishText}>Publier</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      )}
     </View>
   );
 }
@@ -250,17 +380,32 @@ const styles = StyleSheet.create({
   // Actualités
   section: { paddingHorizontal: 20, marginTop: 28 },
   actu: { position: 'relative' },
-  actuBadge: {
+  actuBadgeRow: {
     position: 'absolute',
     top: -14,
     left: 16,
+    right: 16,
     zIndex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actuBadge: {
     backgroundColor: Colors.orange,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 5,
   },
   actuBadgeText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  actuAddBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.orange,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actuAddBtnText: { color: '#fff', fontSize: 20, fontWeight: '300', lineHeight: 26 },
   actuCard: {
     backgroundColor: Colors.white,
     borderRadius: 18,
@@ -273,9 +418,11 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   actuEmpty: { color: Colors.textSecondary, fontSize: 14, textAlign: 'center', paddingVertical: 8 },
-  actuItem: { marginBottom: 10 },
+  actuItem: { paddingVertical: 8 },
+  actuItemBorder: { borderBottomWidth: 1, borderBottomColor: '#F0EDE8' },
   actuTitle: { fontSize: 15, fontWeight: '700', color: Colors.text },
   actuBody: { fontSize: 14, color: Colors.textSecondary, marginTop: 2 },
+  actuHint: { fontSize: 10, color: '#C8C4BC', marginTop: 4 },
 
   // Action cards
   actionCard: {
@@ -295,4 +442,59 @@ const styles = StyleSheet.create({
   },
   actionLabel: { fontSize: 17, fontWeight: '700', color: '#fff', flex: 1 },
 
+  // Bottom sheet
+  sheetOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+    zIndex: 100,
+  },
+  sheetKAV: { width: '100%' },
+  sheet: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 36,
+  },
+  sheetHandle: {
+    width: 36, height: 4,
+    backgroundColor: '#E0DDD8',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  sheetTitle: { fontSize: 17, fontWeight: '700', color: Colors.text, marginBottom: 20 },
+  sheetLabel: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  sheetInput: {
+    borderWidth: 1,
+    borderColor: '#E8E4DF',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: Colors.text,
+    backgroundColor: '#FAFAF8',
+    marginBottom: 16,
+  },
+  sheetTextarea: { height: 100, textAlignVertical: 'top' },
+  sheetActions: { flexDirection: 'row', gap: 12, marginTop: 4 },
+  sheetCancel: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: '#F0EDE8',
+    alignItems: 'center',
+  },
+  sheetCancelText: { fontSize: 15, fontWeight: '600', color: Colors.textSecondary },
+  sheetPublish: {
+    flex: 2,
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: Colors.orange,
+    alignItems: 'center',
+  },
+  sheetPublishDisabled: { opacity: 0.45 },
+  sheetPublishText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });
