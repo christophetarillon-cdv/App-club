@@ -79,12 +79,12 @@ export const ADMIN_NAV: NavGroup[] = [
   {
     label: 'Finances',
     items: [
-      { label: 'Tarifs', href: '/admin/pricing-plans' },
       { label: 'Plans paiement', href: '/admin/payment-plans' },
-      { label: 'Encaissements', href: '/admin/payments/today', highlight: true },
       { label: 'Saisir paiement', href: '/admin/payments/new' },
+      { label: 'Encaissements', href: '/admin/payments/today', highlight: true },
       { label: 'Chèques', href: '/admin/payments/cheques' },
       { label: 'Bordereaux', href: '/admin/payments/bank-deposits' },
+      { label: 'Tarifs', href: '/admin/pricing-plans' },
       { label: 'Comptes bancaires', href: '/admin/settings/bank-accounts' },
     ],
   },
