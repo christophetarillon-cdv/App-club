@@ -171,7 +171,7 @@ export default function AdminPaymentPlansPage() {
         seasonLabel: seasonSnap.exists() ? seasonSnap.data().label : g.seasonId,
         dancers: dancers.map(d => ({ name: d.name, planLabel: d.planLabel })),
         dancerIds: dancers.map(d => d.dancerId).filter((id): id is string => !!id),
-        dancerRoleMap: Object.fromEntries(dancers.filter(d => d.dancerId).map(d => [d.dancerId!, d.roles])),
+        dancerRoleMap: Object.fromEntries(dancers.filter(d => d.dancerId).map(d => [d.dancerId!, d.roles ?? []])),
         installments,
       };
     }));
