@@ -17,8 +17,9 @@ const sendFn = httpsCallable<
 >(functions, 'sendNotification');
 
 export default function SendNotificationPage() {
-  const { user, account } = useAuth();
-  const isAdmin = account?.roles?.includes('admin');
+  const { user, account, dancers } = useAuth();
+  const userRoles = [...(account?.roles ?? []), ...dancers.flatMap(d => d.roles)];
+  const isAdmin = userRoles.includes('admin');
 
   const [channels, setChannels] = useState<NotificationChannel[]>([]);
   const [channelId, setChannelId] = useState('');

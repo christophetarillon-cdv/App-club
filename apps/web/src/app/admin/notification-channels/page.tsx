@@ -21,8 +21,9 @@ const TYPE_LABELS: Record<NotificationChannelType, string> = {
 };
 
 export default function NotificationChannelsPage() {
-  const { user, account } = useAuth();
-  const isAdmin = account?.roles?.includes('admin');
+  const { user, account, dancers } = useAuth();
+  const userRoles = [...(account?.roles ?? []), ...dancers.flatMap(d => d.roles)];
+  const isAdmin = userRoles.includes('admin');
 
   const [channels, setChannels] = useState<NotificationChannel[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
