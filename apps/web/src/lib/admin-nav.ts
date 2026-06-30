@@ -98,6 +98,7 @@ export const ADMIN_NAV: NavGroup[] = [
   {
     label: 'Communication',
     items: [
+      { label: 'Actualités', href: '/admin/announcements' },
       { label: 'Canaux de chat', href: '/admin/chat-channels' },
       { label: 'Canaux notif.', href: '/admin/notification-channels' },
       { label: 'Envoyer notif.', href: '/admin/notifications/send' },
