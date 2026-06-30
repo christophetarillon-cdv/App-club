@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-  collection, getDocs, query, where, doc, getDoc, updateDoc, writeBatch, arrayUnion, serverTimestamp,
+  collection, getDocs, query, where, doc, getDoc, updateDoc, writeBatch, arrayUnion, deleteField, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
@@ -34,6 +34,7 @@ interface Row extends Membership {
   email: string;
   dancerName: string;
   resolvedDancerId?: string;
+  resolvedDancerRoles?: string[];
   seasonLabel: string;
   planLabel: string;
   installments: Installment[];
@@ -57,6 +58,7 @@ interface GroupRow extends PaymentGroupDoc {
   seasonLabel: string;
   dancers: { name: string; planLabel: string }[];
   dancerIds: string[];
+  dancerRoleMap: Record<string, string[]>;
   installments: Installment[];
 }
 
@@ -90,10 +92,12 @@ export default function AdminPaymentPlansPage() {
       let dancerName = '';
       const dancerId = m.dancerId
         ?? (accountSnap.exists() ? (accountSnap.data().dancerIds as string[] ?? [])[0] : undefined);
+      let resolvedDancerRoles: string[] | undefined;
       if (dancerId) {
         const dancerSnap = await getDoc(doc(db, 'dancers', dancerId));
         if (dancerSnap.exists()) {
           dancerName = `${dancerSnap.data().firstName ?? ''} ${dancerSnap.data().lastName ?? ''}`.trim();
+          resolvedDancerRoles = dancerSnap.data().roles ?? [];
         }
       }
 
@@ -112,6 +116,7 @@ export default function AdminPaymentPlansPage() {
         email: accountSnap.exists() ? accountSnap.data().email : '—',
         dancerName,
         resolvedDancerId: dancerId,
+        resolvedDancerRoles,
         seasonLabel: seasonSnap.exists() ? seasonSnap.data().label : m.seasonId,
         planLabel: planSnap.exists() ? planSnap.data().label : m.pricingPlanId,
         installments,
@@ -143,7 +148,12 @@ export default function AdminPaymentPlansPage() {
             const pSnap = await getDoc(doc(db, 'pricingPlans', md.pricingPlanId));
             if (pSnap.exists()) planLabel = pSnap.data().label;
           }
-          return { name, planLabel, dancerId: md.dancerId as string | undefined };
+          let dancerRoles: string[] = [];
+          if (md.dancerId) {
+            const dRolesSnap = await getDoc(doc(db, 'dancers', md.dancerId));
+            if (dRolesSnap.exists()) dancerRoles = dRolesSnap.data().roles ?? [];
+          }
+          return { name, planLabel, dancerId: md.dancerId as string | undefined, roles: dancerRoles };
         })
       );
       const installments: Installment[] = await Promise.all(
@@ -161,6 +171,7 @@ export default function AdminPaymentPlansPage() {
         seasonLabel: seasonSnap.exists() ? seasonSnap.data().label : g.seasonId,
         dancers: dancers.map(d => ({ name: d.name, planLabel: d.planLabel })),
         dancerIds: dancers.map(d => d.dancerId).filter((id): id is string => !!id),
+        dancerRoleMap: Object.fromEntries(dancers.filter(d => d.dancerId).map(d => [d.dancerId!, d.roles])),
         installments,
       };
     }));
@@ -179,8 +190,17 @@ export default function AdminPaymentPlansPage() {
       updatedAt: serverTimestamp(),
     });
     if (row.resolvedDancerId && row.seasonId) {
+      const isTrial = row.resolvedDancerRoles?.includes('trial');
       batch.update(doc(db, 'dancers', row.resolvedDancerId), {
         validatedSeasonIds: arrayUnion(row.seasonId),
+        ...(isTrial ? {
+          roles: ['member'],
+          trialStartDate: deleteField(),
+          trialExpiresAt: deleteField(),
+          trialSessionsUsed: deleteField(),
+          trialMode: deleteField(),
+          trialMaxSessions: deleteField(),
+        } : {}),
       });
     }
     await batch.commit();
@@ -210,8 +230,17 @@ export default function AdminPaymentPlansPage() {
       });
     }
     for (const dancerId of g.dancerIds) {
+      const isTrial = (g.dancerRoleMap[dancerId] ?? []).includes('trial');
       batch.update(doc(db, 'dancers', dancerId), {
         validatedSeasonIds: arrayUnion(g.seasonId),
+        ...(isTrial ? {
+          roles: ['member'],
+          trialStartDate: deleteField(),
+          trialExpiresAt: deleteField(),
+          trialSessionsUsed: deleteField(),
+          trialMode: deleteField(),
+          trialMaxSessions: deleteField(),
+        } : {}),
       });
     }
     batch.update(doc(db, 'paymentGroups', g.id), {
