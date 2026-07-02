@@ -124,7 +124,7 @@ service cloud.firestore {
         cannotChangeProtectedFields()
       ) || isAdmin() || (
         hasPagePermission('/admin/dancers') && cannotChangeProtectedFields()
-      ) || hasPagePermission('/admin/trial');
+      ) || hasPagePermission('/admin/trial') || hasPagePermission('/admin/payment-plans');
       allow delete: if (
         isAuth() && resource.data.accountId == request.auth.uid
       ) || isAdmin();
@@ -251,7 +251,7 @@ service cloud.firestore {
     }
 
     match /payments/{id} {
-      allow read, write: if isAdmin() || hasPagePermission('/admin/payments/today');
+      allow read, write: if isAdmin() || hasPagePermission('/admin/payments/today') || hasPagePermission('/admin/payments/new');
     }
 
     match /paymentInstallments/{id} {
