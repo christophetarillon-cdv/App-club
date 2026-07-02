@@ -21,9 +21,7 @@ const TYPE_LABELS: Record<NotificationChannelType, string> = {
 };
 
 export default function NotificationChannelsPage() {
-  const { user, account, dancers } = useAuth();
-  const userRoles = [...(account?.roles ?? []), ...dancers.flatMap(d => d.roles)];
-  const isAdmin = userRoles.includes('admin');
+  const { user } = useAuth();
 
   const [channels, setChannels] = useState<NotificationChannel[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -92,8 +90,6 @@ export default function NotificationChannelsPage() {
     if (ch.type === 'style') return styles.find(s => s.id === ch.targetId)?.name ?? ch.targetId ?? '—';
     return null;
   };
-
-  if (!isAdmin) return <div className="p-8 text-gray-500">Accès réservé aux administrateurs.</div>;
 
   return (
     <div className="min-h-screen bg-gray-50">

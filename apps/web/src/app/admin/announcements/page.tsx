@@ -10,9 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { Announcement } from '@cdv/types';
 
 export default function AnnouncementsPage() {
-  const { user, account, dancers } = useAuth();
-  const userRoles = [...(account?.roles ?? []), ...dancers.flatMap(d => d.roles)];
-  const isAdmin = userRoles.includes('admin');
+  const { user } = useAuth();
 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,8 +50,6 @@ export default function AnnouncementsPage() {
     setConfirmDelete(null);
     load();
   };
-
-  if (!isAdmin) return <div className="p-8 text-gray-500">Accès réservé aux administrateurs.</div>;
 
   return (
     <div className="space-y-8">

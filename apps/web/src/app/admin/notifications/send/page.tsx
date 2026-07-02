@@ -17,9 +17,7 @@ const sendFn = httpsCallable<
 >(functions, 'sendNotification');
 
 export default function SendNotificationPage() {
-  const { user, account, dancers } = useAuth();
-  const userRoles = [...(account?.roles ?? []), ...dancers.flatMap(d => d.roles)];
-  const isAdmin = userRoles.includes('admin');
+  const { user } = useAuth();
 
   const [channels, setChannels] = useState<NotificationChannel[]>([]);
   const [channelId, setChannelId] = useState('');
@@ -62,8 +60,6 @@ export default function SendNotificationPage() {
       setSending(false);
     }
   };
-
-  if (!isAdmin) return <div className="p-8 text-gray-500">Accès réservé aux administrateurs.</div>;
 
   return (
     <div className="min-h-screen bg-gray-50">
