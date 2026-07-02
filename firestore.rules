@@ -41,6 +41,52 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['roles', 'isActive']);
     }
 
+    // Collection 'accounts' : lue en lookup (email, nom...) par de nombreuses
+    // pages admin qui listent des danseurs/paiements. Regroupe toutes les
+    // pages concernées pour éviter d'oublier une collection croisée.
+    function hasAccountsAccess() {
+      return isAdmin() ||
+        hasPagePermission('/admin/settings/profile-fields') ||
+        hasPagePermission('/admin/payments/cheques') ||
+        hasPagePermission('/admin/payments/today') ||
+        hasPagePermission('/admin/payments/new') ||
+        hasPagePermission('/admin/payments/bank-deposits') ||
+        hasPagePermission('/admin/trial') ||
+        hasPagePermission('/admin/courses') ||
+        hasPagePermission('/admin/payment-plans') ||
+        hasPagePermission('/admin/dancers');
+    }
+
+    // Collection 'paymentInstallments' : utilisée par toutes les pages
+    // finances qui affichent ou pointent des échéances.
+    function hasInstallmentsAccess() {
+      return isAdmin() ||
+        hasPagePermission('/admin/payment-plans') ||
+        hasPagePermission('/admin/payments/new') ||
+        hasPagePermission('/admin/payments/today') ||
+        hasPagePermission('/admin/payments/bank-deposits') ||
+        hasPagePermission('/admin/payments/cheques');
+    }
+
+    // Collection 'memberships' / 'paymentGroups' en lecture : pages qui
+    // affichent des cotisations sans forcément les modifier.
+    function hasMembershipReadAccess() {
+      return isAdmin() ||
+        hasPagePermission('/admin/payment-plans') ||
+        hasPagePermission('/admin/payments/new') ||
+        hasPagePermission('/admin/payments/today') ||
+        hasPagePermission('/admin/payments/bank-deposits') ||
+        hasPagePermission('/admin/dancers');
+    }
+
+    // Écriture memberships/paymentGroups : réservé aux pages qui approuvent
+    // ou saisissent réellement un paiement.
+    function hasMembershipWriteAccess() {
+      return isAdmin() ||
+        hasPagePermission('/admin/payment-plans') ||
+        hasPagePermission('/admin/payments/new');
+    }
+
     // ── clubProfile ────────────────────────────────────────────────────────────
     match /clubProfile/{docId} {
       allow read: if true;
@@ -49,12 +95,13 @@ service cloud.firestore {
 
     // ── accounts ──────────────────────────────────────────────────────────────
     match /accounts/{uid} {
-      allow read: if isOwner(uid) || isAdmin();
+      allow read: if isOwner(uid) || hasAccountsAccess();
       // Le titulaire crée son propre doc ; roles doit être vide (pas d'auto-attribution)
       allow create: if isOwner(uid) &&
         request.resource.data.roles.size() == 0;
-      // Le titulaire peut modifier son doc mais pas roles ni isActive
-      allow update: if (isOwner(uid) && cannotChangeProtectedFields()) || isAdmin();
+      // Le titulaire peut modifier son doc mais pas roles ni isActive ;
+      // la page inscriptions/registrations met aussi à jour ce doc (annulation)
+      allow update: if (isOwner(uid) && cannotChangeProtectedFields()) || isAdmin() || hasPagePermission('/admin/courses');
       allow delete: if isAdmin();
     }
 
@@ -167,9 +214,9 @@ service cloud.firestore {
     }
 
     match /memberships/{id} {
-      allow read: if isAdmin() || isOwner(resource.data.userId) || hasPagePermission('/admin/payment-plans') || hasPagePermission('/admin/payments/new');
+      allow read: if isAdmin() || isOwner(resource.data.userId) || hasMembershipReadAccess();
       allow create: if isAdmin() || (isAuth() && request.auth.uid == request.resource.data.userId) || hasPagePermission('/admin/payments/new');
-      allow update: if isAdmin() || hasPagePermission('/admin/payment-plans') || hasPagePermission('/admin/payments/new') || (
+      allow update: if isAdmin() || hasMembershipWriteAccess() || (
         isOwner(resource.data.userId) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['paymentMethod', 'installmentIds', 'updatedAt']) &&
@@ -183,9 +230,9 @@ service cloud.firestore {
     }
 
     match /paymentGroups/{id} {
-      allow read: if isAdmin() || isOwner(resource.data.userId) || hasPagePermission('/admin/payment-plans') || hasPagePermission('/admin/payments/new');
+      allow read: if isAdmin() || isOwner(resource.data.userId) || hasMembershipReadAccess();
       allow create: if isAdmin() || (isAuth() && request.auth.uid == request.resource.data.userId) || hasPagePermission('/admin/payments/new');
-      allow update: if isAdmin() || hasPagePermission('/admin/payment-plans') || hasPagePermission('/admin/payments/new') || (
+      allow update: if isAdmin() || hasMembershipWriteAccess() || (
         isOwner(resource.data.userId) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['installmentIds', 'updatedAt']) &&
@@ -203,13 +250,13 @@ service cloud.firestore {
     }
 
     match /paymentInstallments/{id} {
-      allow read: if isAdmin() || isOwner(resource.data.userId) || hasPagePermission('/admin/payment-plans') || hasPagePermission('/admin/payments/new');
+      allow read: if isAdmin() || isOwner(resource.data.userId) || hasInstallmentsAccess();
       allow create: if isAdmin() || (isAuth() && request.auth.uid == request.resource.data.userId) || hasPagePermission('/admin/payments/new');
-      allow update, delete: if isAdmin() || hasPagePermission('/admin/payment-plans') || hasPagePermission('/admin/payments/new');
+      allow update, delete: if isAdmin() || hasInstallmentsAccess();
     }
 
     match /chequeImages/{id} {
-      allow read, write: if isAdmin() || hasPagePermission('/admin/payments/cheques');
+      allow read, write: if isAdmin() || hasPagePermission('/admin/payments/cheques') || hasPagePermission('/admin/payments/new') || hasPagePermission('/admin/payments/bank-deposits');
     }
 
     match /bankDeposits/{id} {
@@ -217,7 +264,8 @@ service cloud.firestore {
     }
 
     match /bankAccounts/{id} {
-      allow read, write: if isAdmin() || hasPagePermission('/admin/settings/bank-accounts');
+      allow read: if isAdmin() || hasPagePermission('/admin/settings/bank-accounts') || hasPagePermission('/admin/payments/bank-deposits');
+      allow write: if isAdmin() || hasPagePermission('/admin/settings/bank-accounts');
     }
 
     match /attendances/{id} {
