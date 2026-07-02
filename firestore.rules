@@ -2,11 +2,19 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ⚠️ Firestore compte chaque get()/exists() dans un quota de ~10 par
+    // évaluation de règle (single doc) / ~20 (batch), MÊME si le chemin a
+    // déjà été lu ailleurs dans la même règle. Règle d'or dans ce fichier :
+    // chaque `allow` ne doit invoquer qu'UNE seule fonction qui fait des
+    // get() (ex: hasAnyAdminAccess()), jamais plusieurs empilées avec ||.
+    // Comme la page "Accès pages" force toujours 'admin' dans chaque
+    // permission (impossible à décocher côté UI), hasPagePermission(page)
+    // est déjà vrai pour un vrai admin : inutile d'ajouter isAdmin() en plus.
+
     function isAuth() {
       return request.auth != null;
     }
 
-    // Rôles combinés (compte + jusqu'à 3 danseurs liés)
     function userRoles() {
       let acc = get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data;
       let dIds = acc.get('dancerIds', []);
@@ -14,6 +22,10 @@ service cloud.firestore {
         .concat(dIds.size() > 0 ? get(/databases/$(database)/documents/dancers/$(dIds[0])).data.get('roles', []) : [])
         .concat(dIds.size() > 1 ? get(/databases/$(database)/documents/dancers/$(dIds[1])).data.get('roles', []) : [])
         .concat(dIds.size() > 2 ? get(/databases/$(database)/documents/dancers/$(dIds[2])).data.get('roles', []) : []);
+    }
+
+    function pagePerms() {
+      return get(/databases/$(database)/documents/appSettings/main).data.get('pagePermissions', {});
     }
 
     function isAdmin() {
@@ -25,16 +37,13 @@ service cloud.firestore {
     }
 
     function isInstructor() {
-      return isAuth() && (isAdmin() || userRoles().hasAny(['instructor']));
+      return isAuth() && userRoles().hasAny(['instructor', 'admin']);
     }
 
-    // Accès dynamique basé sur appSettings/main.pagePermissions, configuré
-    // depuis la page "Accès pages". Si aucune permission n'est définie
-    // pour la page, seul admin est autorisé par défaut.
     function hasPagePermission(page) {
-      let perms = get(/databases/$(database)/documents/appSettings/main).data.get('pagePermissions', {});
-      let allowed = perms.get(page, ['admin']);
-      return isAuth() && userRoles().hasAny(allowed);
+      let roles = userRoles();
+      let perms = pagePerms();
+      return isAuth() && roles.hasAny(perms.get(page, ['admin']));
     }
 
     function cannotChangeProtectedFields() {
@@ -46,56 +55,121 @@ service cloud.firestore {
     // collections transversales (comptes, cotisations, échéances...) que
     // beaucoup de pages doivent croiser pour afficher des noms/emails/
     // montants, sans avoir à cartographier chaque page → chaque collection.
-    // L'ÉCRITURE, elle, reste toujours gérée page par page via
-    // hasPagePermission(page) sur chaque collection.
+    // L'ÉCRITURE reste toujours gérée page par page via des fonctions dédiées.
     function hasAnyAdminAccess() {
-      return isAdmin() ||
-        hasPagePermission('/admin/club-settings') ||
-        hasPagePermission('/admin/seasons') ||
-        hasPagePermission('/admin/dance-styles') ||
-        hasPagePermission('/admin/levels') ||
-        hasPagePermission('/admin/rooms') ||
-        hasPagePermission('/admin/courses') ||
-        hasPagePermission('/admin/interruptions') ||
-        hasPagePermission('/admin/public-holidays') ||
-        hasPagePermission('/admin/settings/planning') ||
-        hasPagePermission('/admin/dancers') ||
-        hasPagePermission('/admin/trial') ||
-        hasPagePermission('/admin/settings/trial') ||
-        hasPagePermission('/admin/settings/roles') ||
-        hasPagePermission('/admin/settings/profile-fields') ||
-        hasPagePermission('/admin/settings/custom-fields') ||
-        hasPagePermission('/admin/settings/profile-mapping') ||
-        hasPagePermission('/admin/settings/welcome-qr') ||
-        hasPagePermission('/admin/payment-plans') ||
-        hasPagePermission('/admin/payments/new') ||
-        hasPagePermission('/admin/payments/today') ||
-        hasPagePermission('/admin/payments/bank-deposits') ||
-        hasPagePermission('/admin/pricing-plans') ||
-        hasPagePermission('/admin/settings/bank-accounts') ||
-        hasPagePermission('/admin/payments/cheques') ||
-        hasPagePermission('/admin/media') ||
-        hasPagePermission('/admin/documents-library') ||
-        hasPagePermission('/admin/announcements') ||
-        hasPagePermission('/admin/chat-channels') ||
-        hasPagePermission('/admin/notification-channels') ||
-        hasPagePermission('/admin/notifications/send') ||
-        hasPagePermission('/admin/private-messages');
+      let roles = userRoles();
+      let perms = pagePerms();
+      return roles.hasAny(['admin']) ||
+        roles.hasAny(perms.get('/admin/club-settings', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/seasons', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/dance-styles', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/levels', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/rooms', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/courses', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/interruptions', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/public-holidays', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/planning', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/dancers', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/trial', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/trial', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/roles', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/profile-fields', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/custom-fields', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/profile-mapping', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/welcome-qr', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payment-plans', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payments/new', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payments/today', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payments/bank-deposits', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/pricing-plans', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/bank-accounts', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payments/cheques', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/media', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/documents-library', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/announcements', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/chat-channels', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/notification-channels', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/notifications/send', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/private-messages', ['admin']));
     }
 
     // Écriture memberships/paymentGroups : réservé aux pages qui approuvent
-    // ou saisissent réellement un paiement (contrairement à la lecture,
-    // volontairement plus large via hasAnyAdminAccess()).
+    // ou saisissent réellement un paiement.
     function hasMembershipWriteAccess() {
-      return isAdmin() ||
-        hasPagePermission('/admin/payment-plans') ||
-        hasPagePermission('/admin/payments/new');
+      let roles = userRoles();
+      let perms = pagePerms();
+      return roles.hasAny(['admin']) ||
+        roles.hasAny(perms.get('/admin/payment-plans', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payments/new', ['admin']));
+    }
+
+    // Écriture dancers, hors champs protégés (roles/isActive) : pages qui
+    // modifient une fiche danseur sans changer son rôle/statut.
+    function hasDancerWriteAccess() {
+      let roles = userRoles();
+      let perms = pagePerms();
+      return roles.hasAny(['admin']) || roles.hasAny(perms.get('/admin/dancers', ['admin']));
+    }
+
+    // Écriture dancers SANS restriction de champs (roles inclus) : pages
+    // dont la fonction même est de faire évoluer le rôle d'un danseur
+    // (gestion des rôles, conversion essai → membre).
+    function hasDancerRoleChangeAccess() {
+      let roles = userRoles();
+      let perms = pagePerms();
+      return roles.hasAny(['admin']) ||
+        roles.hasAny(perms.get('/admin/dancers', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/trial', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payment-plans', ['admin']));
+    }
+
+    // Écriture paymentInstallments : pages qui pointent/mettent à jour des
+    // échéances (encaissement, saisie, bordereaux, chèques).
+    function hasInstallmentWriteAccess() {
+      let roles = userRoles();
+      let perms = pagePerms();
+      return roles.hasAny(['admin']) ||
+        roles.hasAny(perms.get('/admin/payments/today', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payments/cheques', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payments/new', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payments/bank-deposits', ['admin']));
+    }
+
+    // Collections croisées par plusieurs pages "paiement" (chequeImages,
+    // bankAccounts en lecture, doc payments...).
+    function hasPaymentPageAccess() {
+      let roles = userRoles();
+      let perms = pagePerms();
+      return roles.hasAny(['admin']) ||
+        roles.hasAny(perms.get('/admin/payments/cheques', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payments/new', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payments/bank-deposits', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payments/today', ['admin']));
+    }
+
+    function hasBankAccountsReadAccess() {
+      let roles = userRoles();
+      let perms = pagePerms();
+      return roles.hasAny(['admin']) ||
+        roles.hasAny(perms.get('/admin/settings/bank-accounts', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/payments/bank-deposits', ['admin']));
+    }
+
+    // appSettings : plusieurs pages de settings partagent ce document.
+    function hasSettingsPageAccess() {
+      let roles = userRoles();
+      let perms = pagePerms();
+      return roles.hasAny(['admin']) ||
+        roles.hasAny(perms.get('/admin/settings/trial', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/profile-fields', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/profile-mapping', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/welcome-qr', ['admin']));
     }
 
     // ── clubProfile ────────────────────────────────────────────────────────────
     match /clubProfile/{docId} {
       allow read: if true;
-      allow write: if isAdmin() || hasPagePermission('/admin/club-settings');
+      allow write: if hasPagePermission('/admin/club-settings');
     }
 
     // ── accounts ──────────────────────────────────────────────────────────────
@@ -105,8 +179,9 @@ service cloud.firestore {
       allow create: if isOwner(uid) &&
         request.resource.data.roles.size() == 0;
       // Le titulaire peut modifier son doc mais pas roles ni isActive ;
-      // la page inscriptions/registrations met aussi à jour ce doc (annulation)
-      allow update: if (isOwner(uid) && cannotChangeProtectedFields()) || isAdmin() || hasPagePermission('/admin/courses');
+      // la page inscriptions/registrations met aussi à jour ce doc (annulation),
+      // et la page Danseurs synchronise les roles du compte avec ceux du danseur.
+      allow update: if (isOwner(uid) && cannotChangeProtectedFields()) || hasPagePermission('/admin/courses') || hasDancerRoleChangeAccess();
       allow delete: if isAdmin();
     }
 
@@ -122,9 +197,9 @@ service cloud.firestore {
         isAuth() &&
         resource.data.accountId == request.auth.uid &&
         cannotChangeProtectedFields()
-      ) || isAdmin() || (
-        hasPagePermission('/admin/dancers') && cannotChangeProtectedFields()
-      ) || hasPagePermission('/admin/trial') || hasPagePermission('/admin/payment-plans');
+      ) || (
+        hasDancerWriteAccess() && cannotChangeProtectedFields()
+      ) || hasDancerRoleChangeAccess();
       allow delete: if (
         isAuth() && resource.data.accountId == request.auth.uid
       ) || isAdmin();
@@ -133,7 +208,7 @@ service cloud.firestore {
     // ── seasons ────────────────────────────────────────────────────────────────
     match /seasons/{id} {
       allow read: if true;
-      allow write: if isAdmin() || hasPagePermission('/admin/seasons');
+      allow write: if hasPagePermission('/admin/seasons');
     }
 
     // ── appSettings ────────────────────────────────────────────────────────────
@@ -143,15 +218,9 @@ service cloud.firestore {
     // avec accès à une page de settings ne puisse s'auto-accorder des droits.
     match /appSettings/{id} {
       allow read: if true;
-      allow write: if isAdmin() || (
-        (
-          hasPagePermission('/admin/settings/trial') ||
-          hasPagePermission('/admin/settings/profile-fields') ||
-          hasPagePermission('/admin/settings/profile-mapping') ||
-          hasPagePermission('/admin/settings/welcome-qr')
-        ) &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pagePermissions'])
-      );
+      allow write: if hasSettingsPageAccess() &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pagePermissions']);
+      allow write: if isAdmin();
     }
 
     // ── config (SMTP, etc.) ────────────────────────────────────────────────────
@@ -162,23 +231,23 @@ service cloud.firestore {
     // ── catalogue ─────────────────────────────────────────────────────────────
     match /danceStyles/{id} {
       allow read: if true;
-      allow write: if isAdmin() || hasPagePermission('/admin/dance-styles');
+      allow write: if hasPagePermission('/admin/dance-styles');
     }
 
     match /levels/{id} {
       allow read: if true;
-      allow write: if isAdmin() || hasPagePermission('/admin/levels');
+      allow write: if hasPagePermission('/admin/levels');
     }
 
     match /rooms/{id} {
       allow read: if true;
-      allow write: if isAdmin() || hasPagePermission('/admin/rooms');
+      allow write: if hasPagePermission('/admin/rooms');
     }
 
     match /courses/{id} {
       allow read: if true;
-      allow create, delete: if isAdmin() || hasPagePermission('/admin/courses');
-      allow update: if isAdmin() || hasPagePermission('/admin/courses') || (
+      allow create, delete: if hasPagePermission('/admin/courses');
+      allow update: if hasPagePermission('/admin/courses') || (
         isAuth() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeRegistrationCount'])
       );
@@ -186,18 +255,18 @@ service cloud.firestore {
 
     match /sessions/{id} {
       allow read: if true;
-      allow create, delete: if isAdmin() || hasPagePermission('/admin/courses');
-      allow update: if isAdmin() || hasPagePermission('/admin/courses');
+      allow create, delete: if hasPagePermission('/admin/courses');
+      allow update: if hasPagePermission('/admin/courses');
     }
 
     match /interruptions/{id} {
       allow read: if isAuth();
-      allow write: if isAdmin() || hasPagePermission('/admin/interruptions');
+      allow write: if hasPagePermission('/admin/interruptions');
     }
 
     match /publicHolidays/{id} {
       allow read: if true;
-      allow write: if isAdmin() || hasPagePermission('/admin/public-holidays');
+      allow write: if hasPagePermission('/admin/public-holidays');
     }
 
     match /notifications/{id} {
@@ -208,26 +277,26 @@ service cloud.firestore {
     match /registrations/{id} {
       allow read: if isAuth();
       allow create: if isAuth() && request.auth.uid == request.resource.data.userId;
-      allow update: if (isAuth() && resource.data.userId == request.auth.uid) || isAdmin() || hasPagePermission('/admin/courses');
-      allow delete: if isAdmin() || hasPagePermission('/admin/courses');
+      allow update: if (isAuth() && resource.data.userId == request.auth.uid) || hasPagePermission('/admin/courses');
+      allow delete: if hasPagePermission('/admin/courses');
     }
 
     // ── paiements ─────────────────────────────────────────────────────────────
     match /pricingPlans/{id} {
       allow read: if isAuth();
-      allow write: if isAdmin() || hasPagePermission('/admin/pricing-plans');
+      allow write: if hasPagePermission('/admin/pricing-plans');
     }
 
     match /memberships/{id} {
-      allow read: if isAdmin() || isOwner(resource.data.userId) || hasAnyAdminAccess();
-      allow create: if isAdmin() || (isAuth() && request.auth.uid == request.resource.data.userId) || hasPagePermission('/admin/payments/new');
-      allow update: if isAdmin() || hasMembershipWriteAccess() || (
+      allow read: if isOwner(resource.data.userId) || hasAnyAdminAccess();
+      allow create: if (isAuth() && request.auth.uid == request.resource.data.userId) || hasPagePermission('/admin/payments/new');
+      allow update: if hasMembershipWriteAccess() || (
         isOwner(resource.data.userId) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['paymentMethod', 'installmentIds', 'updatedAt']) &&
         resource.data.paymentPlanStatus == 'pending'
       );
-      allow delete: if isAdmin() || hasPagePermission('/admin/payment-plans') || (
+      allow delete: if hasPagePermission('/admin/payment-plans') || (
         isOwner(resource.data.userId) &&
         resource.data.paymentPlanStatus == 'pending' &&
         resource.data.installmentIds.size() == 0
@@ -235,15 +304,15 @@ service cloud.firestore {
     }
 
     match /paymentGroups/{id} {
-      allow read: if isAdmin() || isOwner(resource.data.userId) || hasAnyAdminAccess();
-      allow create: if isAdmin() || (isAuth() && request.auth.uid == request.resource.data.userId) || hasPagePermission('/admin/payments/new');
-      allow update: if isAdmin() || hasMembershipWriteAccess() || (
+      allow read: if isOwner(resource.data.userId) || hasAnyAdminAccess();
+      allow create: if (isAuth() && request.auth.uid == request.resource.data.userId) || hasPagePermission('/admin/payments/new');
+      allow update: if hasMembershipWriteAccess() || (
         isOwner(resource.data.userId) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['installmentIds', 'updatedAt']) &&
         resource.data.paymentPlanStatus == 'pending'
       );
-      allow delete: if isAdmin() || hasPagePermission('/admin/payment-plans') || (
+      allow delete: if hasPagePermission('/admin/payment-plans') || (
         isOwner(resource.data.userId) &&
         resource.data.paymentPlanStatus == 'pending' &&
         resource.data.installmentIds.size() == 0
@@ -251,80 +320,74 @@ service cloud.firestore {
     }
 
     match /payments/{id} {
-      allow read, write: if isAdmin() || hasPagePermission('/admin/payments/today') || hasPagePermission('/admin/payments/new');
+      allow read, write: if hasPaymentPageAccess();
     }
 
     match /paymentInstallments/{id} {
-      allow read: if isAdmin() || isOwner(resource.data.userId) || hasAnyAdminAccess();
-      allow create: if isAdmin() || (isAuth() && request.auth.uid == request.resource.data.userId) || hasPagePermission('/admin/payments/new');
-      allow update, delete: if isAdmin() ||
-        hasPagePermission('/admin/payments/today') ||
-        hasPagePermission('/admin/payments/cheques') ||
-        hasPagePermission('/admin/payments/new') ||
-        hasPagePermission('/admin/payments/bank-deposits');
+      allow read: if isOwner(resource.data.userId) || hasAnyAdminAccess();
+      allow create: if (isAuth() && request.auth.uid == request.resource.data.userId) || hasPagePermission('/admin/payments/new');
+      allow update, delete: if hasInstallmentWriteAccess();
     }
 
     match /chequeImages/{id} {
-      allow read, write: if isAdmin() || hasPagePermission('/admin/payments/cheques') || hasPagePermission('/admin/payments/new') || hasPagePermission('/admin/payments/bank-deposits');
+      allow read, write: if hasPaymentPageAccess();
     }
 
     match /bankDeposits/{id} {
-      allow read, write: if isAdmin() || hasPagePermission('/admin/payments/bank-deposits');
+      allow read, write: if hasPagePermission('/admin/payments/bank-deposits');
     }
 
     match /bankAccounts/{id} {
-      allow read: if isAdmin() || hasPagePermission('/admin/settings/bank-accounts') || hasPagePermission('/admin/payments/bank-deposits');
-      allow write: if isAdmin() || hasPagePermission('/admin/settings/bank-accounts');
+      allow read: if hasBankAccountsReadAccess();
+      allow write: if hasPagePermission('/admin/settings/bank-accounts');
     }
 
     match /attendances/{id} {
-      allow read: if isAdmin() || isInstructor();
+      allow read: if isInstructor();
       allow create: if false; // Cloud Function uniquement
       allow update, delete: if isAdmin();
     }
 
     match /kioskSessions/{id} {
       allow read: if isAuth();
-      allow create: if isAdmin() || isInstructor();
-      allow update: if isAdmin() || isInstructor();
+      allow create, update: if isInstructor();
       allow delete: if isAdmin();
     }
 
     // ── media ─────────────────────────────────────────────────────────────────
     match /media/{id} {
       allow read: if isAuth();
-      allow write: if isAdmin() || hasPagePermission('/admin/media');
+      allow write: if hasPagePermission('/admin/media');
     }
 
     // ── announcements (actualités home) ──────────────────────────────────────
     match /announcements/{id} {
       allow read: if isAuth();
-      allow write: if isAdmin() || hasPagePermission('/admin/announcements');
+      allow write: if hasPagePermission('/admin/announcements');
     }
 
     // ── notificationChannels ──────────────────────────────────────────────────
     match /notificationChannels/{id} {
       allow read: if isAuth();
-      allow write: if isAdmin() || hasPagePermission('/admin/notification-channels');
+      allow write: if hasPagePermission('/admin/notification-channels');
     }
 
     // ── chat ──────────────────────────────────────────────────────────────────
     match /chatChannels/{id} {
       allow read: if isAuth();
-      allow write: if isAdmin() || hasPagePermission('/admin/chat-channels');
+      allow write: if hasPagePermission('/admin/chat-channels');
     }
 
     match /chatMessages/{id} {
       allow read: if isAuth();
       allow create: if isAuth();
-      allow update, delete: if isAdmin() || hasPagePermission('/admin/chat-channels');
+      allow update, delete: if hasPagePermission('/admin/chat-channels');
     }
 
     match /privateMessages/{id} {
-      allow read: if isAdmin() || (isAuth() && resource.data.fromAccountId == request.auth.uid) || hasPagePermission('/admin/private-messages');
+      allow read: if (isAuth() && resource.data.fromAccountId == request.auth.uid) || hasPagePermission('/admin/private-messages');
       allow create: if isAuth() && request.auth.uid == request.resource.data.fromAccountId;
-      allow update: if isAdmin() || hasPagePermission('/admin/private-messages');
-      allow delete: if isAdmin() || hasPagePermission('/admin/private-messages');
+      allow update, delete: if hasPagePermission('/admin/private-messages');
     }
 
     // ── documents personnels (reçus, attestations) ────────────────────────────
@@ -336,12 +399,12 @@ service cloud.firestore {
     // ── bibliothèque de documents du club ─────────────────────────────────────
     match /documentLibrary/{id} {
       allow read: if isAuth();
-      allow write: if isAdmin() || hasPagePermission('/admin/documents-library');
+      allow write: if hasPagePermission('/admin/documents-library');
     }
 
     match /documentLibrary/{docId}/versions/{versionId} {
       allow read: if isAuth();
-      allow write: if isAdmin() || hasPagePermission('/admin/documents-library');
+      allow write: if hasPagePermission('/admin/documents-library');
     }
 
     // ── roles (configuration des rôles) ──────────────────────────────────────
@@ -355,12 +418,12 @@ service cloud.firestore {
     // ── profileSchemas (champs personnalisés) ─────────────────────────────────
     match /profileSchemas/{schemaId} {
       allow read: if isAuth();
-      allow write: if isAdmin() || hasPagePermission('/admin/settings/custom-fields');
+      allow write: if hasPagePermission('/admin/settings/custom-fields');
     }
 
     match /profileSchemas/{schemaId}/fields/{fieldId} {
       allow read: if isAuth();
-      allow write: if isAdmin() || hasPagePermission('/admin/settings/custom-fields');
+      allow write: if hasPagePermission('/admin/settings/custom-fields');
     }
   }
 }
