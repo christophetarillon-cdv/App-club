@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 
 interface Season { id: string; label: string; startDate: string; isActive: boolean; }
 interface Account { id: string; dancerIds: string[]; }
+interface RoleOption { key: string; label: string; }
 
 interface MembershipInfo {
   planLabel: string;
@@ -45,6 +46,10 @@ export default function AdminDancersPage() {
   const [rows, setRows] = useState<DancerRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
+  const [selectedRole, setSelectedRole] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedActive, setSelectedActive] = useState('');
 
   useEffect(() => {
     getDocs(collection(db, 'seasons')).then(snap => {
@@ -58,6 +63,9 @@ export default function AdminDancersPage() {
       setSeasons(s);
       const active = s.find(s => s.isActive);
       setSelectedSeasonId(active ? active.id : (s[0]?.id ?? ''));
+    });
+    getDocs(query(collection(db, 'roles'), orderBy('displayOrder'))).then(snap => {
+      setRoleOptions(snap.docs.map(d => ({ key: d.data().key ?? d.id, label: d.data().label ?? d.id })));
     });
   }, []);
 
@@ -141,12 +149,15 @@ export default function AdminDancersPage() {
     }).finally(() => setLoading(false));
   }, [selectedSeasonId]);
 
-  const filtered = search.trim().length >= 1
-    ? rows.filter(r => {
-        const q = search.toLowerCase();
-        return r.firstName.toLowerCase().includes(q) || r.lastName.toLowerCase().includes(q);
-      })
-    : rows;
+  const filtered = rows
+    .filter(r => {
+      if (search.trim().length < 1) return true;
+      const q = search.toLowerCase();
+      return r.firstName.toLowerCase().includes(q) || r.lastName.toLowerCase().includes(q);
+    })
+    .filter(r => !selectedRole || r.roles.includes(selectedRole))
+    .filter(r => !selectedStatus || (selectedStatus === 'none' ? !r.info : r.info?.status === selectedStatus))
+    .filter(r => !selectedActive || (selectedActive === 'active' ? r.isActive : !r.isActive));
 
   return (
     <div>
@@ -155,7 +166,7 @@ export default function AdminDancersPage() {
         <h1 className="text-2xl font-bold text-gray-900">Danseurs</h1>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-5">
+      <div className="flex flex-col sm:flex-row gap-3 mb-3">
         <select
           value={selectedSeasonId}
           onChange={e => setSelectedSeasonId(e.target.value)}
@@ -169,6 +180,37 @@ export default function AdminDancersPage() {
           className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
         />
         <span className="text-sm text-gray-400 self-center whitespace-nowrap">{filtered.length} danseur(s)</span>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3 mb-5">
+        <select
+          value={selectedRole}
+          onChange={e => setSelectedRole(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+        >
+          <option value="">Tous les rôles</option>
+          {roleOptions.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+        </select>
+        <select
+          value={selectedStatus}
+          onChange={e => setSelectedStatus(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+        >
+          <option value="">Tous les statuts de cotisation</option>
+          {Object.entries(STATUS_LABEL).map(([key, label]) => (
+            <option key={key} value={key}>{label}</option>
+          ))}
+          <option value="none">Sans cotisation</option>
+        </select>
+        <select
+          value={selectedActive}
+          onChange={e => setSelectedActive(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+        >
+          <option value="">Actifs et inactifs</option>
+          <option value="active">Actifs uniquement</option>
+          <option value="inactive">Inactifs uniquement</option>
+        </select>
       </div>
 
       {loading ? (
