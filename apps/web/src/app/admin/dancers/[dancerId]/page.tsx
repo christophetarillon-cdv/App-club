@@ -125,6 +125,54 @@ function InfoRow({ label, value, disabled }: { label: string; value?: string | n
   );
 }
 
+const INPUT = 'w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40';
+
+function EditField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="text-xs text-gray-400 block mb-1">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+interface PendingInfo {
+  phone: string;
+  birthDate: string; // yyyy-mm-dd
+  gender: string;
+  address: string;
+  profession: string;
+  medicalNotes: string;
+  memberNumber: string;
+  isMinor: boolean;
+  healthCertificate: boolean;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+}
+
+function dancerToPendingInfo(d: Dancer): PendingInfo {
+  let birthDate = '';
+  if (d.birthDate) {
+    try {
+      const dt = d.birthDate.toDate ? d.birthDate.toDate() : new Date(d.birthDate);
+      birthDate = dt.toISOString().slice(0, 10);
+    } catch { /* ignore */ }
+  }
+  return {
+    phone: d.phone ?? '',
+    birthDate,
+    gender: d.gender ?? '',
+    address: d.address ?? '',
+    profession: d.profession ?? '',
+    medicalNotes: d.medicalNotes ?? '',
+    memberNumber: d.memberNumber ?? '',
+    isMinor: d.isMinor ?? false,
+    healthCertificate: d.healthCertificate ?? false,
+    emergencyContactName: d.emergencyContact?.name ?? '',
+    emergencyContactPhone: d.emergencyContact?.phone ?? '',
+  };
+}
+
 export default function DancerDetailPage() {
   const { dancerId } = useParams<{ dancerId: string }>();
   const [dancer, setDancer] = useState<Dancer | null>(null);
@@ -139,6 +187,65 @@ export default function DancerDetailPage() {
   const [pendingActive, setPendingActive] = useState(true);
   const [savingRoles, setSavingRoles] = useState(false);
   const [allRoles, setAllRoles] = useState<RoleConfig[]>([]);
+
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [pendingInfo, setPendingInfo] = useState<PendingInfo | null>(null);
+  const [savingInfo, setSavingInfo] = useState(false);
+
+  const [editingCustom, setEditingCustom] = useState(false);
+  const [pendingCustom, setPendingCustom] = useState<Record<string, unknown>>({});
+  const [savingCustom, setSavingCustom] = useState(false);
+
+  const handleSaveInfo = async () => {
+    if (!dancerId || !pendingInfo) return;
+    setSavingInfo(true);
+    try {
+      await updateDoc(doc(db, 'dancers', dancerId), {
+        phone: pendingInfo.phone || null,
+        birthDate: pendingInfo.birthDate ? new Date(pendingInfo.birthDate + 'T00:00:00') : null,
+        gender: pendingInfo.gender || null,
+        address: pendingInfo.address || null,
+        profession: pendingInfo.profession || null,
+        medicalNotes: pendingInfo.medicalNotes || null,
+        memberNumber: pendingInfo.memberNumber || null,
+        isMinor: pendingInfo.isMinor,
+        healthCertificate: pendingInfo.healthCertificate,
+        emergencyContact: (pendingInfo.emergencyContactName || pendingInfo.emergencyContactPhone)
+          ? { name: pendingInfo.emergencyContactName, phone: pendingInfo.emergencyContactPhone }
+          : null,
+      });
+      setDancer(prev => prev ? {
+        ...prev,
+        phone: pendingInfo.phone || undefined,
+        birthDate: pendingInfo.birthDate ? new Date(pendingInfo.birthDate + 'T00:00:00') : undefined,
+        gender: pendingInfo.gender || undefined,
+        address: pendingInfo.address || undefined,
+        profession: pendingInfo.profession || undefined,
+        medicalNotes: pendingInfo.medicalNotes || undefined,
+        memberNumber: pendingInfo.memberNumber || undefined,
+        isMinor: pendingInfo.isMinor,
+        healthCertificate: pendingInfo.healthCertificate,
+        emergencyContact: (pendingInfo.emergencyContactName || pendingInfo.emergencyContactPhone)
+          ? { name: pendingInfo.emergencyContactName, phone: pendingInfo.emergencyContactPhone }
+          : undefined,
+      } : prev);
+      setEditingInfo(false);
+    } finally {
+      setSavingInfo(false);
+    }
+  };
+
+  const handleSaveCustom = async () => {
+    if (!dancerId) return;
+    setSavingCustom(true);
+    try {
+      await updateDoc(doc(db, 'dancers', dancerId), { customFields: pendingCustom });
+      setDancer(prev => prev ? { ...prev, customFields: pendingCustom } : prev);
+      setEditingCustom(false);
+    } finally {
+      setSavingCustom(false);
+    }
+  };
 
   const handleSaveRoles = async () => {
     if (!dancerId || !dancer) return;
@@ -390,14 +497,92 @@ export default function DancerDetailPage() {
           </div>
         </div>
 
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Informations personnelles</p>
+          {!editingInfo ? (
+            <button onClick={() => { setPendingInfo(dancerToPendingInfo(dancer)); setEditingInfo(true); }}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium">Modifier</button>
+          ) : (
+            <div className="flex gap-2">
+              <button onClick={handleSaveInfo} disabled={savingInfo}
+                className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                {savingInfo ? 'Enregistrement…' : 'Enregistrer'}
+              </button>
+              <button onClick={() => setEditingInfo(false)}
+                className="text-xs text-gray-500 hover:text-gray-700">Annuler</button>
+            </div>
+          )}
+        </div>
+
+        {!editingInfo ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <InfoRow label="Email" value={account?.email} />
+          <InfoRow label="N° adhérent" value={dancer.memberNumber} />
           <InfoRow label="Téléphone" value={phone} disabled={!fieldConfig.phone.enabled && !!phone} />
           <InfoRow label="Date de naissance" value={formatDate(dancer.birthDate)} disabled={!fieldConfig.birthDate.enabled && !!dancer.birthDate} />
           <InfoRow label="Genre" value={dancer.gender} disabled={!fieldConfig.gender.enabled && !!dancer.gender} />
           <InfoRow label="Adresse" value={dancer.address} disabled={!fieldConfig.address.enabled && !!dancer.address} />
           <InfoRow label="Profession" value={dancer.profession} disabled={!fieldConfig.profession.enabled && !!dancer.profession} />
           <InfoRow label="Notes médicales" value={dancer.medicalNotes} disabled={!fieldConfig.medicalNotes.enabled && !!dancer.medicalNotes} />
+        </div>
+        ) : pendingInfo && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <EditField label="N° adhérent">
+            <input type="text" className={INPUT} value={pendingInfo.memberNumber}
+              onChange={e => setPendingInfo(p => p && { ...p, memberNumber: e.target.value })} />
+          </EditField>
+          <EditField label="Téléphone">
+            <input type="tel" className={INPUT} value={pendingInfo.phone}
+              onChange={e => setPendingInfo(p => p && { ...p, phone: e.target.value })} />
+          </EditField>
+          <EditField label="Date de naissance">
+            <input type="date" className={INPUT} value={pendingInfo.birthDate}
+              onChange={e => setPendingInfo(p => p && { ...p, birthDate: e.target.value })} />
+          </EditField>
+          <EditField label="Genre">
+            <input type="text" className={INPUT} value={pendingInfo.gender}
+              onChange={e => setPendingInfo(p => p && { ...p, gender: e.target.value })} />
+          </EditField>
+          <EditField label="Adresse">
+            <input type="text" className={INPUT} value={pendingInfo.address}
+              onChange={e => setPendingInfo(p => p && { ...p, address: e.target.value })} />
+          </EditField>
+          <EditField label="Profession">
+            <input type="text" className={INPUT} value={pendingInfo.profession}
+              onChange={e => setPendingInfo(p => p && { ...p, profession: e.target.value })} />
+          </EditField>
+          <div className="col-span-2 sm:col-span-3">
+            <EditField label="Notes médicales">
+              <textarea className={INPUT} rows={2} value={pendingInfo.medicalNotes}
+                onChange={e => setPendingInfo(p => p && { ...p, medicalNotes: e.target.value })} />
+            </EditField>
+          </div>
+          <EditField label="Contact d'urgence — nom">
+            <input type="text" className={INPUT} value={pendingInfo.emergencyContactName}
+              onChange={e => setPendingInfo(p => p && { ...p, emergencyContactName: e.target.value })} />
+          </EditField>
+          <EditField label="Contact d'urgence — téléphone">
+            <input type="tel" className={INPUT} value={pendingInfo.emergencyContactPhone}
+              onChange={e => setPendingInfo(p => p && { ...p, emergencyContactPhone: e.target.value })} />
+          </EditField>
+          <div className="flex flex-col justify-end gap-2 pb-1.5">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={pendingInfo.isMinor}
+                onChange={e => setPendingInfo(p => p && { ...p, isMinor: e.target.checked })}
+                className="w-4 h-4 rounded" />
+              <span className="text-sm text-gray-700">Mineur</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={pendingInfo.healthCertificate}
+                onChange={e => setPendingInfo(p => p && { ...p, healthCertificate: e.target.checked })}
+                className="w-4 h-4 rounded" />
+              <span className="text-sm text-gray-700">Certificat médical fourni</span>
+            </label>
+          </div>
+        </div>
+        )}
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
           <div className="col-span-2 sm:col-span-3">
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs text-gray-400">Rôles & statut</p>
@@ -450,7 +635,7 @@ export default function DancerDetailPage() {
           </div>
         </div>
 
-        {dancer.emergencyContact && (dancer.emergencyContact.name || dancer.emergencyContact.phone) && (
+        {!editingInfo && dancer.emergencyContact && (dancer.emergencyContact.name || dancer.emergencyContact.phone) && (
           <div className="mt-4 pt-4 border-t border-gray-100">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center">
               Contact d'urgence
@@ -462,7 +647,7 @@ export default function DancerDetailPage() {
             </div>
           </div>
         )}
-        {dancer.healthCertificate && (
+        {!editingInfo && dancer.healthCertificate && (
           <div className="mt-4 pt-4 border-t border-gray-100">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 flex items-center">
               Certificat médical
@@ -616,7 +801,22 @@ export default function DancerDetailPage() {
       {/* Champs personnalisés */}
       {customFields.length > 0 && (
         <>
-          <h2 className="text-base font-semibold text-gray-900 mt-6 mb-3">Informations complémentaires</h2>
+          <div className="flex items-center justify-between mt-6 mb-3">
+            <h2 className="text-base font-semibold text-gray-900">Informations complémentaires</h2>
+            {!editingCustom ? (
+              <button onClick={() => { setPendingCustom({ ...(dancer.customFields ?? {}) }); setEditingCustom(true); }}
+                className="text-xs text-blue-600 hover:text-blue-800 font-medium">Modifier</button>
+            ) : (
+              <div className="flex gap-2">
+                <button onClick={handleSaveCustom} disabled={savingCustom}
+                  className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                  {savingCustom ? 'Enregistrement…' : 'Enregistrer'}
+                </button>
+                <button onClick={() => setEditingCustom(false)}
+                  className="text-xs text-gray-500 hover:text-gray-700">Annuler</button>
+              </div>
+            )}
+          </div>
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             {(() => {
               const dancerCustom = dancer.customFields ?? {};
@@ -634,6 +834,51 @@ export default function DancerDetailPage() {
                   )}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                     {fields.map(field => {
+                      if (editingCustom) {
+                        const val = pendingCustom[field.key];
+                        const setVal = (v: unknown) => setPendingCustom(prev => ({ ...prev, [field.key]: v }));
+                        return (
+                          <EditField key={field.id} label={field.label}>
+                            {field.type === 'checkbox' ? (
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" checked={!!val} onChange={e => setVal(e.target.checked)} className="w-4 h-4 rounded" />
+                                <span className="text-sm text-gray-700">Oui</span>
+                              </label>
+                            ) : field.type === 'long_text' ? (
+                              <textarea className={INPUT} rows={2} value={(val as string) ?? ''} onChange={e => setVal(e.target.value)} />
+                            ) : field.type === 'number' ? (
+                              <input type="number" className={INPUT} value={(val as number) ?? ''} onChange={e => setVal(e.target.value === '' ? '' : Number(e.target.value))} />
+                            ) : field.type === 'date' ? (
+                              <input type="date" className={INPUT} value={(val as string) ?? ''} onChange={e => setVal(e.target.value)} />
+                            ) : field.type === 'select' ? (
+                              <select className={INPUT} value={(val as string) ?? ''} onChange={e => setVal(e.target.value)}>
+                                <option value="">—</option>
+                                {field.options.map(o => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                            ) : field.type === 'multiselect' ? (
+                              <div className="flex flex-wrap gap-2">
+                                {field.options.map(o => {
+                                  const arr = (val as string[]) ?? [];
+                                  const checked = arr.includes(o);
+                                  return (
+                                    <label key={o} className="flex items-center gap-1 text-xs cursor-pointer bg-gray-50 border border-gray-200 rounded-full px-2 py-1">
+                                      <input type="checkbox" checked={checked}
+                                        onChange={e => setVal(e.target.checked ? [...arr, o] : arr.filter(x => x !== o))}
+                                        className="w-3 h-3" />
+                                      {o}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            ) : field.type === 'file' ? (
+                              <p className="text-xs text-gray-400">Non modifiable ici — via l'espace du danseur.</p>
+                            ) : (
+                              <input type="text" className={INPUT} value={(val as string) ?? ''} onChange={e => setVal(e.target.value)} />
+                            )}
+                          </EditField>
+                        );
+                      }
+
                       const val = dancerCustom[field.key];
                       const hasValue = val !== undefined && val !== null && val !== '' &&
                         !(Array.isArray(val) && val.length === 0);
