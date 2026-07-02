@@ -50,7 +50,6 @@ export default function AdminDancersPage() {
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
-  const [selectedActive, setSelectedActive] = useState('');
 
   useEffect(() => {
     getDocs(collection(db, 'seasons')).then(snap => {
@@ -157,8 +156,7 @@ export default function AdminDancersPage() {
       return r.firstName.toLowerCase().includes(q) || r.lastName.toLowerCase().includes(q);
     })
     .filter(r => !selectedRole || r.roles.includes(selectedRole))
-    .filter(r => !selectedStatus || (selectedStatus === 'none' ? !r.info : r.info?.status === selectedStatus))
-    .filter(r => !selectedActive || (selectedActive === 'active' ? r.isActive : !r.isActive));
+    .filter(r => !selectedStatus || (selectedStatus === 'none' ? !r.info : r.info?.status === selectedStatus));
 
   const handleExport = () => {
     const seasonLabel = seasons.find(s => s.id === selectedSeasonId)?.label ?? selectedSeasonId;
@@ -232,19 +230,10 @@ export default function AdminDancersPage() {
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
         >
           <option value="">Tous les statuts de cotisation</option>
-          {Object.entries(STATUS_LABEL).map(([key, label]) => (
+          {Object.entries(STATUS_LABEL).filter(([key]) => key !== 'active').map(([key, label]) => (
             <option key={key} value={key}>{label}</option>
           ))}
           <option value="none">Sans cotisation</option>
-        </select>
-        <select
-          value={selectedActive}
-          onChange={e => setSelectedActive(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-        >
-          <option value="">Actifs et inactifs</option>
-          <option value="active">Actifs uniquement</option>
-          <option value="inactive">Inactifs uniquement</option>
         </select>
       </div>
 
