@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
+import * as XLSX from 'xlsx';
 
 interface Season { id: string; label: string; startDate: string; isActive: boolean; }
 interface Account { id: string; dancerIds: string[]; }
@@ -159,11 +160,45 @@ export default function AdminDancersPage() {
     .filter(r => !selectedStatus || (selectedStatus === 'none' ? !r.info : r.info?.status === selectedStatus))
     .filter(r => !selectedActive || (selectedActive === 'active' ? r.isActive : !r.isActive));
 
+  const handleExport = () => {
+    const seasonLabel = seasons.find(s => s.id === selectedSeasonId)?.label ?? selectedSeasonId;
+    const roleLabel = (key: string) => roleOptions.find(r => r.key === key)?.label ?? key;
+
+    const data = filtered.map(row => ({
+      'Nom': row.lastName,
+      'Prénom': row.firstName,
+      'Rôles': row.roles.map(roleLabel).join(', '),
+      'Actif': row.isActive ? 'Oui' : 'Non',
+      'Plan': row.info?.planLabel ?? '',
+      'Méthode de paiement': row.info?.paymentMethod ? (METHOD_LABEL[row.info.paymentMethod] ?? row.info.paymentMethod) : '',
+      'Montant dû (€)': row.info ? (row.info.totalDue / 100).toFixed(2) : '',
+      'Statut cotisation': row.info ? (STATUS_LABEL[row.info.status] ?? row.info.status) : 'Sans cotisation',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [
+      { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 8 },
+      { wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 18 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Danseurs');
+    XLSX.writeFile(wb, `danseurs_${seasonLabel.replace(/\s+/g, '_')}.xlsx`);
+  };
+
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6">
-        <Link href="/admin/courses" className="text-sm text-gray-400 hover:text-gray-700">← Admin</Link>
-        <h1 className="text-2xl font-bold text-gray-900">Danseurs</h1>
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          <Link href="/admin/courses" className="text-sm text-gray-400 hover:text-gray-700">← Admin</Link>
+          <h1 className="text-2xl font-bold text-gray-900">Danseurs</h1>
+        </div>
+        <button
+          onClick={handleExport}
+          disabled={filtered.length === 0}
+          className="text-sm bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium transition-colors"
+        >
+          Exporter Excel
+        </button>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 mb-3">
