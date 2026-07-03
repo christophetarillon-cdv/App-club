@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import {
-  collection, getDocs, query, where, doc, getDoc, writeBatch, serverTimestamp,
+  collection, getDocs, query, where, doc, getDoc, writeBatch, serverTimestamp, deleteField,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import { type PaymentMethod, type Installment, METHOD_LABEL, emptyInstallment, MAX_INSTALLMENTS, chequeFields } from '@/lib/payment-constants';
 
 interface Account { id: string; displayName: string; email: string; }
-interface Dancer { id: string; firstName: string; lastName: string; accountId: string; }
+interface Dancer { id: string; firstName: string; lastName: string; accountId: string; roles: string[]; }
 interface Season { id: string; label: string; }
 interface PricingPlan { id: string; label: string; amount: number; conditions: string; }
 
@@ -88,6 +88,7 @@ export default function AdminCreatePaymentPlanPage() {
         firstName: d.data().firstName ?? '',
         lastName: d.data().lastName ?? '',
         accountId: d.data().accountId ?? '',
+        roles: d.data().roles ?? [],
       })));
       setAllAccounts(accountSnap.docs.map(d => ({
         id: d.id,
@@ -235,6 +236,20 @@ export default function AdminCreatePaymentPlanPage() {
           seasonId: season.id,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
+        });
+      }
+
+      // Un plan créé et approuvé directement par l'admin suit le même chemin
+      // qu'une approbation classique : un danseur en essai devient membre.
+      for (const dancer of selectedDancers) {
+        if (!dancer.roles.includes('trial')) continue;
+        batch.update(doc(db, 'dancers', dancer.id), {
+          roles: ['member'],
+          trialStartDate: deleteField(),
+          trialExpiresAt: deleteField(),
+          trialSessionsUsed: deleteField(),
+          trialMode: deleteField(),
+          trialMaxSessions: deleteField(),
         });
       }
 
