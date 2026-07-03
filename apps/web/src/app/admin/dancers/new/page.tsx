@@ -12,6 +12,11 @@ interface DancerFormRow {
   firstName: string;
   lastName: string;
   role: string;
+  birthDate: string;
+  gender: string;
+  address: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
 }
 
 interface AdminCreateAccountResult {
@@ -20,13 +25,17 @@ interface AdminCreateAccountResult {
   generatedPassword: string | null;
 }
 
-const emptyDancer = (defaultRole: string): DancerFormRow => ({ firstName: '', lastName: '', role: defaultRole });
+const emptyDancer = (defaultRole: string): DancerFormRow => ({
+  firstName: '', lastName: '', role: defaultRole,
+  birthDate: '', gender: '', address: '', emergencyContactName: '', emergencyContactPhone: '',
+});
 
 export default function AdminNewAccountPage() {
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [dancers, setDancers] = useState<DancerFormRow[]>([{ firstName: '', lastName: '', role: '' }]);
+  const [phone, setPhone] = useState('');
+  const [dancers, setDancers] = useState<DancerFormRow[]>([emptyDancer('')]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AdminCreateAccountResult | null>(null);
@@ -58,11 +67,20 @@ export default function AdminNewAccountPage() {
       const res = await call({
         email: email.trim(),
         password: password.trim() || undefined,
-        dancers: dancers.map(d => ({ firstName: d.firstName.trim(), lastName: d.lastName.trim(), role: d.role })),
+        phone: phone.trim() || undefined,
+        dancers: dancers.map(d => ({
+          firstName: d.firstName.trim(), lastName: d.lastName.trim(), role: d.role,
+          birthDate: d.birthDate || undefined,
+          gender: d.gender || undefined,
+          address: d.address.trim() || undefined,
+          emergencyContactName: d.emergencyContactName.trim() || undefined,
+          emergencyContactPhone: d.emergencyContactPhone.trim() || undefined,
+        })),
       });
       setResult(res.data as AdminCreateAccountResult);
       setEmail('');
       setPassword('');
+      setPhone('');
       setDancers([emptyDancer(defaultRole)]);
     } catch (err) {
       const message = (err as { message?: string })?.message ?? 'Erreur lors de la création du compte';
@@ -106,6 +124,17 @@ export default function AdminNewAccountPage() {
             <input
               type="email" required value={email} onChange={e => setEmail(e.target.value)}
               placeholder="famille@exemple.fr"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+              Téléphone (facultatif)
+            </label>
+            <input
+              type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+              placeholder="06 12 34 56 78"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
             />
           </div>
@@ -170,6 +199,54 @@ export default function AdminNewAccountPage() {
                       Retirer
                     </button>
                   )}
+
+                  <div className="col-span-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 pt-2 mt-1 border-t border-gray-100">
+                    <div>
+                      <label className="block text-[11px] text-gray-400 mb-1">Date de naissance</label>
+                      <input
+                        type="date" value={d.birthDate}
+                        onChange={e => updateDancer(i, { birthDate: e.target.value })}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-gray-400 mb-1">Genre</label>
+                      <select
+                        value={d.gender} onChange={e => updateDancer(i, { gender: e.target.value })}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      >
+                        <option value="">— Choisir —</option>
+                        <option value="male">Homme</option>
+                        <option value="female">Femme</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-gray-400 mb-1">Adresse</label>
+                      <input
+                        type="text" value={d.address}
+                        onChange={e => updateDancer(i, { address: e.target.value })}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-gray-400 mb-1">Contact urgence (nom)</label>
+                        <input
+                          type="text" value={d.emergencyContactName}
+                          onChange={e => updateDancer(i, { emergencyContactName: e.target.value })}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-400 mb-1">Contact urgence (tél.)</label>
+                        <input
+                          type="tel" value={d.emergencyContactPhone}
+                          onChange={e => updateDancer(i, { emergencyContactPhone: e.target.value })}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
