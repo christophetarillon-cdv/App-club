@@ -38,17 +38,21 @@ interface GroupResult {
 const VALID_ROLES = ['member', 'trial', 'instructor', 'bureau'];
 
 export default function AdminImportDancersPage() {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [groups, setGroups] = useState<AccountGroup[]>([]);
   const [results, setResults] = useState<Record<number, GroupResult>>({});
   const [importing, setImporting] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = async (file: File) => {
+  const handleAnalyze = async () => {
+    if (!selectedFile) return;
     setFileError(null);
     setResults({});
+    setAnalyzing(true);
     try {
-      const buffer = await file.arrayBuffer();
+      const buffer = await selectedFile.arrayBuffer();
       const wb = XLSX.read(buffer, { type: 'array' });
       const sheet = wb.Sheets[wb.SheetNames[0]!];
       const rows = XLSX.utils.sheet_to_json<ExcelRow>(sheet!);
@@ -78,9 +82,17 @@ export default function AdminImportDancersPage() {
         group.dancers.push(dancer);
       });
 
+      if (rows.length === 0) {
+        setFileError("Le fichier ne contient aucune ligne de données (au-delà de l'en-tête).");
+      } else if (byEmail.size === 0) {
+        setFileError("Aucune ligne exploitable : vérifiez que la première ligne du fichier contient bien les en-têtes Email, Prénom, Nom, Rôle.");
+      }
+
       setGroups(Array.from(byEmail.values()));
     } catch {
       setFileError("Impossible de lire le fichier. Vérifiez le format (colonnes Email, Prénom, Nom, Rôle).");
+    } finally {
+      setAnalyzing(false);
     }
   };
 
@@ -113,6 +125,7 @@ export default function AdminImportDancersPage() {
   };
 
   const reset = () => {
+    setSelectedFile(null);
     setGroups([]);
     setResults({});
     setFileError(null);
@@ -137,9 +150,17 @@ export default function AdminImportDancersPage() {
           <input
             ref={fileRef}
             type="file" accept=".xlsx,.xls"
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+            onChange={e => { const f = e.target.files?.[0] ?? null; setSelectedFile(f); setFileError(null); }}
             className="text-sm"
           />
+          {selectedFile && (
+            <button
+              onClick={handleAnalyze} disabled={analyzing}
+              className="bg-blue-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+            >
+              {analyzing ? 'Analyse…' : 'Analyser le fichier'}
+            </button>
+          )}
           {fileError && <p className="text-sm text-red-600">{fileError}</p>}
         </div>
       )}
