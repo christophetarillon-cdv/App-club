@@ -16,9 +16,10 @@ import type { PersonalDocument } from '@cdv/types';
 interface Season { id: string; label: string; startDateSeconds: number; isActive: boolean; }
 
 const TYPE_CONFIG = {
-  receipt:     { label: 'Reçu de paiement', color: '#3B6D11', bg: '#EAF3DE' },
-  attestation: { label: 'Attestation',       color: '#185FA5', bg: '#E8F4FD' },
-  invoice:     { label: 'Facture',           color: '#534AB7', bg: '#EEEDFE' },
+  receipt:      { label: 'Reçu de paiement',      color: '#3B6D11', bg: '#EAF3DE' },
+  attestation:  { label: 'Attestation',            color: '#185FA5', bg: '#E8F4FD' },
+  invoice:      { label: 'Facture',                color: '#534AB7', bg: '#EEEDFE' },
+  cancellation: { label: 'Certificat d\'annulation', color: '#991B1B', bg: '#FEE2E2' },
 } as const;
 
 function formatAmount(cents: number) {
