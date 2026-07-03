@@ -37,6 +37,9 @@ interface PaymentGroup {
   totalPaid: number;
   paymentMethod: PaymentMethod;
   paymentPlanStatus: PaymentPlanStatus;
+  refundAmount?: number;
+  refundMethod?: PaymentMethod;
+  refundReference?: string;
 }
 
 // ── Entrées d'affichage ──────────────────────────────────────────────────────
@@ -173,6 +176,20 @@ function InstallmentsList({ installments }: { installments: InstallmentX[] }) {
   );
 }
 
+function RefundInfo({ amount, method, reference }: { amount?: number; method?: string; reference?: string }) {
+  if (!amount) return null;
+  return (
+    <View style={styles.refundRow}>
+      <Text style={styles.refundLabel}>Remboursé</Text>
+      <Text style={styles.refundValue}>
+        {fmt(amount)}
+        {method ? ` · ${METHOD_LABEL[method] ?? method}` : ''}
+        {reference ? ` · ${reference}` : ''}
+      </Text>
+    </View>
+  );
+}
+
 function SoloCard({ entry }: { entry: SoloEntry }) {
   const { membership: m, dancer, plan, installments } = entry;
   const pStatus = PLAN_STATUS[m.paymentPlanStatus] ?? PLAN_STATUS.pending;
@@ -193,6 +210,7 @@ function SoloCard({ entry }: { entry: SoloEntry }) {
       </View>
 
       <AmountRow totalDue={m.totalDue} totalPaid={m.totalPaid} />
+      <RefundInfo amount={m.refundAmount} method={m.refundMethod} reference={m.refundReference} />
 
       <StatusBadge cfg={pStatus} />
 
@@ -230,6 +248,7 @@ function GroupCard({ entry }: { entry: GroupEntry }) {
       ))}
 
       <AmountRow totalDue={g.totalDue} totalPaid={g.totalPaid} />
+      <RefundInfo amount={g.refundAmount} method={g.refundMethod} reference={g.refundReference} />
       <StatusBadge cfg={pStatus} />
       <InstallmentsList installments={installments} />
     </View>
@@ -526,6 +545,11 @@ const styles = StyleSheet.create({
   amountValue: { fontSize: 14, fontWeight: '700', color: Colors.text },
   progressBg: { height: 4, backgroundColor: Colors.border, borderRadius: 2 },
   progressFill: { height: 4, backgroundColor: '#22C55E', borderRadius: 2 },
+
+  // Remboursement
+  refundRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+  refundLabel: { fontSize: 12, color: Colors.textSecondary },
+  refundValue: { fontSize: 12, fontWeight: '700', color: '#991B1B' },
 
   // Échéancier
   installments: { gap: 8, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12 },
