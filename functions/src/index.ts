@@ -1779,3 +1779,218 @@ export const onMembershipApproved = onDocumentUpdated(
     console.log(`[onMembershipApproved] Attestation générée pour ${userId} — saison ${seasonLabel}`);
   },
 );
+
+// ── generateCancellationCertificate — PDF partagé memberships/paymentGroups ──
+async function generateCancellationCertificate(
+  id: string,
+  after: admin.firestore.DocumentData,
+  kind: 'solo' | 'group',
+) {
+  const db = getDb();
+  const bucket = admin.storage().bucket();
+
+  const userId: string = after.userId;
+  const seasonId: string = after.seasonId;
+
+  const [accountSnap, seasonSnap, clubSnap] = await Promise.all([
+    db.doc(`accounts/${userId}`).get(),
+    db.doc(`seasons/${seasonId}`).get(),
+    db.doc('clubProfile/main').get(),
+  ]);
+
+  let dancerId: string | null = null;
+  let memberName = '';
+
+  if (kind === 'solo') {
+    dancerId = (after.dancerId as string | undefined) ?? null;
+    if (dancerId) {
+      const dSnap = await db.doc(`dancers/${dancerId}`).get();
+      if (dSnap.exists) {
+        const d = dSnap.data()!;
+        memberName = `${d.firstName ?? ''} ${d.lastName ?? ''}`.trim();
+      }
+    }
+  } else {
+    const membershipIds: string[] = after.membershipIds ?? [];
+    const membershipSnaps = await Promise.all(membershipIds.map((mid: string) => db.doc(`memberships/${mid}`).get()));
+    const names: string[] = [];
+    for (const ms of membershipSnaps) {
+      if (!ms.exists) continue;
+      const mDancerId = ms.data()!.dancerId as string | undefined;
+      if (mDancerId) {
+        const dSnap = await db.doc(`dancers/${mDancerId}`).get();
+        if (dSnap.exists) {
+          const d = dSnap.data()!;
+          names.push(`${d.firstName ?? ''} ${d.lastName ?? ''}`.trim());
+        }
+      }
+    }
+    memberName = names.join(' & ');
+  }
+
+  const accountData = accountSnap.data() ?? {};
+  if (!memberName) memberName = (accountData.displayName as string | undefined) ?? (accountData.email as string | undefined) ?? 'Membre';
+  const seasonLabel: string = (seasonSnap.data()?.label as string | undefined) ?? '';
+
+  const clubData = clubSnap.data() ?? {};
+  const clubName: string = (clubData.officialName as string | undefined) ?? 'Club de Danse Voiron';
+  const clubLegalStatus: string = (clubData.legalStatus as string | undefined) ?? 'Association loi 1901';
+  const clubSiret: string = (clubData.siret as string | undefined) ?? '';
+  const clubApe: string = (clubData.apeCode as string | undefined) ?? '';
+  const clubAssocNum: string = (clubData.associationNumber as string | undefined) ?? '';
+
+  const totalDueInitial: number = (after.totalDue as number) ?? 0;
+  const totalPaid: number = (after.totalPaid as number) ?? 0;
+  const reason: string = (after.cancellationReason as string | undefined) ?? '';
+  const refundAmount: number = (after.refundAmount as number | undefined) ?? 0;
+  const refundMethod: string | undefined = after.refundMethod as string | undefined;
+  const refundReference: string | undefined = after.refundReference as string | undefined;
+  const cancelledAtDate = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const methodLabel = (m?: string) => m === 'cheque' ? 'Chèque' : m === 'transfer' ? 'Virement bancaire' : m === 'cash' ? 'Espèces' : (m ?? '');
+
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595, 842]);
+  const { width, height } = page.getSize();
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+
+  const red = rgb(0.55, 0.13, 0.13);
+  const gray = rgb(0.45, 0.45, 0.45);
+  const black = rgb(0, 0, 0);
+
+  page.drawRectangle({ x: 0, y: height - 90, width, height: 90, color: red });
+  page.drawText(clubName, { x: 40, y: height - 38, size: 18, font: fontBold, color: rgb(1, 1, 1) });
+  page.drawText('Certificat d\'annulation d\'adhésion', { x: 40, y: height - 58, size: 10, font: fontReg, color: rgb(0.95, 0.85, 0.85) });
+
+  const dateStr = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  page.drawText(dateStr, { x: width - 190, y: height - 49, size: 9, font: fontReg, color: rgb(0.95, 0.85, 0.85) });
+
+  let y = height - 140;
+  page.drawText(`${clubName} certifie l'annulation de l'adhésion de :`, { x: 60, y, size: 11, font: fontReg, color: gray });
+  y -= 50;
+
+  page.drawRectangle({ x: 60, y: y - 14, width: width - 120, height: 60, color: rgb(0.98, 0.95, 0.95) });
+  page.drawText(memberName, { x: 80, y: y + 20, size: 18, font: fontBold, color: red });
+  if (accountData.email) page.drawText(accountData.email as string, { x: 80, y, size: 10, font: fontReg, color: gray });
+  y -= 50;
+
+  y -= 20;
+  page.drawText('Saison concernée :', { x: 60, y, size: 11, font: fontBold, color: black });
+  page.drawText(seasonLabel, { x: 220, y, size: 11, font: fontReg, color: black });
+  y -= 22;
+  page.drawText('Date d\'annulation :', { x: 60, y, size: 11, font: fontBold, color: black });
+  page.drawText(cancelledAtDate, { x: 220, y, size: 11, font: fontReg, color: black });
+  y -= 22;
+
+  if (reason) {
+    page.drawText('Motif :', { x: 60, y, size: 11, font: fontBold, color: black });
+    page.drawText(reason.slice(0, 60), { x: 220, y, size: 11, font: fontReg, color: black });
+    y -= 30;
+  } else {
+    y -= 10;
+  }
+
+  page.drawLine({ start: { x: 60, y }, end: { x: width - 60, y }, thickness: 1, color: rgb(0.88, 0.88, 0.9) });
+  y -= 26;
+
+  page.drawText('Détails financiers', { x: 60, y, size: 12, font: fontBold, color: red });
+  y -= 24;
+
+  const drawRow = (label: string, value: string, bold = false) => {
+    page.drawText(label, { x: 60, y, size: 11, font: fontReg, color: gray });
+    page.drawText(value, { x: 300, y, size: 11, font: bold ? fontBold : fontReg, color: black });
+    y -= 24;
+  };
+
+  drawRow('Total encaissé avant annulation', `${(totalPaid / 100).toFixed(2).replace('.', ',')} €`, true);
+  drawRow('Solde restant annulé', `${(Math.max(0, totalDueInitial - totalPaid) / 100).toFixed(2).replace('.', ',')} €`);
+
+  if (refundAmount > 0) {
+    y -= 6;
+    page.drawText('Remboursement', { x: 60, y, size: 12, font: fontBold, color: red });
+    y -= 24;
+    drawRow('Montant remboursé', `${(refundAmount / 100).toFixed(2).replace('.', ',')} €`, true);
+    if (refundMethod) drawRow('Mode de remboursement', methodLabel(refundMethod));
+    if (refundReference) drawRow('Référence', refundReference);
+  } else {
+    y -= 10;
+    page.drawText('Aucun remboursement effectué.', { x: 60, y, size: 10, font: fontItalic, color: gray });
+    y -= 20;
+  }
+
+  y -= 20;
+  page.drawLine({ start: { x: 60, y }, end: { x: width - 60, y }, thickness: 1, color: rgb(0.88, 0.88, 0.9) });
+  y -= 24;
+  page.drawText(
+    'Ce document atteste de l\'annulation de l\'adhésion et, le cas échéant, du remboursement effectué.',
+    { x: 60, y, size: 9, font: fontItalic, color: gray },
+  );
+
+  const footerParts: string[] = [`${clubName} — ${clubLegalStatus}`];
+  if (clubSiret) footerParts.push(`SIRET : ${clubSiret}`);
+  if (clubApe) footerParts.push(`APE : ${clubApe}`);
+  if (clubAssocNum) footerParts.push(`N° ${clubAssocNum}`);
+  page.drawText(footerParts.join('  •  '), { x: 40, y: 40, size: 8, font: fontReg, color: gray });
+
+  const pdfBytes = await pdfDoc.save();
+
+  const safeLabel = seasonLabel.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  const safeName = memberName.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 30);
+  const fileName = `annulation-${safeLabel}-${safeName}.pdf`;
+  const storagePath = `documents/${userId}/cancellations/${fileName}`;
+  const tempPath = path.join(os.tmpdir(), fileName);
+  fs.writeFileSync(tempPath, pdfBytes);
+
+  const downloadToken = crypto.randomUUID();
+  await bucket.upload(tempPath, {
+    destination: storagePath,
+    metadata: {
+      contentType: 'application/pdf',
+      metadata: { firebaseStorageDownloadTokens: downloadToken },
+    },
+  });
+  fs.unlinkSync(tempPath);
+
+  const fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+
+  await db.collection('documents').add({
+    userId,
+    dancerId,
+    type: 'cancellation',
+    fileUrl,
+    fileName,
+    relatedId: id,
+    memberName,
+    seasonLabel: seasonLabel || null,
+    refundAmount: refundAmount || null,
+    generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  console.log(`[generateCancellationCertificate] Certificat généré pour ${userId} — saison ${seasonLabel}`);
+}
+
+// ── onMembershipCancelled — génère un certificat d'annulation (solo) ─────────
+export const onMembershipCancelled = onDocumentUpdated(
+  { document: 'memberships/{membershipId}', region: 'europe-west3' },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) return;
+    if (before.paymentPlanStatus === 'cancelled' || after.paymentPlanStatus !== 'cancelled') return;
+    await generateCancellationCertificate(event.params.membershipId, after, 'solo');
+  },
+);
+
+// ── onPaymentGroupCancelled — génère un certificat d'annulation (groupe) ─────
+export const onPaymentGroupCancelled = onDocumentUpdated(
+  { document: 'paymentGroups/{groupId}', region: 'europe-west3' },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) return;
+    if (before.paymentPlanStatus === 'cancelled' || after.paymentPlanStatus !== 'cancelled') return;
+    await generateCancellationCertificate(event.params.groupId, after, 'group');
+  },
+);

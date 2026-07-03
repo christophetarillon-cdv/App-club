@@ -1,6 +1,6 @@
 import type { FirestoreTimestamp } from './common';
 
-export type PersonalDocumentType = 'receipt' | 'attestation' | 'invoice';
+export type PersonalDocumentType = 'receipt' | 'attestation' | 'invoice' | 'cancellation';
 
 export interface PersonalDocument {
   id: string;
@@ -12,6 +12,7 @@ export interface PersonalDocument {
   relatedId?: string;
   receiptNumber?: string;
   amount?: number;
+  refundAmount?: number;
   memberName?: string;
   seasonLabel?: string;
   generatedAt: FirestoreTimestamp;
