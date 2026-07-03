@@ -1,8 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, doc, getDoc, getDocs, limit, orderBy, query, updateDoc, where } from 'firebase/firestore';
+import {
+  collection, doc, getDoc, getDocs, limit, orderBy, query, updateDoc, where,
+  writeBatch, serverTimestamp,
+} from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import type { ProfileFieldsConfig, CustomField, RoleConfig } from '@cdv/types';
@@ -175,6 +179,7 @@ function dancerToPendingInfo(d: Dancer): PendingInfo {
 
 export default function DancerDetailPage() {
   const { dancerId } = useParams<{ dancerId: string }>();
+  const { user } = useAuth();
   const [dancer, setDancer] = useState<Dancer | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -195,6 +200,16 @@ export default function DancerDetailPage() {
   const [editingCustom, setEditingCustom] = useState(false);
   const [pendingCustom, setPendingCustom] = useState<Record<string, unknown>>({});
   const [savingCustom, setSavingCustom] = useState(false);
+
+  const [cancelingEntryId, setCancelingEntryId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [refundChoice, setRefundChoice] = useState<'none' | 'partial' | 'full'>('none');
+  const [refundAmountInput, setRefundAmountInput] = useState('');
+  const [refundMethod, setRefundMethod] = useState<'cheque' | 'transfer' | 'cash'>('transfer');
+  const [refundReference, setRefundReference] = useState('');
+  const [cancelSaving, setCancelSaving] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelConfirmText, setCancelConfirmText] = useState('');
 
   const handleSaveInfo = async () => {
     if (!dancerId || !pendingInfo) return;
@@ -268,6 +283,85 @@ export default function DancerDetailPage() {
     setDancer(prev => prev ? { ...prev, roles: pendingRoles, isActive: pendingActive } : prev);
     setSavingRoles(false);
     setEditingRoles(false);
+  };
+
+  const openCancelPanel = (entryId: string) => {
+    setCancelingEntryId(entryId);
+    setCancelReason('');
+    setRefundChoice('none');
+    setRefundAmountInput('');
+    setRefundMethod('transfer');
+    setRefundReference('');
+    setCancelConfirmText('');
+    setCancelError(null);
+  };
+
+  const handleCancelMembership = async (entry: Entry) => {
+    if (!user || !account) return;
+    if (cancelConfirmText.trim().toUpperCase() !== 'ANNULER') return;
+    if (!cancelReason.trim()) { setCancelError('Le motif est obligatoire.'); return; }
+
+    const refundCents = refundChoice === 'full'
+      ? entry.totalPaid
+      : refundChoice === 'partial'
+      ? Math.round(parseFloat(refundAmountInput.replace(',', '.') || '0') * 100)
+      : 0;
+
+    if (refundChoice === 'partial' && (isNaN(refundCents) || refundCents <= 0 || refundCents > entry.totalPaid)) {
+      setCancelError('Montant de remboursement invalide.');
+      return;
+    }
+
+    setCancelSaving(true);
+    setCancelError(null);
+    try {
+      const batch = writeBatch(db);
+
+      batch.update(doc(db, entry.kind === 'group' ? 'paymentGroups' : 'memberships', entry.id), {
+        paymentPlanStatus: 'cancelled',
+        totalDue: entry.totalPaid,
+        cancelledAt: serverTimestamp(),
+        cancelledBy: user.uid,
+        cancellationReason: cancelReason.trim(),
+        updatedAt: serverTimestamp(),
+        ...(refundCents > 0 ? {
+          refundAmount: refundCents,
+          refundMethod,
+          ...(refundReference.trim() ? { refundReference: refundReference.trim() } : {}),
+        } : {}),
+      });
+
+      for (const inst of entry.installments) {
+        if (inst.status !== 'pending') continue;
+        batch.update(doc(db, 'paymentInstallments', inst.id), { status: 'cancelled' });
+      }
+
+      const registrationsToCancel = courses.filter(c =>
+        c.seasonId === entry.seasonId && c.registrationStatus !== 'cancelled'
+      );
+      for (const reg of registrationsToCancel) {
+        batch.update(doc(db, 'registrations', reg.registrationId), { status: 'cancelled' });
+      }
+
+      await batch.commit();
+
+      setEntries(prev => prev.map(e => e.id === entry.id ? {
+        ...e,
+        status: 'cancelled',
+        totalDue: entry.totalPaid,
+        installments: e.installments.map(i => i.status === 'pending' ? { ...i, status: 'cancelled' } : i),
+      } : e));
+      setCourses(prev => prev.map(c =>
+        c.seasonId === entry.seasonId && c.registrationStatus !== 'cancelled'
+          ? { ...c, registrationStatus: 'cancelled' }
+          : c
+      ));
+      setCancelingEntryId(null);
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : 'Erreur lors de l\'annulation.');
+    } finally {
+      setCancelSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -725,10 +819,117 @@ export default function DancerDetailPage() {
                     <p className="text-xs text-gray-400 mt-0.5">Avec : {entry.groupDancerNames.join(', ')}</p>
                   )}
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[entry.status] ?? 'bg-gray-100 text-gray-500'}`}>
-                  {STATUS_LABEL[entry.status] ?? entry.status}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[entry.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                    {STATUS_LABEL[entry.status] ?? entry.status}
+                  </span>
+                  {(entry.status === 'pending' || entry.status === 'approved') && (
+                    <button
+                      onClick={() => openCancelPanel(entry.id)}
+                      className="text-xs text-red-600 hover:text-red-800 font-medium"
+                    >
+                      Annuler l'adhésion
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {cancelingEntryId === entry.id && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl space-y-3">
+                  <p className="text-sm font-semibold text-red-800">Annulation de l'adhésion — {entry.seasonLabel}</p>
+                  <p className="text-xs text-red-700">
+                    Déjà encaissé : {(entry.totalPaid / 100).toFixed(2)} € · Restant dû annulé : {((entry.totalDue - entry.totalPaid) / 100).toFixed(2)} € ·{' '}
+                    {entry.installments.filter(i => i.status === 'pending').length} échéance{entry.installments.filter(i => i.status === 'pending').length > 1 ? 's' : ''} à venir annulée{entry.installments.filter(i => i.status === 'pending').length > 1 ? 's' : ''}
+                  </p>
+                  {account && account.dancerIds.length > 1 && (
+                    <p className="text-xs text-red-700 font-medium">
+                      ⚠️ Les inscriptions aux cours de la saison {entry.seasonLabel} seront annulées pour l'ensemble du compte ({account.dancerIds.length} danseurs), pas seulement pour {dancer?.firstName}.
+                    </p>
+                  )}
+
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Motif (validé par le club)</label>
+                    <textarea
+                      value={cancelReason}
+                      onChange={e => setCancelReason(e.target.value)}
+                      rows={2}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                      placeholder="ex : déménagement, raison médicale…"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Remboursement</label>
+                    <div className="flex gap-3 mb-2">
+                      {(['none', 'partial', 'full'] as const).map(choice => (
+                        <label key={choice} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                          <input type="radio" checked={refundChoice === choice} onChange={() => setRefundChoice(choice)} />
+                          {choice === 'none' ? 'Aucun' : choice === 'partial' ? 'Partiel' : `Total (${(entry.totalPaid / 100).toFixed(2)} €)`}
+                        </label>
+                      ))}
+                    </div>
+                    {refundChoice !== 'none' && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {refundChoice === 'partial' && (
+                          <input
+                            type="text"
+                            value={refundAmountInput}
+                            onChange={e => setRefundAmountInput(e.target.value)}
+                            placeholder="Montant en €"
+                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                          />
+                        )}
+                        <select
+                          value={refundMethod}
+                          onChange={e => setRefundMethod(e.target.value as typeof refundMethod)}
+                          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                        >
+                          <option value="transfer">Virement</option>
+                          <option value="cheque">Chèque</option>
+                          <option value="cash">Espèces</option>
+                        </select>
+                        <input
+                          type="text"
+                          value={refundReference}
+                          onChange={e => setRefundReference(e.target.value)}
+                          placeholder="Référence (optionnel)"
+                          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">
+                      Tapez <span className="font-mono font-semibold">ANNULER</span> pour confirmer
+                    </label>
+                    <input
+                      type="text"
+                      value={cancelConfirmText}
+                      onChange={e => setCancelConfirmText(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-400"
+                    />
+                  </div>
+
+                  {cancelError && <p className="text-xs text-red-700">{cancelError}</p>}
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleCancelMembership(entry)}
+                      disabled={cancelSaving || cancelConfirmText.trim().toUpperCase() !== 'ANNULER' || !cancelReason.trim()}
+                      className="bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {cancelSaving ? 'Traitement…' : 'Confirmer l\'annulation'}
+                    </button>
+                    <button
+                      onClick={() => setCancelingEntryId(null)}
+                      className="text-sm text-gray-500 hover:text-gray-700 px-3 py-2"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                 {entry.planLabel && (
@@ -768,8 +969,12 @@ export default function DancerDetailPage() {
                               </span>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${inst.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                                {inst.status === 'paid' ? 'Encaissé' : 'En attente'}
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                inst.status === 'paid' ? 'bg-green-100 text-green-700'
+                                : inst.status === 'cancelled' ? 'bg-gray-100 text-gray-500'
+                                : 'bg-orange-100 text-orange-700'
+                              }`}>
+                                {inst.status === 'paid' ? 'Encaissé' : inst.status === 'cancelled' ? 'Annulé' : 'En attente'}
                               </span>
                               <span className="text-sm font-medium text-gray-800 w-20 text-right">
                                 {(inst.amount / 100).toFixed(2)} €

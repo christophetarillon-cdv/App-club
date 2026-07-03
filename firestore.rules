@@ -94,13 +94,15 @@ service cloud.firestore {
     }
 
     // Écriture memberships/paymentGroups : réservé aux pages qui approuvent
-    // ou saisissent réellement un paiement.
+    // ou saisissent réellement un paiement, + Danseurs pour l'annulation
+    // d'adhésion en cours de saison.
     function hasMembershipWriteAccess() {
       let roles = userRoles();
       let perms = pagePerms();
       return roles.hasAny(['admin']) ||
         roles.hasAny(perms.get('/admin/payment-plans', ['admin'])) ||
-        roles.hasAny(perms.get('/admin/payments/new', ['admin']));
+        roles.hasAny(perms.get('/admin/payments/new', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/dancers', ['admin']));
     }
 
     // Écriture dancers, hors champs protégés (roles/isActive) : pages qui
@@ -124,7 +126,8 @@ service cloud.firestore {
     }
 
     // Écriture paymentInstallments : pages qui pointent/mettent à jour des
-    // échéances (encaissement, saisie, bordereaux, chèques).
+    // échéances (encaissement, saisie, bordereaux, chèques), + Danseurs
+    // pour annuler les échéances restantes lors d'une annulation d'adhésion.
     function hasInstallmentWriteAccess() {
       let roles = userRoles();
       let perms = pagePerms();
@@ -132,7 +135,8 @@ service cloud.firestore {
         roles.hasAny(perms.get('/admin/payments/today', ['admin'])) ||
         roles.hasAny(perms.get('/admin/payments/cheques', ['admin'])) ||
         roles.hasAny(perms.get('/admin/payments/new', ['admin'])) ||
-        roles.hasAny(perms.get('/admin/payments/bank-deposits', ['admin']));
+        roles.hasAny(perms.get('/admin/payments/bank-deposits', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/dancers', ['admin']));
     }
 
     // Collections croisées par plusieurs pages "paiement" (chequeImages,
@@ -277,7 +281,7 @@ service cloud.firestore {
     match /registrations/{id} {
       allow read: if isAuth();
       allow create: if isAuth() && request.auth.uid == request.resource.data.userId;
-      allow update: if (isAuth() && resource.data.userId == request.auth.uid) || hasPagePermission('/admin/courses');
+      allow update: if (isAuth() && resource.data.userId == request.auth.uid) || hasPagePermission('/admin/courses') || hasPagePermission('/admin/dancers');
       allow delete: if hasPagePermission('/admin/courses');
     }
 

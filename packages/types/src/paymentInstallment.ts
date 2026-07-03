@@ -1,7 +1,7 @@
 import type { FirestoreTimestamp } from './common';
 import type { PaymentMethod } from './membership';
 
-export type InstallmentStatus = 'pending' | 'paid' | 'late';
+export type InstallmentStatus = 'pending' | 'paid' | 'late' | 'cancelled';
 
 export interface PaymentInstallment {
   id: string;
