@@ -64,6 +64,9 @@ interface Entry {
   installmentIds: string[];
   installments: Installment[];
   groupDancerNames: string[];
+  refundAmount?: number;
+  refundMethod?: string;
+  refundReference?: string;
 }
 interface CourseRow {
   registrationId: string;
@@ -474,6 +477,7 @@ export default function DancerDetailPage() {
             totalDue: m.totalDue ?? 0, totalPaid: m.totalPaid ?? 0,
             status: m.paymentPlanStatus ?? '',
             installmentIds: m.installmentIds ?? [], installments: [], groupDancerNames: [],
+            refundAmount: m.refundAmount, refundMethod: m.refundMethod, refundReference: m.refundReference,
           });
         });
 
@@ -495,6 +499,7 @@ export default function DancerDetailPage() {
             status: g.paymentPlanStatus ?? '',
             installmentIds: g.installmentIds ?? [], installments: [],
             groupDancerNames: otherDancerNames,
+            refundAmount: g.refundAmount, refundMethod: g.refundMethod, refundReference: g.refundReference,
           });
         }
 
@@ -952,6 +957,19 @@ export default function DancerDetailPage() {
                     {(entry.totalPaid / 100).toFixed(2)} €
                   </p>
                 </div>
+                {!!entry.refundAmount && (
+                  <div>
+                    <p className="text-xs text-gray-400">Remboursé</p>
+                    <p className="text-sm font-semibold text-red-700">
+                      {(entry.refundAmount / 100).toFixed(2)} €
+                      {entry.refundMethod && (
+                        <span className="text-xs font-normal text-gray-500 ml-1">
+                          ({METHOD_LABEL[entry.refundMethod] ?? entry.refundMethod}{entry.refundReference ? ` · ${entry.refundReference}` : ''})
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="border-t border-gray-100 pt-4">
