@@ -63,7 +63,7 @@ function parseExcelDate(value: string | number | Date | undefined): string | und
   return undefined;
 }
 
-// L'app mobile (GenderPicker) stocke des codes anglais ('male'/'female'/'other')
+// L'app mobile (GenderPicker) stocke des codes anglais ('male'/'female')
 // et compare par egalite stricte pour savoir quelle puce est selectionnee — un
 // mot francais stocke tel quel (ex: "Femme") n'y correspond a rien et
 // n'apparait donc pas comme selectionne. On normalise vers ces codes ici.
@@ -72,7 +72,6 @@ function normalizeGender(raw: string): string | undefined {
   if (!lower) return undefined;
   if (['homme', 'h', 'male', 'm', 'garcon', 'garçon'].includes(lower)) return 'male';
   if (['femme', 'f', 'female', 'fille'].includes(lower)) return 'female';
-  if (['autre', 'other', 'o'].includes(lower)) return 'other';
   return undefined;
 }
 
@@ -235,7 +234,7 @@ export default function AdminImportDancersPage() {
             <li><span className="font-mono">Rôle</span> — obligatoire ({roleOptions.map(r => r.label).join(', ') || '…'})</li>
             <li><span className="font-mono">Téléphone</span> — facultatif</li>
             <li><span className="font-mono">Date de naissance</span> — facultatif</li>
-            <li><span className="font-mono">Genre</span> — facultatif (Homme/Femme/Autre)</li>
+            <li><span className="font-mono">Genre</span> — facultatif (Homme/Femme)</li>
             <li><span className="font-mono">Adresse</span> — facultatif</li>
             <li><span className="font-mono">Contact urgence (nom)</span> — facultatif</li>
             <li><span className="font-mono">Contact urgence (téléphone)</span> — facultatif</li>

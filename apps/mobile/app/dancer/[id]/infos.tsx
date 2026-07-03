@@ -143,7 +143,6 @@ function Field({ label, value, onChangeText, placeholder, keyboardType, secureTe
 const GENDER_OPTIONS = [
   { value: 'male', label: 'Homme' },
   { value: 'female', label: 'Femme' },
-  { value: 'other', label: 'Autre' },
 ];
 
 function GenderPicker({ value, onChange, required }: { value: string; onChange: (v: string) => void; required?: boolean }) {
