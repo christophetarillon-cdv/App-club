@@ -9,8 +9,28 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import type { ProfileFieldsConfig, CustomField, RoleConfig } from '@cdv/types';
+import type { ProfileFieldsConfig, CustomField, RoleConfig, PersonalDocument } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  receipt: 'Reçu de paiement',
+  attestation: 'Attestation',
+  invoice: 'Facture',
+  cancellation: 'Certificat d\'annulation',
+};
+
+const DOC_TYPE_COLORS: Record<string, string> = {
+  receipt: 'bg-green-100 text-green-700',
+  attestation: 'bg-blue-100 text-blue-700',
+  invoice: 'bg-purple-100 text-purple-700',
+  cancellation: 'bg-red-100 text-red-700',
+};
+
+function formatDocDate(ts: any): string {
+  if (!ts) return '';
+  const d = ts.toDate?.() ?? new Date(ts.seconds * 1000);
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
 
 function mergeWithDefaults(saved: Partial<ProfileFieldsConfig> | undefined): ProfileFieldsConfig {
   const result = { ...DEFAULT_PROFILE_FIELDS };
@@ -187,6 +207,7 @@ export default function DancerDetailPage() {
   const [account, setAccount] = useState<Account | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [courses, setCourses] = useState<CourseRow[]>([]);
+  const [documents, setDocuments] = useState<PersonalDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [fieldConfig, setFieldConfig] = useState<ProfileFieldsConfig>(DEFAULT_PROFILE_FIELDS);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
@@ -425,7 +446,7 @@ export default function DancerDetailPage() {
         } : null;
         setAccount(accountData);
 
-        const [membershipSnap, groupSnap, seasonSnap, planSnap, allDancerSnap, regSnap, styleSnap, levelSnap] = await Promise.all([
+        const [membershipSnap, groupSnap, seasonSnap, planSnap, allDancerSnap, regSnap, styleSnap, levelSnap, docsSnap] = await Promise.all([
           getDocs(query(collection(db, 'memberships'), where('userId', '==', dancerData.accountId))),
           getDocs(query(collection(db, 'paymentGroups'), where('userId', '==', dancerData.accountId))),
           getDocs(collection(db, 'seasons')),
@@ -434,7 +455,10 @@ export default function DancerDetailPage() {
           getDocs(query(collection(db, 'registrations'), where('userId', '==', dancerData.accountId))),
           getDocs(collection(db, 'danceStyles')),
           getDocs(collection(db, 'levels')),
+          getDocs(query(collection(db, 'documents'), where('userId', '==', dancerData.accountId), orderBy('generatedAt', 'desc'))),
         ]);
+
+        setDocuments(docsSnap.docs.map(d => ({ id: d.id, ...d.data() } as PersonalDocument)));
 
         const seasonLabelMap = new Map<string, string>();
         seasonSnap.docs.forEach(s => seasonLabelMap.set(s.id, s.data().label ?? s.id));
@@ -1139,6 +1163,40 @@ export default function DancerDetailPage() {
             })()}
           </div>
         </>
+      )}
+
+      {/* Documents générés */}
+      <h2 className="text-base font-semibold text-gray-900 mt-6 mb-3">Documents générés</h2>
+      {documents.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center text-sm text-gray-400">
+          Aucun document généré pour le moment.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {documents.map(document => (
+            <div key={document.id} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${DOC_TYPE_COLORS[document.type] ?? 'bg-gray-100 text-gray-600'}`}>
+                    {DOC_TYPE_LABELS[document.type] ?? document.type}
+                  </span>
+                  {document.receiptNumber && (
+                    <span className="text-xs text-gray-400 font-mono">#{document.receiptNumber}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 text-xs text-gray-500">
+                  {document.seasonLabel && <span>{document.seasonLabel}</span>}
+                  {document.amount != null && <span className="font-semibold text-gray-700">{(document.amount / 100).toFixed(2)} €</span>}
+                  <span>{formatDocDate(document.generatedAt)}</span>
+                </div>
+              </div>
+              <a href={document.fileUrl} target="_blank" rel="noopener noreferrer"
+                className="shrink-0 text-xs font-semibold text-blue-600 hover:text-blue-800">
+                Ouvrir →
+              </a>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

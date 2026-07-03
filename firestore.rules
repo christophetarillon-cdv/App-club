@@ -396,7 +396,7 @@ service cloud.firestore {
 
     // ── documents personnels (reçus, attestations) ────────────────────────────
     match /documents/{id} {
-      allow read: if isAdmin() || isOwner(resource.data.userId);
+      allow read: if isOwner(resource.data.userId) || hasPagePermission('/admin/dancers');
       allow create, update, delete: if false; // Cloud Function uniquement
     }
 
