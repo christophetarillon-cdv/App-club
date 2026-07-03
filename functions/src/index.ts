@@ -2013,3 +2013,126 @@ export const onPaymentGroupCancelled = onDocumentUpdated(
     await generateCancellationCertificate(event.params.groupId, after, 'group');
   },
 );
+
+// ── adminCreateAccount — création de compte(s) + danseur(s) par l'admin ─────
+// Ne PEUT PAS réutiliser createUserWithEmailAndPassword côté client : cet
+// appel bascule la session active du navigateur vers le nouvel utilisateur
+// (déconnecterait l'admin appelant). On passe donc par le SDK Admin,
+// côté serveur, qui ne touche jamais à la session de l'appelant.
+
+interface AdminCreateDancerInput {
+  firstName: string;
+  lastName: string;
+  role: string;
+}
+
+interface AdminCreateAccountInput {
+  email: string;
+  password?: string;
+  dancers: AdminCreateDancerInput[];
+}
+
+// Vérifie que l'appelant a accès à au moins une des pages de gestion des
+// danseurs ('/admin/dancers', '/admin/dancers/new', '/admin/dancers/import'),
+// via appSettings.pagePermissions — chaque route ADMIN_NAV étant une clé de
+// permission indépendante dans "Accès pages", on l'accepte si l'une des trois
+// est autorisée pour le rôle de l'appelant.
+async function callerHasDancersPageAccess(callerUid: string): Promise<boolean> {
+  const db = getDb();
+  const accountSnap = await db.doc(`accounts/${callerUid}`).get();
+  const accountData = accountSnap.data() ?? {};
+  const accountRoles: string[] = accountData.roles ?? [];
+  const dancerIds: string[] = accountData.dancerIds ?? [];
+
+  const dancerSnaps = await Promise.all(dancerIds.slice(0, 3).map(id => db.doc(`dancers/${id}`).get()));
+  const dancerRoles = dancerSnaps.flatMap(s => (s.exists ? (s.data()!.roles as string[] ?? []) : []));
+  const roles = [...accountRoles, ...dancerRoles];
+
+  if (roles.includes('admin')) return true;
+
+  const settingsSnap = await db.doc('appSettings/main').get();
+  const pagePermissions = (settingsSnap.data()?.pagePermissions ?? {}) as Record<string, string[]>;
+  const pages = ['/admin/dancers', '/admin/dancers/new', '/admin/dancers/import'];
+  return pages.some(page => {
+    const allowed = pagePermissions[page] ?? ['admin'];
+    return roles.some(r => allowed.includes(r));
+  });
+}
+
+export const adminCreateAccount = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Non authentifié');
+
+    const hasAccess = await callerHasDancersPageAccess(request.auth.uid);
+    if (!hasAccess) throw new HttpsError('permission-denied', "Vous n'avez pas accès à cette action");
+
+    const { email, password, dancers } = request.data as AdminCreateAccountInput;
+    if (!email || !email.includes('@')) throw new HttpsError('invalid-argument', 'Email invalide');
+    if (!dancers || dancers.length === 0) throw new HttpsError('invalid-argument', 'Au moins un danseur est requis');
+    for (const d of dancers) {
+      if (!d.firstName?.trim() || !d.lastName?.trim() || !d.role) {
+        throw new HttpsError('invalid-argument', 'Chaque danseur doit avoir un prénom, un nom et un rôle');
+      }
+    }
+
+    const db = getDb();
+    const wasGenerated = !password;
+    const finalPassword = password || `${email}${dancers[0]!.lastName.trim()}`;
+
+    let uid: string;
+    try {
+      const userRecord = await admin.auth().createUser({
+        email,
+        password: finalPassword,
+        displayName: `${dancers[0]!.firstName.trim()} ${dancers[0]!.lastName.trim()}`.trim(),
+      });
+      uid = userRecord.uid;
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'auth/email-already-exists') {
+        throw new HttpsError('already-exists', 'Un compte existe déjà avec cet email');
+      }
+      throw new HttpsError('internal', (err as Error)?.message ?? 'Erreur lors de la création du compte');
+    }
+
+    const dancerRefs = dancers.map(() => db.collection('dancers').doc());
+    const batch = db.batch();
+
+    batch.set(db.doc(`accounts/${uid}`), {
+      uid,
+      email,
+      displayName: `${dancers[0]!.firstName.trim()} ${dancers[0]!.lastName.trim()}`.trim(),
+      isDancerToo: true,
+      dancerIds: dancerRefs.map(r => r.id),
+      roles: [],
+      isActive: true,
+      mustChangePassword: true,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    dancers.forEach((d, i) => {
+      batch.set(dancerRefs[i]!, {
+        accountId: uid,
+        firstName: d.firstName.trim(),
+        lastName: d.lastName.trim(),
+        firstNameLower: d.firstName.trim().toLowerCase(),
+        lastNameLower: d.lastName.trim().toLowerCase(),
+        isMinor: false,
+        roles: [d.role],
+        isActive: true,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    await batch.commit();
+
+    return {
+      uid,
+      dancerIds: dancerRefs.map(r => r.id),
+      generatedPassword: wasGenerated ? finalPassword : null,
+    };
+  },
+);

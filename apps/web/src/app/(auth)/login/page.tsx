@@ -3,7 +3,18 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { loginWithEmail, loginWithGoogle } from '@/lib/auth';
+
+async function redirectAfterLogin(router: ReturnType<typeof useRouter>, uid: string) {
+  const accountSnap = await getDoc(doc(db, 'accounts', uid));
+  if (accountSnap.data()?.mustChangePassword) {
+    router.replace('/force-password-change');
+  } else {
+    router.replace('/select-dancer');
+  }
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,8 +29,8 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await loginWithEmail(email.trim(), password);
-      router.replace('/select-dancer');
+      const cred = await loginWithEmail(email.trim(), password);
+      await redirectAfterLogin(router, cred.user.uid);
     } catch (err: any) {
       setError(
         err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password'
@@ -37,8 +48,8 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await loginWithGoogle();
-      router.replace('/select-dancer');
+      const cred = await loginWithGoogle();
+      await redirectAfterLogin(router, cred.user.uid);
     } catch {
       setError('Connexion Google annulée ou échouée.');
     } finally {

@@ -17,4 +17,5 @@ export interface Account extends WithTimestamps {
   fcmTokens?: string[];
   registeredCourseIds?: string[];
   levelsByStyle?: Record<string, string>;
+  mustChangePassword?: boolean;
 }

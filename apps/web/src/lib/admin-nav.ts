@@ -61,6 +61,8 @@ export const ADMIN_NAV: NavGroup[] = [
     label: 'Membres',
     items: [
       { label: 'Danseurs', href: '/admin/dancers' },
+      { label: 'Créer un compte', href: '/admin/dancers/new' },
+      { label: 'Import Excel', href: '/admin/dancers/import' },
       { label: 'Danseurs essai', href: '/admin/trial' },
       { label: 'Config essai', href: '/admin/settings/trial' },
       { label: 'Rôles', href: '/admin/settings/roles' },
