@@ -1519,16 +1519,13 @@ export const onInstallmentCreatedPaid = onDocumentCreated(
   },
 );
 
-// ── onMembershipApproved — génère une attestation d'adhésion ─────────────────
-export const onMembershipApproved = onDocumentUpdated(
-  { document: 'memberships/{membershipId}', region: 'europe-west3' },
-  async (event) => {
-    const before = event.data?.before?.data();
-    const after = event.data?.after?.data();
-    if (!before || !after) return;
-    if (before.paymentPlanStatus === 'approved' || after.paymentPlanStatus !== 'approved') return;
-
-    const membershipId = event.params.membershipId;
+// ── generateMembershipAttestation — appelée en cas d'approbation classique ───
+// (transition pending → approved) OU de création directe déjà 'approved'
+// (plan créé et approuvé en un clic par l'admin).
+async function generateMembershipAttestation(
+  membershipId: string,
+  after: admin.firestore.DocumentData,
+) {
     const db = getDb();
     const bucket = admin.storage().bucket();
 
@@ -1776,7 +1773,29 @@ export const onMembershipApproved = onDocumentUpdated(
       generatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    console.log(`[onMembershipApproved] Attestation générée pour ${userId} — saison ${seasonLabel}`);
+    console.log(`[generateMembershipAttestation] Attestation générée pour ${userId} — saison ${seasonLabel}`);
+}
+
+// ── onMembershipApproved — transition pending/rejected → approved ───────────
+export const onMembershipApproved = onDocumentUpdated(
+  { document: 'memberships/{membershipId}', region: 'europe-west3' },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) return;
+    if (before.paymentPlanStatus === 'approved' || after.paymentPlanStatus !== 'approved') return;
+    await generateMembershipAttestation(event.params.membershipId, after);
+  },
+);
+
+// ── onMembershipCreatedApproved — création directe déjà 'approved' ──────────
+// (plan créé et approuvé en un clic par l'admin, sans passer par 'pending')
+export const onMembershipCreatedApproved = onDocumentCreated(
+  { document: 'memberships/{membershipId}', region: 'europe-west3' },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data || data.paymentPlanStatus !== 'approved') return;
+    await generateMembershipAttestation(event.params.membershipId, data);
   },
 );
 
