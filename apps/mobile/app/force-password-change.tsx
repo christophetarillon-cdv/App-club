@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { reauthenticateWithCredential, EmailAuthProvider, updatePassword, signOut } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
@@ -13,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export default function ForcePasswordChangeScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const router = useRouter();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -31,6 +33,7 @@ export default function ForcePasswordChangeScreen() {
       await reauthenticateWithCredential(user, credential);
       await updatePassword(user, next);
       await updateDoc(doc(db, 'accounts', user.uid), { mustChangePassword: false });
+      router.replace('/');
     } catch (e: any) {
       setError(
         e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential'
