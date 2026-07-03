@@ -1,10 +1,13 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
+import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '@/lib/firebase';
+import { db, functions } from '@/lib/firebase';
 import Link from 'next/link';
+
+interface RoleOption { key: string; label: string; }
 
 interface ExcelRow {
   Email?: string;
@@ -35,9 +38,8 @@ interface GroupResult {
   generatedPassword?: string | null;
 }
 
-const VALID_ROLES = ['member', 'trial', 'instructor', 'bureau'];
-
 export default function AdminImportDancersPage() {
+  const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [groups, setGroups] = useState<AccountGroup[]>([]);
   const [results, setResults] = useState<Record<number, GroupResult>>({});
@@ -45,6 +47,18 @@ export default function AdminImportDancersPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'roles'), orderBy('displayOrder'))).then(snap => {
+      setRoleOptions(snap.docs.map(d => ({ key: d.data().key, label: d.data().label })).filter(r => r.key !== 'admin'));
+    });
+  }, []);
+
+  const resolveRole = (raw: string): string | null => {
+    const lower = raw.toLowerCase();
+    const match = roleOptions.find(r => r.key.toLowerCase() === lower || r.label.toLowerCase() === lower);
+    return match?.key ?? null;
+  };
 
   const handleAnalyze = async () => {
     if (!selectedFile) return;
@@ -63,7 +77,8 @@ export default function AdminImportDancersPage() {
         const email = (row.Email ?? '').toString().trim().toLowerCase();
         const firstName = (row.Prénom ?? '').toString().trim();
         const lastName = (row.Nom ?? '').toString().trim();
-        const roleRaw = (row.Rôle ?? '').toString().trim().toLowerCase();
+        const roleRaw = (row.Rôle ?? '').toString().trim();
+        const resolvedRole = resolveRole(roleRaw);
 
         if (!email) return;
 
@@ -73,11 +88,12 @@ export default function AdminImportDancersPage() {
           byEmail.set(email, group);
         }
 
-        const dancer: DancerDraft = { firstName, lastName, role: roleRaw };
+        const dancer: DancerDraft = { firstName, lastName, role: resolvedRole ?? roleRaw };
+        const roleNames = roleOptions.map(r => r.label).join(', ');
         if (!email.includes('@')) dancer.error = 'Email invalide';
         else if (!firstName) dancer.error = 'Prénom manquant';
         else if (!lastName) dancer.error = 'Nom manquant';
-        else if (!VALID_ROLES.includes(roleRaw)) dancer.error = `Rôle inconnu (${VALID_ROLES.join(', ')})`;
+        else if (!resolvedRole) dancer.error = `Rôle inconnu (${roleNames})`;
 
         group.dancers.push(dancer);
       });
@@ -143,7 +159,7 @@ export default function AdminImportDancersPage() {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
           <p className="text-sm text-gray-600">
             Le fichier doit contenir les colonnes <span className="font-mono">Email</span>, <span className="font-mono">Prénom</span>,
-            <span className="font-mono"> Nom</span>, <span className="font-mono">Rôle</span> ({VALID_ROLES.join(', ')}).
+            <span className="font-mono"> Nom</span>, <span className="font-mono">Rôle</span> ({roleOptions.map(r => r.label).join(', ') || '…'}).
             Plusieurs lignes partageant le même email seront regroupées dans un seul compte avec plusieurs danseurs.
             Le mot de passe provisoire sera généré automatiquement (email + nom).
           </p>
