@@ -9,17 +9,24 @@ import Link from 'next/link';
 
 interface RoleOption { key: string; label: string; }
 
-interface ExcelRow {
-  Email?: string;
-  Prénom?: string;
-  Nom?: string;
-  Rôle?: string;
-  Téléphone?: string;
-  'Date de naissance'?: string | number | Date;
-  Genre?: string;
-  Adresse?: string;
-  'Contact urgence (nom)'?: string;
-  'Contact urgence (téléphone)'?: string;
+type ExcelRow = Record<string, unknown>;
+
+// Les en-têtes accentués peuvent être encodés différemment selon l'outil qui a
+// généré le fichier (formes Unicode composée/décomposée, casse, espaces) —
+// on normalise avant de comparer pour ne pas rater une colonne à cause de ça.
+function normalizeHeader(h: string): string {
+  return h.normalize('NFC').trim().toLowerCase();
+}
+
+function getRawCell(row: ExcelRow, ...names: string[]): unknown {
+  const targets = names.map(normalizeHeader);
+  const key = Object.keys(row).find(k => targets.includes(normalizeHeader(k)));
+  return key ? row[key] : undefined;
+}
+
+function getCell(row: ExcelRow, ...names: string[]): string {
+  const v = getRawCell(row, ...names);
+  return v === undefined || v === null ? '' : v.toString().trim();
 }
 
 interface DancerDraft {
@@ -100,17 +107,17 @@ export default function AdminImportDancersPage() {
       const byEmail = new Map<string, AccountGroup>();
 
       rows.forEach(row => {
-        const email = (row.Email ?? '').toString().trim().toLowerCase();
-        const firstName = (row.Prénom ?? '').toString().trim();
-        const lastName = (row.Nom ?? '').toString().trim();
-        const roleRaw = (row.Rôle ?? '').toString().trim();
+        const email = getCell(row, 'Email').toLowerCase();
+        const firstName = getCell(row, 'Prénom', 'Prenom');
+        const lastName = getCell(row, 'Nom');
+        const roleRaw = getCell(row, 'Rôle', 'Role');
         const resolvedRole = resolveRole(roleRaw);
-        const phone = (row.Téléphone ?? '').toString().trim();
-        const birthDate = parseExcelDate(row['Date de naissance']);
-        const gender = (row.Genre ?? '').toString().trim();
-        const address = (row.Adresse ?? '').toString().trim();
-        const emergencyContactName = (row['Contact urgence (nom)'] ?? '').toString().trim();
-        const emergencyContactPhone = (row['Contact urgence (téléphone)'] ?? '').toString().trim();
+        const phone = getCell(row, 'Téléphone', 'Telephone');
+        const birthDate = parseExcelDate(getRawCell(row, 'Date de naissance') as string | number | Date | undefined);
+        const gender = getCell(row, 'Genre');
+        const address = getCell(row, 'Adresse');
+        const emergencyContactName = getCell(row, 'Contact urgence (nom)');
+        const emergencyContactPhone = getCell(row, 'Contact urgence (téléphone)', 'Contact urgence (telephone)');
 
         if (!email) return;
 
