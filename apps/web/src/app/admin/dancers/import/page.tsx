@@ -63,6 +63,19 @@ function parseExcelDate(value: string | number | Date | undefined): string | und
   return undefined;
 }
 
+// L'app mobile (GenderPicker) stocke des codes anglais ('male'/'female'/'other')
+// et compare par egalite stricte pour savoir quelle puce est selectionnee — un
+// mot francais stocke tel quel (ex: "Femme") n'y correspond a rien et
+// n'apparait donc pas comme selectionne. On normalise vers ces codes ici.
+function normalizeGender(raw: string): string | undefined {
+  const lower = raw.trim().toLowerCase();
+  if (!lower) return undefined;
+  if (['homme', 'h', 'male', 'm', 'garcon', 'garçon'].includes(lower)) return 'male';
+  if (['femme', 'f', 'female', 'fille'].includes(lower)) return 'female';
+  if (['autre', 'other', 'o'].includes(lower)) return 'other';
+  return undefined;
+}
+
 type GroupStatus = 'pending' | 'creating' | 'success' | 'error';
 
 interface GroupResult {
@@ -114,7 +127,7 @@ export default function AdminImportDancersPage() {
         const resolvedRole = resolveRole(roleRaw);
         const phone = getCell(row, 'Téléphone', 'Telephone');
         const birthDate = parseExcelDate(getRawCell(row, 'Date de naissance') as string | number | Date | undefined);
-        const gender = getCell(row, 'Genre');
+        const gender = normalizeGender(getCell(row, 'Genre'));
         const address = getCell(row, 'Adresse');
         const emergencyContactName = getCell(row, 'Contact urgence (nom)');
         const emergencyContactPhone = getCell(row, 'Contact urgence (téléphone)', 'Contact urgence (telephone)');
@@ -222,7 +235,7 @@ export default function AdminImportDancersPage() {
             <li><span className="font-mono">Rôle</span> — obligatoire ({roleOptions.map(r => r.label).join(', ') || '…'})</li>
             <li><span className="font-mono">Téléphone</span> — facultatif</li>
             <li><span className="font-mono">Date de naissance</span> — facultatif</li>
-            <li><span className="font-mono">Genre</span> — facultatif</li>
+            <li><span className="font-mono">Genre</span> — facultatif (Homme/Femme/Autre)</li>
             <li><span className="font-mono">Adresse</span> — facultatif</li>
             <li><span className="font-mono">Contact urgence (nom)</span> — facultatif</li>
             <li><span className="font-mono">Contact urgence (téléphone)</span> — facultatif</li>
