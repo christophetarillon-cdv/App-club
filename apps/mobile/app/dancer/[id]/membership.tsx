@@ -67,15 +67,17 @@ const MEMBERSHIP_STATUS: Record<MembershipStatus, { label: string; color: string
 };
 
 const PLAN_STATUS: Record<PaymentPlanStatus, { label: string; color: string; bg: string }> = {
-  pending:  { label: 'Plan en attente', color: '#92400E', bg: '#FEF3C7' },
-  approved: { label: 'Plan approuvé',   color: '#065F46', bg: '#D1FAE5' },
-  rejected: { label: 'Plan refusé',     color: '#991B1B', bg: '#FEE2E2' },
+  pending:   { label: 'Plan en attente', color: '#92400E', bg: '#FEF3C7' },
+  approved:  { label: 'Plan approuvé',   color: '#065F46', bg: '#D1FAE5' },
+  rejected:  { label: 'Plan refusé',     color: '#991B1B', bg: '#FEE2E2' },
+  cancelled: { label: 'Annulé',          color: '#6B7280', bg: '#F3F4F6' },
 };
 
 const INSTALLMENT_STATUS: Record<InstallmentStatus, { label: string; color: string; bg: string }> = {
-  pending: { label: 'En attente', color: '#92400E', bg: '#FEF3C7' },
-  paid:    { label: 'Encaissé',   color: '#065F46', bg: '#D1FAE5' },
-  late:    { label: 'En retard',  color: '#991B1B', bg: '#FEE2E2' },
+  pending:   { label: 'En attente', color: '#92400E', bg: '#FEF3C7' },
+  paid:      { label: 'Encaissé',   color: '#065F46', bg: '#D1FAE5' },
+  late:      { label: 'En retard',  color: '#991B1B', bg: '#FEE2E2' },
+  cancelled: { label: 'Annulé',     color: '#6B7280', bg: '#F3F4F6' },
 };
 
 const METHOD_LABEL: Record<string, string> = {
@@ -173,8 +175,8 @@ function InstallmentsList({ installments }: { installments: InstallmentX[] }) {
 
 function SoloCard({ entry }: { entry: SoloEntry }) {
   const { membership: m, dancer, plan, installments } = entry;
-  const mStatus = MEMBERSHIP_STATUS[m.status] ?? MEMBERSHIP_STATUS.pending;
   const pStatus = PLAN_STATUS[m.paymentPlanStatus] ?? PLAN_STATUS.pending;
+  const mStatus = m.paymentPlanStatus === 'cancelled' ? pStatus : (MEMBERSHIP_STATUS[m.status] ?? MEMBERSHIP_STATUS.pending);
 
   return (
     <View style={styles.card}>
