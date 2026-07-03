@@ -33,6 +33,7 @@ export default function TodayPaymentsPage() {
   const [rows, setRows] = useState<DueRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -199,6 +200,9 @@ export default function TodayPaymentsPage() {
 
   const pendingCount = rows.filter(r => !r.saved).length;
   const today = new Date().toISOString().slice(0, 10);
+  const filteredRows = search.trim().length < 1
+    ? rows
+    : rows.filter(r => r.memberName.toLowerCase().includes(search.trim().toLowerCase()));
 
   return (
     <div>
@@ -218,6 +222,16 @@ export default function TodayPaymentsPage() {
         </div>
       )}
 
+      {!loading && rows.length > 0 && (
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Rechercher un danseur…"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+        />
+      )}
+
       {loading ? (
         <div className="text-center py-16 text-gray-400 text-sm">Chargement…</div>
       ) : rows.length === 0 ? (
@@ -225,9 +239,13 @@ export default function TodayPaymentsPage() {
           <p className="text-gray-500 font-medium">Aucun encaissement à traiter.</p>
           <p className="text-gray-400 text-sm mt-1">Tous les versements prévus à ce jour ont été enregistrés.</p>
         </div>
+      ) : filteredRows.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-16 text-center">
+          <p className="text-gray-500 font-medium">Aucun danseur trouvé.</p>
+        </div>
       ) : (
         <div className="space-y-3">
-          {rows.map(row => (
+          {filteredRows.map(row => (
             <div
               key={row.id}
               className={`bg-white rounded-2xl border shadow-sm p-5 transition-all duration-300 ${
