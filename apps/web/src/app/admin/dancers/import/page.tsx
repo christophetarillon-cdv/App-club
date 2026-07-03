@@ -14,20 +14,46 @@ interface ExcelRow {
   Prénom?: string;
   Nom?: string;
   Rôle?: string;
+  Téléphone?: string;
+  'Date de naissance'?: string | number | Date;
+  Genre?: string;
+  Adresse?: string;
+  'Contact urgence (nom)'?: string;
+  'Contact urgence (téléphone)'?: string;
 }
 
 interface DancerDraft {
   firstName: string;
   lastName: string;
   role: string;
+  birthDate?: string;
+  gender?: string;
+  address?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
   error?: string;
 }
 
 interface AccountGroup {
   email: string;
+  phone?: string;
   password?: string;
   dancers: DancerDraft[];
   error?: string;
+}
+
+function parseExcelDate(value: string | number | Date | undefined): string | undefined {
+  if (!value) return undefined;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const str = value.toString().trim();
+  if (!str) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const parts = str.split(/[/\-.]/);
+  if (parts.length === 3) {
+    const [d, m, y] = parts;
+    if (d && m && y && y.length === 4) return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  return undefined;
 }
 
 type GroupStatus = 'pending' | 'creating' | 'success' | 'error';
@@ -67,7 +93,7 @@ export default function AdminImportDancersPage() {
     setAnalyzing(true);
     try {
       const buffer = await selectedFile.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: 'array' });
+      const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
       const sheet = wb.Sheets[wb.SheetNames[0]!];
       const rows = XLSX.utils.sheet_to_json<ExcelRow>(sheet!);
 
@@ -79,6 +105,12 @@ export default function AdminImportDancersPage() {
         const lastName = (row.Nom ?? '').toString().trim();
         const roleRaw = (row.Rôle ?? '').toString().trim();
         const resolvedRole = resolveRole(roleRaw);
+        const phone = (row.Téléphone ?? '').toString().trim();
+        const birthDate = parseExcelDate(row['Date de naissance']);
+        const gender = (row.Genre ?? '').toString().trim();
+        const address = (row.Adresse ?? '').toString().trim();
+        const emergencyContactName = (row['Contact urgence (nom)'] ?? '').toString().trim();
+        const emergencyContactPhone = (row['Contact urgence (téléphone)'] ?? '').toString().trim();
 
         if (!email) return;
 
@@ -87,8 +119,16 @@ export default function AdminImportDancersPage() {
           group = { email, dancers: [] };
           byEmail.set(email, group);
         }
+        if (phone && !group.phone) group.phone = phone;
 
-        const dancer: DancerDraft = { firstName, lastName, role: resolvedRole ?? roleRaw };
+        const dancer: DancerDraft = {
+          firstName, lastName, role: resolvedRole ?? roleRaw,
+          ...(birthDate ? { birthDate } : {}),
+          ...(gender ? { gender } : {}),
+          ...(address ? { address } : {}),
+          ...(emergencyContactName ? { emergencyContactName } : {}),
+          ...(emergencyContactPhone ? { emergencyContactPhone } : {}),
+        };
         const roleNames = roleOptions.map(r => r.label).join(', ');
         if (!email.includes('@')) dancer.error = 'Email invalide';
         else if (!firstName) dancer.error = 'Prénom manquant';
@@ -127,7 +167,15 @@ export default function AdminImportDancersPage() {
       try {
         const res = await call({
           email: group.email,
-          dancers: group.dancers.map(d => ({ firstName: d.firstName, lastName: d.lastName, role: d.role })),
+          ...(group.phone ? { phone: group.phone } : {}),
+          dancers: group.dancers.map(d => ({
+            firstName: d.firstName, lastName: d.lastName, role: d.role,
+            ...(d.birthDate ? { birthDate: d.birthDate } : {}),
+            ...(d.gender ? { gender: d.gender } : {}),
+            ...(d.address ? { address: d.address } : {}),
+            ...(d.emergencyContactName ? { emergencyContactName: d.emergencyContactName } : {}),
+            ...(d.emergencyContactPhone ? { emergencyContactPhone: d.emergencyContactPhone } : {}),
+          })),
         });
         const data = res.data as { generatedPassword: string | null };
         setResults(prev => ({ ...prev, [i]: { status: 'success', generatedPassword: data.generatedPassword } }));
@@ -158,10 +206,24 @@ export default function AdminImportDancersPage() {
       {groups.length === 0 && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
           <p className="text-sm text-gray-600">
-            Le fichier doit contenir les colonnes <span className="font-mono">Email</span>, <span className="font-mono">Prénom</span>,
-            <span className="font-mono"> Nom</span>, <span className="font-mono">Rôle</span> ({roleOptions.map(r => r.label).join(', ') || '…'}).
-            Plusieurs lignes partageant le même email seront regroupées dans un seul compte avec plusieurs danseurs.
-            Le mot de passe provisoire sera généré automatiquement (email + nom).
+            La première ligne du fichier doit contenir les en-têtes de colonnes, dans cet ordre :
+          </p>
+          <ol className="text-sm text-gray-600 list-decimal list-inside space-y-0.5">
+            <li><span className="font-mono">Email</span> — obligatoire</li>
+            <li><span className="font-mono">Prénom</span> — obligatoire</li>
+            <li><span className="font-mono">Nom</span> — obligatoire</li>
+            <li><span className="font-mono">Rôle</span> — obligatoire ({roleOptions.map(r => r.label).join(', ') || '…'})</li>
+            <li><span className="font-mono">Téléphone</span> — facultatif</li>
+            <li><span className="font-mono">Date de naissance</span> — facultatif</li>
+            <li><span className="font-mono">Genre</span> — facultatif</li>
+            <li><span className="font-mono">Adresse</span> — facultatif</li>
+            <li><span className="font-mono">Contact urgence (nom)</span> — facultatif</li>
+            <li><span className="font-mono">Contact urgence (téléphone)</span> — facultatif</li>
+          </ol>
+          <p className="text-sm text-gray-600">
+            Laissez une cellule vide si l'information n'est pas disponible. Plusieurs lignes partageant le même email
+            seront regroupées dans un seul compte avec plusieurs danseurs. Le mot de passe provisoire sera généré
+            automatiquement (email + nom).
           </p>
           <input
             ref={fileRef}

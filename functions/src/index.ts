@@ -2024,11 +2024,17 @@ interface AdminCreateDancerInput {
   firstName: string;
   lastName: string;
   role: string;
+  birthDate?: string; // yyyy-mm-dd
+  gender?: string;
+  address?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
 }
 
 interface AdminCreateAccountInput {
   email: string;
   password?: string;
+  phone?: string;
   dancers: AdminCreateDancerInput[];
 }
 
@@ -2067,7 +2073,7 @@ export const adminCreateAccount = onCall(
     const hasAccess = await callerHasDancersPageAccess(request.auth.uid);
     if (!hasAccess) throw new HttpsError('permission-denied', "Vous n'avez pas accès à cette action");
 
-    const { email, password, dancers } = request.data as AdminCreateAccountInput;
+    const { email, password, phone, dancers } = request.data as AdminCreateAccountInput;
     if (!email || !email.includes('@')) throw new HttpsError('invalid-argument', 'Email invalide');
     if (!dancers || dancers.length === 0) throw new HttpsError('invalid-argument', 'Au moins un danseur est requis');
     for (const d of dancers) {
@@ -2108,6 +2114,7 @@ export const adminCreateAccount = onCall(
       roles: [],
       isActive: true,
       mustChangePassword: true,
+      ...(phone?.trim() ? { phone: phone.trim() } : {}),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -2122,6 +2129,12 @@ export const adminCreateAccount = onCall(
         isMinor: false,
         roles: [d.role],
         isActive: true,
+        ...(d.birthDate ? { birthDate: new Date(`${d.birthDate}T00:00:00`) } : {}),
+        ...(d.gender?.trim() ? { gender: d.gender.trim() } : {}),
+        ...(d.address?.trim() ? { address: d.address.trim() } : {}),
+        ...(d.emergencyContactName?.trim() || d.emergencyContactPhone?.trim()
+          ? { emergencyContact: { name: d.emergencyContactName?.trim() ?? '', phone: d.emergencyContactPhone?.trim() ?? '' } }
+          : {}),
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
