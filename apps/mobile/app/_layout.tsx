@@ -11,7 +11,7 @@ import { Colors } from '@/constants/Colors';
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function Gate() {
-  const { user, loading } = useAuth();
+  const { user, account, loading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
 
@@ -22,12 +22,16 @@ function Gate() {
   useEffect(() => {
     if (loading) return;
     const inAuth = segments[0] === '(auth)';
+    const onForcePasswordChange = segments[0] === 'force-password-change';
+
     if (user && inAuth) {
       router.replace('/');
     } else if (!user && !inAuth) {
       router.replace('/(auth)/login');
+    } else if (user && account?.mustChangePassword && !onForcePasswordChange) {
+      router.replace('/force-password-change');
     }
-  }, [user, loading, segments]);
+  }, [user, account, loading, segments]);
 
   if (loading) {
     return (
