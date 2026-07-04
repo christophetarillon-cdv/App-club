@@ -524,7 +524,9 @@ export default function FinanceDashboardPage() {
                     <td className="py-2 pr-3 text-right font-semibold text-gray-900">{money(methodBreakdown.transfer?.amount ?? 0)}</td>
                     <td className="py-2 pr-3 text-right font-semibold text-gray-900">{money(methodBreakdown.cash?.amount ?? 0)}</td>
                     <td className="py-2 pr-3 text-right font-semibold text-gray-900">{money(methodBreakdown.helloasso?.amount ?? 0)}</td>
-                    <td className="py-2 pr-3 text-right font-bold text-gray-900">{money(totalPaid)}</td>
+                    <td className="py-2 pr-3 text-right font-bold text-gray-900">
+                      {money(METHODS.reduce((s, meth) => s + (methodBreakdown[meth]?.amount ?? 0), 0))}
+                    </td>
                     <td className="py-2 text-right font-semibold text-gray-500">
                       {money(allMonths.reduce((s, m) => s + (monthlyExpected.get(m) ?? 0), 0))}
                     </td>
