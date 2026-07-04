@@ -81,6 +81,7 @@ export const ADMIN_NAV: NavGroup[] = [
   {
     label: 'Finances',
     items: [
+      { label: 'Tableau de bord', href: '/admin/finances/dashboard', highlight: true },
       { label: 'Plans paiement', href: '/admin/payment-plans' },
       { label: 'Saisir paiement', href: '/admin/payments/new' },
       { label: 'Encaissements', href: '/admin/payments/today', highlight: true },

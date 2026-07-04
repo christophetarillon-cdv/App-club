@@ -342,7 +342,8 @@ service cloud.firestore {
     }
 
     match /bankDeposits/{id} {
-      allow read, write: if hasPagePermission('/admin/payments/bank-deposits');
+      allow read: if hasPagePermission('/admin/payments/bank-deposits') || hasPagePermission('/admin/finances/dashboard');
+      allow write: if hasPagePermission('/admin/payments/bank-deposits');
     }
 
     match /bankAccounts/{id} {
