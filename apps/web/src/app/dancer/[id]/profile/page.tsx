@@ -14,6 +14,7 @@ import type { UpdateDancerInput } from '@/lib/auth';
 import type { Dancer, ProfileFieldsConfig, CustomField, CustomFieldRole } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS, ROLE_PRIORITY } from '@cdv/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { GENDER_OPTIONS } from '@/lib/gender-constants';
 import Link from 'next/link';
 import { z } from 'zod';
 
@@ -669,8 +670,9 @@ export default function DancerPersonalProfilePage() {
                     required={fieldConfig.gender.required}
                     className={`${INPUT} appearance-none`}>
                     <option value="">— Choisir —</option>
-                    <option value="Femme">Femme</option>
-                    <option value="Homme">Homme</option>
+                    {GENDER_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
                   </select>
                 </div>
               )}

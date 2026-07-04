@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
+import { GENDER_OPTIONS } from '@/lib/gender-constants';
 import Link from 'next/link';
 
 interface RoleOption { key: string; label: string; }
@@ -310,8 +311,9 @@ export default function AdminNewAccountPage() {
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                       >
                         <option value="">— Choisir —</option>
-                        <option value="male">Homme</option>
-                        <option value="female">Femme</option>
+                        {GENDER_OPTIONS.map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
@@ -440,8 +442,9 @@ export default function AdminNewAccountPage() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               >
                 <option value="">— Choisir —</option>
-                <option value="male">Homme</option>
-                <option value="female">Femme</option>
+                {GENDER_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
               </select>
             </div>
             <div>

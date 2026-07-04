@@ -6,6 +6,7 @@ import {
   writeBatch, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { GENDER_OPTIONS, genderLabel } from '@/lib/gender-constants';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -662,7 +663,7 @@ export default function DancerDetailPage() {
           <InfoRow label="N° adhérent" value={dancer.memberNumber} />
           <InfoRow label="Téléphone" value={phone} disabled={!fieldConfig.phone.enabled && !!phone} />
           <InfoRow label="Date de naissance" value={formatDate(dancer.birthDate)} disabled={!fieldConfig.birthDate.enabled && !!dancer.birthDate} />
-          <InfoRow label="Genre" value={dancer.gender} disabled={!fieldConfig.gender.enabled && !!dancer.gender} />
+          <InfoRow label="Genre" value={genderLabel(dancer.gender)} disabled={!fieldConfig.gender.enabled && !!dancer.gender} />
           <InfoRow label="Adresse" value={dancer.address} disabled={!fieldConfig.address.enabled && !!dancer.address} />
           <InfoRow label="Profession" value={dancer.profession} disabled={!fieldConfig.profession.enabled && !!dancer.profession} />
           <InfoRow label="Notes médicales" value={dancer.medicalNotes} disabled={!fieldConfig.medicalNotes.enabled && !!dancer.medicalNotes} />
@@ -682,8 +683,13 @@ export default function DancerDetailPage() {
               onChange={e => setPendingInfo(p => p && { ...p, birthDate: e.target.value })} />
           </EditField>
           <EditField label="Genre">
-            <input type="text" className={INPUT} value={pendingInfo.gender}
-              onChange={e => setPendingInfo(p => p && { ...p, gender: e.target.value })} />
+            <select className={INPUT} value={pendingInfo.gender}
+              onChange={e => setPendingInfo(p => p && { ...p, gender: e.target.value })}>
+              <option value="">— Choisir —</option>
+              {GENDER_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
           </EditField>
           <EditField label="Adresse">
             <input type="text" className={INPUT} value={pendingInfo.address}
