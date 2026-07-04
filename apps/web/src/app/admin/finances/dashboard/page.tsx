@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { collection, getDocs, getDoc, doc, query, where } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { db } from '@/lib/firebase';
+import { METHOD_LABEL, type PaymentMethod } from '@/lib/payment-constants';
 import Link from 'next/link';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -53,13 +54,17 @@ interface BankDepositLite {
   installmentIds: string[];
 }
 
-const METHOD_LABEL: Record<string, string> = { cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces' };
-const METHOD_COLORS: Record<string, string> = { cheque: '#EF9F27', transfer: '#378ADD', cash: '#1D9E75' };
+const METHOD_COLORS: Record<PaymentMethod, string> = { cheque: '#EF9F27', transfer: '#378ADD', cash: '#1D9E75', helloasso: '#8B5CF6' };
+const METHODS: PaymentMethod[] = ['cheque', 'transfer', 'cash', 'helloasso'];
 const STATUS_LABEL: Record<string, string> = { pending: 'En attente', approved: 'Approuvé', rejected: 'Rejeté', cancelled: 'Annulé' };
 const MONTHS_FR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 
 function money(cents: number): string {
   return `${(cents / 100).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+}
+
+function methodLabel(method: string): string {
+  return (METHOD_LABEL as Record<string, string>)[method] ?? method;
 }
 
 function monthKey(isoDate: string): string {
@@ -240,7 +245,6 @@ export default function FinanceDashboardPage() {
     }
   });
   const allMonths = [...new Set([...monthlyMatrix.keys(), ...monthlyExpected.keys()])].sort();
-  const methods = ['cheque', 'transfer', 'cash'];
 
   const upcomingInstallments = installments
     .filter(i => i.status === 'pending' && i.expectedDate >= todayStr)
@@ -280,8 +284,8 @@ export default function FinanceDashboardPage() {
         charts.current.c1 = new Chart(c1Ref.current, {
           type: 'doughnut',
           data: {
-            labels: labels.map(m => METHOD_LABEL[m] ?? m),
-            datasets: [{ data: labels.map(m => methodBreakdown[m]!.amount), backgroundColor: labels.map(m => METHOD_COLORS[m] ?? '#999'), borderWidth: 0, hoverOffset: 4 }],
+            labels: labels.map(methodLabel),
+            datasets: [{ data: labels.map(m => methodBreakdown[m]!.amount), backgroundColor: labels.map(m => (METHOD_COLORS as Record<string, string>)[m] ?? '#999'), borderWidth: 0, hoverOffset: 4 }],
           },
           options: {
             responsive: true, maintainAspectRatio: false,
@@ -300,7 +304,7 @@ export default function FinanceDashboardPage() {
             datasets: [
               { label: 'Attendu', data: allMonths.map(m => (monthlyExpected.get(m) ?? 0) / 100),
                 borderColor: '#999', backgroundColor: 'transparent', borderDash: [5, 3], borderWidth: 2, pointRadius: 2, tension: 0.3 },
-              { label: 'Encaissé', data: allMonths.map(m => methods.reduce((s, meth) => s + (monthlyMatrix.get(m)?.[meth] ?? 0), 0) / 100),
+              { label: 'Encaissé', data: allMonths.map(m => METHODS.reduce((s, meth) => s + (monthlyMatrix.get(m)?.[meth] ?? 0), 0) / 100),
                 borderColor: '#378ADD', backgroundColor: 'rgba(55,138,221,.1)', borderWidth: 2, pointRadius: 3, tension: 0.3, fill: true },
             ],
           },
@@ -317,8 +321,8 @@ export default function FinanceDashboardPage() {
           type: 'bar',
           data: {
             labels: allMonths.map(monthLabel),
-            datasets: methods.map(meth => ({
-              label: METHOD_LABEL[meth], data: allMonths.map(m => (monthlyMatrix.get(m)?.[meth] ?? 0) / 100),
+            datasets: METHODS.map(meth => ({
+              label: methodLabel(meth), data: allMonths.map(m => (monthlyMatrix.get(m)?.[meth] ?? 0) / 100),
               backgroundColor: METHOD_COLORS[meth], borderRadius: 3, borderSkipped: false,
             })),
           },
@@ -355,7 +359,8 @@ export default function FinanceDashboardPage() {
         Chèque: (monthlyMatrix.get(m)?.cheque ?? 0) / 100,
         Virement: (monthlyMatrix.get(m)?.transfer ?? 0) / 100,
         Espèces: (monthlyMatrix.get(m)?.cash ?? 0) / 100,
-        'Total encaissé': methods.reduce((s, meth) => s + (monthlyMatrix.get(m)?.[meth] ?? 0), 0) / 100,
+        'CB / En ligne': (monthlyMatrix.get(m)?.helloasso ?? 0) / 100,
+        'Total encaissé': METHODS.reduce((s, meth) => s + (monthlyMatrix.get(m)?.[meth] ?? 0), 0) / 100,
         Attendu: (monthlyExpected.get(m) ?? 0) / 100,
       }))
     ), 'Mensuel');
@@ -365,7 +370,7 @@ export default function FinanceDashboardPage() {
     ), 'Formules');
 
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
-      refundEntries.map(p => ({ Compte: nameByPlanId[p.id] ?? p.userId, Montant: (p.refundAmount ?? 0) / 100, Mode: METHOD_LABEL[p.refundMethod ?? ''] ?? p.refundMethod }))
+      refundEntries.map(p => ({ Compte: nameByPlanId[p.id] ?? p.userId, Montant: (p.refundAmount ?? 0) / 100, Mode: methodLabel(p.refundMethod ?? '') }))
     ), 'Remboursements');
 
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
@@ -449,6 +454,7 @@ export default function FinanceDashboardPage() {
                   <th className="py-1.5 pr-3 text-right">Chèque</th>
                   <th className="py-1.5 pr-3 text-right">Virement</th>
                   <th className="py-1.5 pr-3 text-right">Espèces</th>
+                  <th className="py-1.5 pr-3 text-right">CB / En ligne</th>
                   <th className="py-1.5 pr-3 text-right">Total encaissé</th>
                   <th className="py-1.5 text-right">Attendu</th>
                 </tr>
@@ -456,20 +462,21 @@ export default function FinanceDashboardPage() {
               <tbody>
                 {allMonths.map(m => {
                   const row = monthlyMatrix.get(m) ?? {};
-                  const total = methods.reduce((s, meth) => s + (row[meth] ?? 0), 0);
+                  const total = METHODS.reduce((s, meth) => s + (row[meth] ?? 0), 0);
                   return (
                     <tr key={m} className="border-b border-gray-50">
                       <td className="py-1.5 pr-3 text-gray-700">{monthLabel(m)}</td>
                       <td className="py-1.5 pr-3 text-right text-gray-600">{money(row.cheque ?? 0)}</td>
                       <td className="py-1.5 pr-3 text-right text-gray-600">{money(row.transfer ?? 0)}</td>
                       <td className="py-1.5 pr-3 text-right text-gray-600">{money(row.cash ?? 0)}</td>
+                      <td className="py-1.5 pr-3 text-right text-gray-600">{money(row.helloasso ?? 0)}</td>
                       <td className="py-1.5 pr-3 text-right font-semibold text-gray-900">{money(total)}</td>
                       <td className="py-1.5 text-right text-gray-400">{money(monthlyExpected.get(m) ?? 0)}</td>
                     </tr>
                   );
                 })}
                 {allMonths.length === 0 && (
-                  <tr><td colSpan={6} className="py-4 text-center text-gray-400">Aucune donnée pour cette saison</td></tr>
+                  <tr><td colSpan={7} className="py-4 text-center text-gray-400">Aucune donnée pour cette saison</td></tr>
                 )}
               </tbody>
             </table>
@@ -546,14 +553,14 @@ export default function FinanceDashboardPage() {
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Remboursements</p>
               <div className="flex gap-4 mb-3 text-sm">
                 {Object.entries(refundsByMethod).map(([method, amount]) => (
-                  <span key={method} className="text-gray-600">{METHOD_LABEL[method] ?? method} : <span className="font-medium text-gray-900">{money(amount)}</span></span>
+                  <span key={method} className="text-gray-600">{methodLabel(method)} : <span className="font-medium text-gray-900">{money(amount)}</span></span>
                 ))}
               </div>
               <div className="space-y-1">
                 {refundEntries.map(p => (
                   <div key={p.id} className="flex justify-between text-sm">
                     <span className="text-gray-600">{nameByPlanId[p.id] ?? p.userId}</span>
-                    <span className="text-gray-800">{money(p.refundAmount ?? 0)} ({METHOD_LABEL[p.refundMethod ?? ''] ?? p.refundMethod})</span>
+                    <span className="text-gray-800">{money(p.refundAmount ?? 0)} ({methodLabel(p.refundMethod ?? '')})</span>
                   </div>
                 ))}
               </div>
