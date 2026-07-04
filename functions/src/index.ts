@@ -690,6 +690,7 @@ export const webhookHelloAsso = onRequest(
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
+      const todayIso = new Date().toISOString().slice(0, 10);
       const installRef = db.collection('paymentInstallments').doc();
       tx.set(installRef, {
         membershipId: payment.membershipId ?? null,
@@ -698,7 +699,8 @@ export const webhookHelloAsso = onRequest(
         amount: totalAmount,
         method: 'helloasso',
         status: 'paid',
-        expectedDate: new Date().toISOString().slice(0, 10),
+        expectedDate: todayIso,
+        actualDate: todayIso,
         paidAt: admin.firestore.FieldValue.serverTimestamp(),
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
@@ -706,7 +708,10 @@ export const webhookHelloAsso = onRequest(
       if (memberRef && memberSnap) {
         const d = memberSnap.data() ?? {};
         const newTotalPaid = (d.totalPaid ?? 0) + totalAmount;
-        const updates: Record<string, unknown> = { totalPaid: admin.firestore.FieldValue.increment(totalAmount) };
+        const updates: Record<string, unknown> = {
+          totalPaid: admin.firestore.FieldValue.increment(totalAmount),
+          installmentIds: admin.firestore.FieldValue.arrayUnion(installRef.id),
+        };
         if ((d.totalDue ?? 0) > 0 && newTotalPaid >= (d.totalDue ?? 0)) {
           updates.paymentPlanStatus = 'approved';
           updates.status = 'active';
@@ -715,7 +720,10 @@ export const webhookHelloAsso = onRequest(
       } else if (groupRef && groupSnap) {
         const d = groupSnap.data() ?? {};
         const newTotalPaid = (d.totalPaid ?? 0) + totalAmount;
-        const updates: Record<string, unknown> = { totalPaid: admin.firestore.FieldValue.increment(totalAmount) };
+        const updates: Record<string, unknown> = {
+          totalPaid: admin.firestore.FieldValue.increment(totalAmount),
+          installmentIds: admin.firestore.FieldValue.arrayUnion(installRef.id),
+        };
         if ((d.totalDue ?? 0) > 0 && newTotalPaid >= (d.totalDue ?? 0)) {
           updates.paymentPlanStatus = 'approved';
           updates.status = 'active';

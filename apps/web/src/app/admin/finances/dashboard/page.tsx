@@ -67,6 +67,13 @@ function methodLabel(method: string): string {
   return (METHOD_LABEL as Record<string, string>)[method] ?? method;
 }
 
+function tsToIso(ts: any): string | undefined {
+  if (!ts) return undefined;
+  if (typeof ts.toDate === 'function') return ts.toDate().toISOString().slice(0, 10);
+  if (typeof ts.seconds === 'number') return new Date(ts.seconds * 1000).toISOString().slice(0, 10);
+  return undefined;
+}
+
 function monthKey(isoDate: string): string {
   return isoDate.slice(0, 7); // YYYY-MM
 }
@@ -180,10 +187,40 @@ export default function FinanceDashboardPage() {
           method: s.data()!.method,
           status: s.data()!.status,
           expectedDate: s.data()!.expectedDate ?? '',
-          actualDate: s.data()!.actualDate,
+          actualDate: s.data()!.actualDate ?? tsToIso(s.data()!.paidAt),
           bankDepositId: s.data()!.bankDepositId,
           planId: idToPlan.get(s.id) ?? '',
         }));
+
+      // Filet de rattrapage : les paiements HelloAsso créés avant le fix du
+      // webhook (voir mémoire projet) n'ont jamais été ajoutés aux
+      // installmentIds du membership/groupe — on les retrouve directement par
+      // membershipId/groupId pour ne pas les perdre dans le tableau de bord.
+      const soloMembershipIdSet = new Set(soloPlans.map(p => p.id));
+      const groupIdSet = new Set(groupPlans.map(p => p.id));
+      const alreadyIncluded = new Set(uniqueIds);
+      const helloAssoSnap = await getDocs(query(collection(db, 'paymentInstallments'), where('method', '==', 'helloasso')));
+      helloAssoSnap.docs.forEach(s => {
+        if (alreadyIncluded.has(s.id)) return;
+        const data = s.data();
+        const membershipId = data.membershipId as string | null;
+        const groupId = data.groupId as string | null;
+        const planId = (membershipId && soloMembershipIdSet.has(membershipId)) ? membershipId
+          : (groupId && groupIdSet.has(groupId)) ? groupId
+          : null;
+        if (!planId) return;
+        insts.push({
+          id: s.id,
+          amount: data.amount ?? 0,
+          method: data.method,
+          status: data.status,
+          expectedDate: data.expectedDate ?? '',
+          actualDate: data.actualDate ?? tsToIso(data.paidAt),
+          bankDepositId: data.bankDepositId,
+          planId,
+        });
+      });
+
       setInstallments(insts);
 
       const seasonInstallmentIds = new Set(uniqueIds);
