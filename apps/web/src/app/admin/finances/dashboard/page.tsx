@@ -244,12 +244,14 @@ export default function FinanceDashboardPage() {
 
   // ── Aggregations ────────────────────────────────────────────────────────────
 
-  // Un plan annulé a son totalDue ramené au totalPaid au moment de l'annulation
-  // (règle de la fonctionnalité d'annulation) : il ne représente plus un
-  // montant réellement "attendu"/"encaissé" à suivre, seulement un solde
-  // historique figé. On l'exclut des KPI globaux pour rester cohérent avec le
-  // détail par formule tarifaire (qui exclut aussi les plans annulés).
-  const activePlans = plans.filter(p => p.paymentPlanStatus !== 'cancelled');
+  // Seuls les plans réellement APPROUVÉS comptent comme "attendu" : un plan
+  // annulé a son totalDue ramené au totalPaid au moment de l'annulation (règle
+  // de la fonctionnalité d'annulation) et un plan rejeté n'a jamais été
+  // validé — ni l'un ni l'autre ne représente un montant à suivre. On les
+  // exclut des KPI globaux pour rester cohérent avec le détail par formule
+  // tarifaire (même filtre) et le tableau mensuel (filtré par plan parent).
+  const planStatusById = new Map(plans.map(p => [p.id, p.paymentPlanStatus]));
+  const activePlans = plans.filter(p => p.paymentPlanStatus === 'approved');
   const totalDue = activePlans.reduce((s, p) => s + p.totalDue, 0);
   const totalPaid = activePlans.reduce((s, p) => s + p.totalPaid, 0);
   const resteAEncaisser = totalDue - totalPaid;
@@ -278,7 +280,7 @@ export default function FinanceDashboardPage() {
   const monthlyMatrix = new Map<string, Record<string, number>>();
   const monthlyExpected = new Map<string, number>();
   installments.forEach(i => {
-    if (i.expectedDate && i.status !== 'cancelled') {
+    if (i.expectedDate && i.status !== 'cancelled' && planStatusById.get(i.planId) === 'approved') {
       const key = monthKey(i.expectedDate);
       monthlyExpected.set(key, (monthlyExpected.get(key) ?? 0) + i.amount);
     }
@@ -304,7 +306,7 @@ export default function FinanceDashboardPage() {
   // avec les autres totaux du dashboard (qui, eux, se basent sur le totalDue
   // déjà ramené au payé lors de l'annulation).
   const dueByPlan: Record<string, number> = {};
-  allMemberships.filter(m => m.paymentPlanStatus !== 'cancelled').forEach(m => {
+  allMemberships.filter(m => m.paymentPlanStatus === 'approved').forEach(m => {
     dueByPlan[m.pricingPlanId] = (dueByPlan[m.pricingPlanId] ?? 0) + m.totalDue;
   });
 
