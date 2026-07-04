@@ -1,12 +1,21 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import {
+  collection, getDocs, orderBy, query, addDoc, doc, updateDoc, arrayUnion, serverTimestamp,
+} from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import Link from 'next/link';
 
 interface RoleOption { key: string; label: string; }
+
+interface ExistingAccount {
+  id: string;
+  displayName: string;
+  email: string;
+  dancerNames: string[];
+}
 
 interface DancerFormRow {
   firstName: string;
@@ -40,12 +49,42 @@ export default function AdminNewAccountPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AdminCreateAccountResult | null>(null);
 
+  const [accounts, setAccounts] = useState<ExistingAccount[]>([]);
+  const [accountSearch, setAccountSearch] = useState('');
+  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [addDancerForm, setAddDancerForm] = useState<DancerFormRow>(emptyDancer(''));
+  const [addingDancer, setAddingDancer] = useState(false);
+  const [addDancerError, setAddDancerError] = useState<string | null>(null);
+  const [addDancerSuccess, setAddDancerSuccess] = useState(false);
+
   useEffect(() => {
     getDocs(query(collection(db, 'roles'), orderBy('displayOrder'))).then(snap => {
       const options = snap.docs.map(d => ({ key: d.data().key, label: d.data().label })).filter(r => r.key !== 'admin');
       setRoleOptions(options);
       const defaultRole = options.find(r => r.key === 'member')?.key ?? options[0]?.key ?? '';
       setDancers([emptyDancer(defaultRole)]);
+      setAddDancerForm(emptyDancer(defaultRole));
+    });
+  }, []);
+
+  useEffect(() => {
+    Promise.all([
+      getDocs(collection(db, 'accounts')),
+      getDocs(collection(db, 'dancers')),
+    ]).then(([accSnap, dancerSnap]) => {
+      const dancerMap = new Map<string, { firstName: string; lastName: string }>();
+      dancerSnap.docs.forEach(d => {
+        dancerMap.set(d.id, { firstName: d.data().firstName ?? '', lastName: d.data().lastName ?? '' });
+      });
+      setAccounts(accSnap.docs.map(d => {
+        const data = d.data();
+        const dancerIds: string[] = data.dancerIds ?? [];
+        const dancerNames = dancerIds.map(id => {
+          const dancer = dancerMap.get(id);
+          return dancer ? `${dancer.firstName} ${dancer.lastName}`.trim() : '';
+        }).filter(Boolean);
+        return { id: d.id, displayName: data.displayName ?? '', email: data.email ?? '', dancerNames };
+      }));
     });
   }, []);
 
@@ -87,6 +126,61 @@ export default function AdminNewAccountPage() {
       setError(message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const filteredAccounts = accountSearch.length >= 2
+    ? accounts.filter(a => {
+        const lower = accountSearch.toLowerCase();
+        return a.dancerNames.some(n => n.toLowerCase().includes(lower)) || a.email?.toLowerCase().includes(lower);
+      })
+    : [];
+
+  const handleSelectAccount = (acc: ExistingAccount) => {
+    setSelectedAccountId(acc.id);
+    setAccountSearch(acc.dancerNames[0] || acc.displayName || acc.email);
+    setAddDancerSuccess(false);
+    setAddDancerError(null);
+  };
+
+  const handleAddDancerToAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAccountId) return;
+    setAddDancerError(null);
+    setAddingDancer(true);
+    try {
+      const d = addDancerForm;
+      const dancerRef = await addDoc(collection(db, 'dancers'), {
+        accountId: selectedAccountId,
+        firstName: d.firstName.trim(),
+        lastName: d.lastName.trim(),
+        firstNameLower: d.firstName.trim().toLowerCase(),
+        lastNameLower: d.lastName.trim().toLowerCase(),
+        isMinor: false,
+        roles: [d.role],
+        isActive: true,
+        ...(d.birthDate ? { birthDate: new Date(`${d.birthDate}T00:00:00`) } : {}),
+        ...(d.gender ? { gender: d.gender } : {}),
+        ...(d.address.trim() ? { address: d.address.trim() } : {}),
+        ...(d.emergencyContactName.trim() || d.emergencyContactPhone.trim()
+          ? { emergencyContact: { name: d.emergencyContactName.trim(), phone: d.emergencyContactPhone.trim() } }
+          : {}),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      await updateDoc(doc(db, 'accounts', selectedAccountId), {
+        dancerIds: arrayUnion(dancerRef.id),
+        updatedAt: serverTimestamp(),
+      });
+      setAddDancerSuccess(true);
+      setAddDancerForm(emptyDancer(defaultRole));
+      setSelectedAccountId('');
+      setAccountSearch('');
+    } catch (err) {
+      const message = (err as { message?: string })?.message ?? "Erreur lors de l'ajout du danseur";
+      setAddDancerError(message);
+    } finally {
+      setAddingDancer(false);
     }
   };
 
@@ -257,6 +351,132 @@ export default function AdminNewAccountPage() {
             className="w-full bg-blue-600 text-white rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
           >
             {saving ? 'Création…' : 'Créer le compte'}
+          </button>
+        </form>
+      )}
+
+      <h2 className="text-lg font-bold text-gray-900 mt-10 mb-3">Ajouter un danseur à un compte existant</h2>
+
+      {addDancerSuccess && (
+        <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4">
+          <p className="text-sm text-green-700 font-medium">Danseur ajouté au compte.</p>
+          <button onClick={() => setAddDancerSuccess(false)} className="text-xs text-green-600 underline mt-1">Ajouter un autre danseur</button>
+        </div>
+      )}
+
+      {addDancerError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
+          <p className="text-sm text-red-700">{addDancerError}</p>
+        </div>
+      )}
+
+      {!addDancerSuccess && (
+        <form onSubmit={handleAddDancerToAccount} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-5">
+          <div className="relative">
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Compte</label>
+            <input
+              type="text" value={accountSearch}
+              onChange={e => { setAccountSearch(e.target.value); setSelectedAccountId(''); }}
+              placeholder="Rechercher par nom de danseur ou email…"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            />
+            {filteredAccounts.length > 0 && !selectedAccountId && (
+              <div className="absolute z-10 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                {filteredAccounts.slice(0, 10).map(a => (
+                  <button key={a.id} type="button" onClick={() => handleSelectAccount(a)}
+                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50">
+                    <span className="font-medium text-gray-900">{a.dancerNames.join(', ') || a.displayName}</span>
+                    <span className="text-gray-400 ml-2">{a.email}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div>
+              <label className="block text-[11px] text-gray-400 mb-1">Prénom</label>
+              <input
+                type="text" required value={addDancerForm.firstName}
+                onChange={e => setAddDancerForm(f => ({ ...f, firstName: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-400 mb-1">Nom</label>
+              <input
+                type="text" required value={addDancerForm.lastName}
+                onChange={e => setAddDancerForm(f => ({ ...f, lastName: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-400 mb-1">Rôle</label>
+              <select
+                required value={addDancerForm.role} onChange={e => setAddDancerForm(f => ({ ...f, role: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              >
+                <option value="">Choisir…</option>
+                {roleOptions.map(r => (
+                  <option key={r.key} value={r.key}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+            <div>
+              <label className="block text-[11px] text-gray-400 mb-1">Date de naissance</label>
+              <input
+                type="date" value={addDancerForm.birthDate}
+                onChange={e => setAddDancerForm(f => ({ ...f, birthDate: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-400 mb-1">Genre</label>
+              <select
+                value={addDancerForm.gender} onChange={e => setAddDancerForm(f => ({ ...f, gender: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              >
+                <option value="">— Choisir —</option>
+                <option value="male">Homme</option>
+                <option value="female">Femme</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-400 mb-1">Adresse</label>
+              <input
+                type="text" value={addDancerForm.address}
+                onChange={e => setAddDancerForm(f => ({ ...f, address: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">Contact urgence (nom)</label>
+                <input
+                  type="text" value={addDancerForm.emergencyContactName}
+                  onChange={e => setAddDancerForm(f => ({ ...f, emergencyContactName: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">Contact urgence (tél.)</label>
+                <input
+                  type="tel" value={addDancerForm.emergencyContactPhone}
+                  onChange={e => setAddDancerForm(f => ({ ...f, emergencyContactPhone: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="submit" disabled={addingDancer || !selectedAccountId}
+            className="w-full bg-blue-600 text-white rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          >
+            {addingDancer ? 'Ajout…' : 'Ajouter le danseur'}
           </button>
         </form>
       )}
