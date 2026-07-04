@@ -84,6 +84,7 @@ interface Entry {
   installmentIds: string[];
   installments: Installment[];
   groupDancerNames: string[];
+  membershipIds?: string[];
   refundAmount?: number;
   refundMethod?: string;
   refundReference?: string;
@@ -360,6 +361,23 @@ export default function DancerDetailPage() {
         batch.update(doc(db, 'paymentInstallments', inst.id), { status: 'cancelled' });
       }
 
+      // L'annulation d'un plan de groupe ne touchait que le doc paymentGroups —
+      // les memberships individuelles des danseurs du groupe restaient
+      // "approved" avec leur totalDue d'origine, faussant tout calcul qui les
+      // lit directement (ex: CA attendu par formule tarifaire sur le tableau
+      // de bord finances). On propage le statut à chaque membership du groupe.
+      if (entry.kind === 'group' && entry.membershipIds) {
+        for (const mid of entry.membershipIds) {
+          batch.update(doc(db, 'memberships', mid), {
+            paymentPlanStatus: 'cancelled',
+            cancelledAt: serverTimestamp(),
+            cancelledBy: user.uid,
+            cancellationReason: cancelReason.trim(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+
       const registrationsToCancel = courses.filter(c =>
         c.seasonId === entry.seasonId && c.registrationStatus !== 'cancelled'
       );
@@ -523,6 +541,7 @@ export default function DancerDetailPage() {
             status: g.paymentPlanStatus ?? '',
             installmentIds: g.installmentIds ?? [], installments: [],
             groupDancerNames: otherDancerNames,
+            membershipIds,
             refundAmount: g.refundAmount, refundMethod: g.refundMethod, refundReference: g.refundReference,
           });
         }

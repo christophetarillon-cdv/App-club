@@ -32,6 +32,7 @@ interface MembershipFull {
   pricingPlanId: string;
   totalDue: number;
   paymentGroupId?: string;
+  paymentPlanStatus: string;
 }
 
 interface InstallmentLite {
@@ -136,6 +137,7 @@ export default function FinanceDashboardPage() {
         pricingPlanId: d.data().pricingPlanId,
         totalDue: d.data().totalDue ?? 0,
         paymentGroupId: d.data().paymentGroupId,
+        paymentPlanStatus: d.data().paymentPlanStatus ?? '',
       }));
       setAllMemberships(memberships);
 
@@ -242,8 +244,14 @@ export default function FinanceDashboardPage() {
 
   // ── Aggregations ────────────────────────────────────────────────────────────
 
-  const totalDue = plans.reduce((s, p) => s + p.totalDue, 0);
-  const totalPaid = plans.reduce((s, p) => s + p.totalPaid, 0);
+  // Un plan annulé a son totalDue ramené au totalPaid au moment de l'annulation
+  // (règle de la fonctionnalité d'annulation) : il ne représente plus un
+  // montant réellement "attendu"/"encaissé" à suivre, seulement un solde
+  // historique figé. On l'exclut des KPI globaux pour rester cohérent avec le
+  // détail par formule tarifaire (qui exclut aussi les plans annulés).
+  const activePlans = plans.filter(p => p.paymentPlanStatus !== 'cancelled');
+  const totalDue = activePlans.reduce((s, p) => s + p.totalDue, 0);
+  const totalPaid = activePlans.reduce((s, p) => s + p.totalPaid, 0);
   const resteAEncaisser = totalDue - totalPaid;
   const tauxRecouvrement = totalDue > 0 ? Math.round((totalPaid / totalDue) * 100) : 0;
 
@@ -270,7 +278,7 @@ export default function FinanceDashboardPage() {
   const monthlyMatrix = new Map<string, Record<string, number>>();
   const monthlyExpected = new Map<string, number>();
   installments.forEach(i => {
-    if (i.expectedDate) {
+    if (i.expectedDate && i.status !== 'cancelled') {
       const key = monthKey(i.expectedDate);
       monthlyExpected.set(key, (monthlyExpected.get(key) ?? 0) + i.amount);
     }
@@ -291,8 +299,14 @@ export default function FinanceDashboardPage() {
   const chequesAwaitingDeposit = installments.filter(i => i.method === 'cheque' && i.status === 'paid' && !i.bankDepositId);
   const chequesAwaitingAmount = chequesAwaitingDeposit.reduce((s, i) => s + i.amount, 0);
 
+  // Une membership dont le plan (ou le paymentGroup parent) a été annulé ne
+  // reflète plus un montant "attendu" réel — on l'exclut pour rester cohérent
+  // avec les autres totaux du dashboard (qui, eux, se basent sur le totalDue
+  // déjà ramené au payé lors de l'annulation).
   const dueByPlan: Record<string, number> = {};
-  allMemberships.forEach(m => { dueByPlan[m.pricingPlanId] = (dueByPlan[m.pricingPlanId] ?? 0) + m.totalDue; });
+  allMemberships.filter(m => m.paymentPlanStatus !== 'cancelled').forEach(m => {
+    dueByPlan[m.pricingPlanId] = (dueByPlan[m.pricingPlanId] ?? 0) + m.totalDue;
+  });
 
   // ── Charts ──────────────────────────────────────────────────────────────────
 
