@@ -49,6 +49,7 @@ export default function AdminNewPaymentPage() {
   const [cashReceiptRef, setCashReceiptRef] = useState('');
   const [cashDate, setCashDate] = useState('');
   const [notes, setNotes] = useState('');
+  const [confirmOverpay, setConfirmOverpay] = useState(false);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +145,7 @@ export default function AdminNewPaymentPage() {
     setSelectedPlan(plan ?? null);
     setInstallments([]);
     setSelectedInstallmentId('');
+    setConfirmOverpay(false);
 
     if (plan && plan.installmentIds.length > 0) {
       const insts = await Promise.all(
@@ -172,12 +174,18 @@ export default function AdminNewPaymentPage() {
     e.preventDefault();
     if (!user || !selectedUserId || !selectedPlanId || !selectedPlan) return;
     setError(null);
+
+    const amountCents = Math.round(parseFloat(amount) * 100);
+    if (isNaN(amountCents) || amountCents <= 0) { setError('Montant invalide'); return; }
+
+    if (selectedPlan.totalPaid + amountCents > selectedPlan.totalDue && !confirmOverpay) {
+      setError("Ce montant dépasse ce qui reste dû sur cette cotisation. Cochez la case de confirmation ci-dessous si c'est volontaire (sinon, vérifiez qu'un paiement n'a pas déjà été saisi pour cette échéance).");
+      return;
+    }
+
     setSaving(true);
 
     try {
-      const amountCents = Math.round(parseFloat(amount) * 100);
-      if (isNaN(amountCents) || amountCents <= 0) throw new Error('Montant invalide');
-
       let chequeImageId: string | undefined;
 
       if (chequeFile) {
@@ -239,7 +247,7 @@ export default function AdminNewPaymentPage() {
 
       setSuccess(true);
       setAmount(''); setChequeFile(null); setChequeNumber(''); setDraweeBank(''); setDraweeCity('');
-      setTransferRef(''); setTransferDate(''); setCashReceiptRef(''); setCashDate(''); setNotes('');
+      setTransferRef(''); setTransferDate(''); setCashReceiptRef(''); setCashDate(''); setNotes(''); setConfirmOverpay(false);
       if (chequePreviewUrl) URL.revokeObjectURL(chequePreviewUrl);
       setChequePreviewUrl(null);
       if (fileRef.current) fileRef.current.value = '';
@@ -333,9 +341,28 @@ export default function AdminNewPaymentPage() {
         <div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Montant (€)</label>
           <input type="number" step="0.01" min="0" value={amount}
-            onChange={e => setAmount(e.target.value)} required placeholder="0.00"
+            onChange={e => { setAmount(e.target.value); setConfirmOverpay(false); }} required placeholder="0.00"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
         </div>
+
+        {/* Avertissement dépassement du montant dû */}
+        {selectedPlan && (() => {
+          const amountCents = Math.round((parseFloat(amount) || 0) * 100);
+          const projected = selectedPlan.totalPaid + amountCents;
+          if (amountCents <= 0 || projected <= selectedPlan.totalDue) return null;
+          return (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2.5 space-y-2">
+              <p className="text-sm text-orange-800">
+                ⚠️ Ce paiement porterait le total encaissé à {(projected / 100).toFixed(2)} €, au-delà du montant dû
+                ({(selectedPlan.totalDue / 100).toFixed(2)} €). Vérifiez qu'un paiement n'a pas déjà été saisi pour cette échéance.
+              </p>
+              <label className="flex items-center gap-2 text-sm text-orange-800">
+                <input type="checkbox" checked={confirmOverpay} onChange={e => setConfirmOverpay(e.target.checked)} />
+                Je confirme, ce dépassement est volontaire
+              </label>
+            </div>
+          );
+        })()}
 
         {/* Cheque upload + infos */}
         {selectedPlan?.paymentMethod === 'cheque' && (
