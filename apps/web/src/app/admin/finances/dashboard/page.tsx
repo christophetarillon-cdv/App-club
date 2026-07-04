@@ -516,6 +516,21 @@ export default function FinanceDashboardPage() {
                   <tr><td colSpan={7} className="py-4 text-center text-gray-400">Aucune donnée pour cette saison</td></tr>
                 )}
               </tbody>
+              {allMonths.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-gray-200">
+                    <td className="py-2 pr-3 font-semibold text-gray-900">Total saison</td>
+                    <td className="py-2 pr-3 text-right font-semibold text-gray-900">{money(methodBreakdown.cheque?.amount ?? 0)}</td>
+                    <td className="py-2 pr-3 text-right font-semibold text-gray-900">{money(methodBreakdown.transfer?.amount ?? 0)}</td>
+                    <td className="py-2 pr-3 text-right font-semibold text-gray-900">{money(methodBreakdown.cash?.amount ?? 0)}</td>
+                    <td className="py-2 pr-3 text-right font-semibold text-gray-900">{money(methodBreakdown.helloasso?.amount ?? 0)}</td>
+                    <td className="py-2 pr-3 text-right font-bold text-gray-900">{money(totalPaid)}</td>
+                    <td className="py-2 text-right font-semibold text-gray-500">
+                      {money(allMonths.reduce((s, m) => s + (monthlyExpected.get(m) ?? 0), 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
 
