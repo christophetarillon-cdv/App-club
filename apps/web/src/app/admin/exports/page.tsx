@@ -89,6 +89,7 @@ export default function AdminExportsPage() {
   const [seasons, setSeasons] = useState<SeasonOption[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState('');
   const [granularity, setGranularity] = useState<Granularity>('dancer');
+  const [allDancers, setAllDancers] = useState(false);
   const [categories, setCategories] = useState<CategoryFlags>({
     coordonnees: true,
     compteFamille: false,
@@ -230,10 +231,18 @@ export default function AdminExportsPage() {
       }
 
       // ── Assemblage des lignes ────────────────────────────────────────────
+      // En mode "tous les danseurs", on part de TOUT le roster (indépendant de
+      // la saison) ; sinon uniquement les danseurs ayant une cotisation cette
+      // saison-là (comportement d'origine).
+      const dancerIds = (granularity === 'dancer' && allDancers)
+        ? [...dancerMap.keys()]
+        : [...planByDancerId.keys()];
+
       const rows: DancerExportRow[] = [];
-      planByDancerId.forEach((planEntry, dancerId) => {
+      dancerIds.forEach(dancerId => {
         const dancer = dancerMap.get(dancerId);
         if (!dancer) return;
+        const planEntry = planByDancerId.get(dancerId);
         const account = accountMap.get(dancer.accountId);
         const otherDancerNames = ((account?.dancerIds ?? []) as string[])
           .filter(id => id !== dancerId)
@@ -241,11 +250,11 @@ export default function AdminExportsPage() {
           .filter(Boolean)
           .map(d => `${d.firstName} ${d.lastName}`.trim());
 
-        const installments = planEntry.installmentIds
+        const installments = (planEntry?.installmentIds ?? [])
           .map(id => installmentMap.get(id))
           .filter((i): i is InstallmentLite => !!i);
 
-        const plan: PlanInfo = {
+        const plan: PlanInfo | undefined = planEntry ? {
           pricingPlanLabel: pricingLabels.get(planEntry.raw.pricingPlanId) ?? planEntry.raw.pricingPlanId ?? '',
           totalDue: planEntry.raw.totalDue ?? 0,
           totalPaid: planEntry.raw.totalPaid ?? 0,
@@ -256,7 +265,7 @@ export default function AdminExportsPage() {
           cancellationReason: planEntry.raw.cancellationReason,
           refundAmount: planEntry.raw.refundAmount,
           refundMethod: planEntry.raw.refundMethod,
-        };
+        } : undefined;
 
         const chequesAwaiting = installments.filter(i => i.method === 'cheque' && i.status === 'paid' && !i.bankDepositId);
         const bankDepositRefs = installments
@@ -339,6 +348,12 @@ export default function AdminExportsPage() {
               1 ligne par échéance
             </label>
           </div>
+          {granularity === 'dancer' && (
+            <label className="flex items-center gap-2 text-sm text-gray-700 mt-2">
+              <input type="checkbox" checked={allDancers} onChange={e => setAllDancers(e.target.checked)} />
+              Inclure tous les danseurs, même sans cotisation cette saison
+            </label>
+          )}
         </div>
 
         <div>
