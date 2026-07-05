@@ -13,6 +13,7 @@ import BottomTabBar from '@/components/BottomTabBar';
 import type { Course, Session, DanceStyle, Level, Room } from '@cdv/types';
 
 interface Slot {
+  id?: string; // id du doc sessions — absent pour les créneaux virtuels générés côté client
   courseId: string;
   courseName: string;
   startTime: string;
@@ -78,6 +79,7 @@ export default function PlanningScreen() {
         handled.add(s.courseId);
         const course = courses.get(s.courseId);
         result.push({
+          id: s.id,
           courseId: s.courseId,
           courseName: course?.name ?? '—',
           startTime: s.startTime,
@@ -152,7 +154,13 @@ export default function PlanningScreen() {
               <Text style={styles.sectionLabel}>
                 {`Aujourd'hui · ${slots.length} cours`}
               </Text>
-              {slots.map(slot => <SlotCard key={slot.courseId} slot={slot} />)}
+              {slots.map(slot => (
+                <SlotCard
+                  key={slot.courseId}
+                  slot={slot}
+                  onPress={slot.id ? () => router.push({ pathname: '/dancer/[id]/session-detail', params: { id, sessionId: slot.id! } }) : undefined}
+                />
+              ))}
             </>
           )}
 
@@ -177,12 +185,17 @@ export default function PlanningScreen() {
   );
 }
 
-function SlotCard({ slot }: { slot: Slot }) {
+function SlotCard({ slot, onPress }: { slot: Slot; onPress?: () => void }) {
   const cancelled = slot.status === 'cancelled';
   const iconColor = cancelled ? '#ccc' : '#888';
 
   return (
-    <View style={[styles.card, cancelled && styles.cardCancelled]}>
+    <TouchableOpacity
+      style={[styles.card, cancelled && styles.cardCancelled]}
+      onPress={onPress}
+      disabled={!onPress}
+      activeOpacity={onPress ? 0.8 : 1}
+    >
       <View style={styles.cardTimeline}>
         <Text style={[styles.timeStart, cancelled && styles.timeFaded]}>{slot.startTime}</Text>
         <View style={[styles.timeSep, cancelled && styles.timeSepFaded]} />
@@ -210,7 +223,7 @@ function SlotCard({ slot }: { slot: Slot }) {
           </View>
         )}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 

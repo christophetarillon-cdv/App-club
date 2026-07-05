@@ -41,6 +41,7 @@ function weekLabel(monday: Date): string {
 }
 
 interface Slot {
+  id?: string; // id du doc sessions — absent pour les créneaux virtuels générés côté client
   courseId: string;
   courseName: string;
   startTime: string;
@@ -52,7 +53,7 @@ interface Slot {
 }
 
 export default function WeekScreen() {
-  useLocalSearchParams<{ id: string }>();
+  const { id: dancerId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const flatRef = useRef<FlatList>(null);
@@ -97,6 +98,7 @@ export default function WeekScreen() {
         const course = courses.get(s.courseId);
         const existing = map.get(s.date) ?? [];
         existing.push({
+          id: s.id,
           courseId: s.courseId,
           courseName: course?.name ?? '—',
           startTime: s.startTime,
@@ -183,7 +185,11 @@ export default function WeekScreen() {
                   <Text style={styles.noSlot}>{"Pas de cours"}</Text>
                 ) : (
                   daySlots.map(slot => (
-                    <SlotCard key={slot.courseId + dateStr} slot={slot} />
+                    <SlotCard
+                      key={slot.courseId + dateStr}
+                      slot={slot}
+                      onPress={slot.id ? () => router.push({ pathname: '/dancer/[id]/session-detail', params: { id: dancerId, sessionId: slot.id! } }) : undefined}
+                    />
                   ))
                 )}
               </View>
@@ -192,7 +198,7 @@ export default function WeekScreen() {
         })}
       </ScrollView>
     );
-  }, [slotsByDate, todayStr]);
+  }, [slotsByDate, todayStr, dancerId, router]);
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -228,7 +234,7 @@ export default function WeekScreen() {
   );
 }
 
-function SlotCard({ slot }: { slot: Slot }) {
+function SlotCard({ slot, onPress }: { slot: Slot; onPress?: () => void }) {
   const cancelled = slot.status === 'cancelled';
   const accentColor = slot.style?.color ?? Colors.cardTeal;
   const borderColor = cancelled ? '#ddd' : accentColor;
@@ -236,7 +242,11 @@ function SlotCard({ slot }: { slot: Slot }) {
   const badgeText = cancelled ? '#bbb' : accentColor;
 
   return (
-    <View style={[styles.slotCard, { borderLeftColor: borderColor }, cancelled && styles.slotCancelled]}>
+    <Pressable
+      style={[styles.slotCard, { borderLeftColor: borderColor }, cancelled && styles.slotCancelled]}
+      onPress={onPress}
+      disabled={!onPress}
+    >
       <View style={styles.slotTop}>
         <Text style={[styles.slotName, cancelled && styles.slotNameCancelled]} numberOfLines={1}>
           {slot.courseName}
@@ -251,7 +261,7 @@ function SlotCard({ slot }: { slot: Slot }) {
         {slot.startTime}–{slot.endTime}{slot.level ? ` · ${slot.level.name}` : ''}{slot.room ? ` · ${slot.room.name}` : ''}
         {cancelled ? '  ·  Annulé' : ''}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 

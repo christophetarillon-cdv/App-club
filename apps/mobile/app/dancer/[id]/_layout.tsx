@@ -9,6 +9,7 @@ export default function DancerLayout() {
       <Stack.Screen name="planning" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="card" options={{ animation: 'slide_from_bottom', presentation: 'transparentModal' }} />
       <Stack.Screen name="week" options={{ animation: 'slide_from_bottom', presentation: 'transparentModal' }} />
+      <Stack.Screen name="session-detail" options={{ animation: 'slide_from_bottom', presentation: 'transparentModal' }} />
       <Stack.Screen name="trombinoscope" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="my-documents" options={{ animation: 'slide_from_right' }} />

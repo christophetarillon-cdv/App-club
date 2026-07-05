@@ -55,6 +55,7 @@ export const ADMIN_NAV: NavGroup[] = [
       { label: 'Interruptions', href: '/admin/interruptions' },
       { label: 'Jours fériés', href: '/admin/public-holidays' },
       { label: 'Planning', href: '/admin/settings/planning' },
+      { label: 'Fiche séance', href: '/admin/settings/session-detail' },
     ],
   },
   {

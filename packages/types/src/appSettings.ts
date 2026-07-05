@@ -45,4 +45,9 @@ export interface AppSettings extends WithTimestamps {
   profileFields?: ProfileFieldsConfig;
   profileMapping?: Record<string, { schemaId: string }>;
   pagePermissions?: Record<string, string[]>;
+  // Fiche détail de séance : rôles autorisés à ajouter une vidéo, à la voir,
+  // et à modifier la note de programme du jour.
+  sessionVideoUploadRoles?: string[];
+  sessionVideoViewRoles?: string[];
+  sessionNoteEditRoles?: string[];
 }

@@ -30,13 +30,17 @@ function uniqueId(): string {
 }
 
 export default function VideoUploadSheet({
-  seasons, danceStyles, defaultSeasonId, onClose, onUploaded,
+  seasons, danceStyles, defaultSeasonId, onClose, onUploaded, fixedAttachedTo, fixedSeasonId,
 }: {
   seasons: SeasonOpt[];
   danceStyles: StyleOpt[];
   defaultSeasonId?: string;
   onClose: () => void;
   onUploaded: () => void;
+  // Contexte "fiche détail de séance" : rattachement et saison déjà connus,
+  // on masque les sélecteurs cours/saison et on les fige.
+  fixedAttachedTo?: string;
+  fixedSeasonId?: string | null;
 }) {
   const insets = useSafeAreaInsets();
 
@@ -46,7 +50,7 @@ export default function VideoUploadSheet({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [seasonId, setSeasonId] = useState(defaultSeasonId && defaultSeasonId !== 'toutes' && defaultSeasonId !== 'intemporel' ? defaultSeasonId : '');
-  const [attachedTo, setAttachedTo] = useState(''); // '' = général, ou 'course:{id}'
+  const [attachedTo, setAttachedTo] = useState(fixedAttachedTo ?? ''); // '' = général, ou 'course:{id}' / 'session:{id}'
   const [file, setFile] = useState<PickedFile | null>(null);
 
   const [uploading, setUploading] = useState(false);
@@ -125,7 +129,7 @@ export default function VideoUploadSheet({
         title: title.trim(),
         description: description.trim() || null,
         type: 'video',
-        seasonId: seasonId || null,
+        seasonId: (fixedAttachedTo ? fixedSeasonId : seasonId) || null,
         attachedTo: attachedTo || null,
         mimeType: file.mimeType,
         sizeBytes: (blob as any).size || file.size,
@@ -191,21 +195,25 @@ export default function VideoUploadSheet({
             editable={!uploading}
           />
 
-          <Text style={styles.label}>Saison</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-            <Chip active={seasonId === ''} label="Intemporel" onPress={() => setSeasonId('')} />
-            {seasons.map(s => (
-              <Chip key={s.id} active={seasonId === s.id} label={s.label + (s.isActive ? ' • en cours' : '')} onPress={() => setSeasonId(s.id)} />
-            ))}
-          </ScrollView>
+          {!fixedAttachedTo && (
+            <>
+              <Text style={styles.label}>Saison</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                <Chip active={seasonId === ''} label="Intemporel" onPress={() => setSeasonId('')} />
+                {seasons.map(s => (
+                  <Chip key={s.id} active={seasonId === s.id} label={s.label + (s.isActive ? ' • en cours' : '')} onPress={() => setSeasonId(s.id)} />
+                ))}
+              </ScrollView>
 
-          <Text style={styles.label}>Cours</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-            <Chip active={attachedTo === ''} label="Général (club)" onPress={() => setAttachedTo('')} />
-            {courses.map(c => (
-              <Chip key={c.id} active={attachedTo === `course:${c.id}`} label={courseChipLabel(c)} onPress={() => setAttachedTo(`course:${c.id}`)} />
-            ))}
-          </ScrollView>
+              <Text style={styles.label}>Cours</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                <Chip active={attachedTo === ''} label="Général (club)" onPress={() => setAttachedTo('')} />
+                {courses.map(c => (
+                  <Chip key={c.id} active={attachedTo === `course:${c.id}`} label={courseChipLabel(c)} onPress={() => setAttachedTo(`course:${c.id}`)} />
+                ))}
+              </ScrollView>
+            </>
+          )}
 
           {selectedCourse && (
             <View style={styles.tagsInfo}>

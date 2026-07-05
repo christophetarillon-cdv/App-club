@@ -938,6 +938,16 @@ export const detectIdleKiosks = onSchedule(
   },
 );
 
+// Rôles combinés (compte + tous les danseurs) de l'appelant — utilisé pour
+// comparer à une liste de rôles configurable (ex: sessionVideoUploadRoles).
+async function getCallerRoles(db: FirebaseFirestore.Firestore, uid: string): Promise<string[]> {
+  const accountSnap = await db.doc(`accounts/${uid}`).get();
+  const accountRoles: string[] = accountSnap.data()?.roles ?? [];
+  const dancerSnap = await db.collection('dancers').where('accountId', '==', uid).get();
+  const dancerRoles = dancerSnap.docs.flatMap(d => (d.data().roles as string[] | undefined) ?? []);
+  return [...new Set([...accountRoles, ...dancerRoles])];
+}
+
 // ── registerMedia — crée un doc media après upload Firebase Storage ───────────
 export const registerMedia = onCall(
   { region: 'europe-west3' },
@@ -970,8 +980,34 @@ export const registerMedia = onCall(
 
     let courseId: string | null = null;
     let danceStyleId: string | null = null;
+    let levelId: string | null = null;
+    let sessionId: string | null = null;
+    let sessionDate: string | null = null;
+    let sessionStartTime: string | null = null;
 
-    if (attachedTo?.startsWith('course:')) {
+    if (attachedTo?.startsWith('session:')) {
+      sessionId = attachedTo.replace('session:', '');
+      const sessionSnap = await db.doc(`sessions/${sessionId}`).get();
+      if (!sessionSnap.exists) throw new HttpsError('not-found', 'Séance introuvable');
+      const sessionData = sessionSnap.data()!;
+      courseId = sessionData.courseId;
+      sessionDate = sessionData.date ?? null;
+      sessionStartTime = sessionData.startTime ?? null;
+
+      const courseSnap = courseId ? await db.doc(`courses/${courseId}`).get() : null;
+      const courseData = courseSnap?.data() ?? {};
+      danceStyleId = courseData.danceStyleId ?? null;
+      levelId = courseData.levelId ?? null;
+
+      if (!isAdmin) {
+        const settingsSnap = await db.doc('appSettings/main').get();
+        const uploadRoles: string[] = settingsSnap.data()?.sessionVideoUploadRoles ?? [];
+        const callerRoles = await getCallerRoles(db, uid);
+        if (!callerRoles.some(r => uploadRoles.includes(r))) {
+          throw new HttpsError('permission-denied', 'Accès refusé');
+        }
+      }
+    } else if (attachedTo?.startsWith('course:')) {
       courseId = attachedTo.replace('course:', '');
       const courseSnap = await db.doc(`courses/${courseId}`).get();
       if (!courseSnap.exists) throw new HttpsError('not-found', 'Cours introuvable');
@@ -1005,6 +1041,10 @@ export const registerMedia = onCall(
       attachedTo: attachedTo ?? null,
       courseId,
       danceStyleId,
+      levelId,
+      sessionId,
+      sessionDate,
+      sessionStartTime,
       mimeType,
       sizeBytes,
       durationSeconds: durationSeconds ?? null,

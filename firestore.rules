@@ -167,7 +167,8 @@ service cloud.firestore {
         roles.hasAny(perms.get('/admin/settings/trial', ['admin'])) ||
         roles.hasAny(perms.get('/admin/settings/profile-fields', ['admin'])) ||
         roles.hasAny(perms.get('/admin/settings/profile-mapping', ['admin'])) ||
-        roles.hasAny(perms.get('/admin/settings/welcome-qr', ['admin']));
+        roles.hasAny(perms.get('/admin/settings/welcome-qr', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/session-detail', ['admin']));
     }
 
     // ── clubProfile ────────────────────────────────────────────────────────────
@@ -264,7 +265,14 @@ service cloud.firestore {
     match /sessions/{id} {
       allow read: if true;
       allow create, delete: if hasPagePermission('/admin/courses');
-      allow update: if hasPagePermission('/admin/courses');
+      // La note de programme (fiche détail d'une séance) est éditable par les
+      // rôles configurés dans appSettings.sessionNoteEditRoles, sans passer
+      // par la permission /admin/courses — mais uniquement ce champ-là.
+      allow update: if hasPagePermission('/admin/courses') || (
+        isAuth() &&
+        userRoles().hasAny(get(/databases/$(database)/documents/appSettings/main).data.get('sessionNoteEditRoles', [])) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['programNote'])
+      );
     }
 
     match /interruptions/{id} {

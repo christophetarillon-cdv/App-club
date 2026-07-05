@@ -166,11 +166,11 @@ export default function PlanningPage() {
                 const isRegistered = regDate ? s.date >= regDate : false;
                 const accent = s.style?.color ?? '#6B7280';
                 return (
-                  <Link key={s.id} href={`/courses/${s.courseId}?date=${s.date}`}
-                    className={`block bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-sm transition-shadow ${s.status === 'cancelled' ? 'opacity-60' : ''}`}>
+                  <div key={s.id}
+                    className={`bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-sm transition-shadow ${s.status === 'cancelled' ? 'opacity-60' : ''}`}>
                     <div className="flex items-stretch gap-0">
                       <div className="w-1 shrink-0 rounded-l-2xl" style={{ backgroundColor: accent }} />
-                      <div className="flex-1 px-4 py-3.5">
+                      <Link href={`/courses/${s.courseId}?date=${s.date}`} className="flex-1 px-4 py-3.5 block">
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <div className="flex items-center gap-1.5">
@@ -199,9 +199,13 @@ export default function PlanningPage() {
                             )}
                           </div>
                         </div>
-                      </div>
+                      </Link>
                     </div>
-                  </Link>
+                    <Link href={`/session/${s.id}`}
+                      className="block px-4 py-2 text-xs text-gray-400 hover:text-gray-600 border-t border-gray-100">
+                      Programme & vidéo →
+                    </Link>
+                  </div>
                 );
               })}
             </div>
