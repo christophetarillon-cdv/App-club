@@ -35,8 +35,8 @@ function fmtDuration(secs?: number): string | null {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function VideoThumb({ video, color, seasonBadge, onPress }: {
-  video: Media; color: string; seasonBadge: string; onPress: () => void;
+function VideoThumb({ video, color, seasonBadge, tag, onPress }: {
+  video: Media; color: string; seasonBadge: string; tag?: string; onPress: () => void;
 }) {
   const duration = fmtDuration(video.durationSeconds);
   return (
@@ -53,6 +53,7 @@ function VideoThumb({ video, color, seasonBadge, onPress }: {
         )}
       </View>
       <Text style={styles.thumbTitle} numberOfLines={2}>{video.title}</Text>
+      {tag && <Text style={styles.thumbTag} numberOfLines={1}>{tag}</Text>}
     </TouchableOpacity>
   );
 }
@@ -337,15 +338,22 @@ export default function VideosScreen() {
             <View key={key} style={styles.section}>
               <Text style={styles.sectionTitle}>{label}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionRow}>
-                {videos.map(v => (
-                  <VideoThumb
-                    key={v.id}
-                    video={v}
-                    color={color}
-                    seasonBadge={seasonBadge(v.seasonId)}
-                    onPress={() => setActiveVideo(v)}
-                  />
-                ))}
+                {videos.map(v => {
+                  const levelId = v.levelId ?? courseList.find(c => c.id === v.courseId)?.levelId;
+                  const styleObj = v.danceStyleId ? styleList.find(s => s.id === v.danceStyleId) : undefined;
+                  const levelObj = levelId ? levelList.find(l => l.id === levelId) : undefined;
+                  const tag = [styleObj?.name, levelObj?.name].filter(Boolean).join(' · ');
+                  return (
+                    <VideoThumb
+                      key={v.id}
+                      video={v}
+                      color={color}
+                      seasonBadge={seasonBadge(v.seasonId)}
+                      tag={tag || undefined}
+                      onPress={() => setActiveVideo(v)}
+                    />
+                  );
+                })}
               </ScrollView>
             </View>
           ))
@@ -419,6 +427,7 @@ const styles = StyleSheet.create({
   durationBadge: { position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
   durationText: { color: '#fff', fontSize: 10 },
   thumbTitle: { fontSize: 13, fontWeight: '500', color: Colors.text, marginTop: 6, lineHeight: 16 },
+  thumbTag: { fontSize: 11, color: Colors.textLight, marginTop: 2 },
 
   empty: { textAlign: 'center', color: Colors.textSecondary, fontSize: 14, paddingVertical: 40, paddingHorizontal: 24 },
 });

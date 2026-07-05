@@ -213,6 +213,11 @@ export default function MediaPage() {
                     {/* Info */}
                     <div className="px-3 py-2.5">
                       <p className="text-xs font-semibold text-gray-900 leading-tight truncate">{m.title}</p>
+                      {(() => {
+                        const levelId = m.levelId ?? (m.courseId ? courseMap.get(m.courseId)?.levelId : undefined);
+                        const tag = [style?.name, levelId ? levelMap.get(levelId)?.name : undefined].filter(Boolean).join(' · ');
+                        return tag ? <p className="text-[10px] text-gray-400 mt-0.5 truncate">{tag}</p> : null;
+                      })()}
                       {m.durationSeconds && (
                         <p className="text-[10px] text-gray-400 mt-0.5">{formatDuration(m.durationSeconds)}</p>
                       )}
