@@ -49,8 +49,8 @@ export default function SessionDetailScreen() {
 
   const [uploadRoles, setUploadRoles] = useState<string[]>([]);
   const [viewRoles, setViewRoles] = useState<string[]>([]);
+  const [noteViewRoles, setNoteViewRoles] = useState<string[]>([]);
   const [noteEditRoles, setNoteEditRoles] = useState<string[]>([]);
-  const [noteEnabled, setNoteEnabled] = useState(true);
 
   const [videos, setVideos] = useState<Media[]>([]);
   const [showUpload, setShowUpload] = useState(false);
@@ -68,6 +68,7 @@ export default function SessionDetailScreen() {
   const isAdmin = callerRoles.includes('admin');
   const canUploadVideo = isAdmin || callerRoles.some(r => uploadRoles.includes(r));
   const canViewVideo = isAdmin || callerRoles.some(r => viewRoles.includes(r));
+  const canViewNote = isAdmin || callerRoles.some(r => noteViewRoles.includes(r));
   const canEditNote = isAdmin || callerRoles.some(r => noteEditRoles.includes(r));
 
   const load = async () => {
@@ -88,8 +89,8 @@ export default function SessionDetailScreen() {
 
       setUploadRoles(settingsSnap.data()?.sessionVideoUploadRoles ?? []);
       setViewRoles(settingsSnap.data()?.sessionVideoViewRoles ?? []);
+      setNoteViewRoles(settingsSnap.data()?.sessionNoteViewRoles ?? []);
       setNoteEditRoles(settingsSnap.data()?.sessionNoteEditRoles ?? []);
-      setNoteEnabled(settingsSnap.data()?.sessionNoteEnabled ?? true);
       setVideos(mediaSnap.docs.map(d => ({ id: d.id, ...d.data() } as Media)));
 
       if (courseSnap.exists()) {
@@ -153,7 +154,7 @@ export default function SessionDetailScreen() {
             </View>
 
             {/* Programme du jour */}
-            {noteEnabled && (
+            {canViewNote && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Programme</Text>
               {editingNote ? (

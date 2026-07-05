@@ -8,12 +8,12 @@ import type { RoleConfig } from '@cdv/types';
 interface RoleFlags {
   sessionVideoUploadRoles: string[];
   sessionVideoViewRoles: string[];
+  sessionNoteViewRoles: string[];
   sessionNoteEditRoles: string[];
-  sessionNoteEnabled: boolean;
 }
 
 const EMPTY: RoleFlags = {
-  sessionVideoUploadRoles: [], sessionVideoViewRoles: [], sessionNoteEditRoles: [], sessionNoteEnabled: true,
+  sessionVideoUploadRoles: [], sessionVideoViewRoles: [], sessionNoteViewRoles: [], sessionNoteEditRoles: [],
 };
 
 function RoleCheckboxGroup({
@@ -52,8 +52,8 @@ export default function SessionDetailSettingsPage() {
       setFlags({
         sessionVideoUploadRoles: data.sessionVideoUploadRoles ?? [],
         sessionVideoViewRoles: data.sessionVideoViewRoles ?? [],
+        sessionNoteViewRoles: data.sessionNoteViewRoles ?? [],
         sessionNoteEditRoles: data.sessionNoteEditRoles ?? [],
-        sessionNoteEnabled: data.sessionNoteEnabled ?? true,
       });
     }).finally(() => setLoading(false));
   }, []);
@@ -92,26 +92,17 @@ export default function SessionDetailSettingsPage() {
           </div>
 
           <div className="border-t border-gray-100 pt-5">
-            <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 cursor-pointer mb-1">
-              <input
-                type="checkbox"
-                checked={flags.sessionNoteEnabled}
-                onChange={e => setFlags(f => ({ ...f, sessionNoteEnabled: e.target.checked }))}
-              />
-              Activer la zone Programme
-            </label>
-            <p className="text-xs text-gray-400 mb-3">
-              Si désactivé, la zone "Programme" n'apparaît plus du tout sur la fiche détail, quels que soient les rôles ci-dessous.
-            </p>
+            <p className="text-sm font-semibold text-gray-800 mb-1">Voir le programme</p>
+            <p className="text-xs text-gray-400 mb-2">Rôles pouvant voir la zone "Programme" (masquée pour les autres rôles).</p>
+            <RoleCheckboxGroup roles={roles} selected={flags.sessionNoteViewRoles}
+              onChange={next => setFlags(f => ({ ...f, sessionNoteViewRoles: next }))} />
+          </div>
 
-            {flags.sessionNoteEnabled && (
-              <>
-                <p className="text-sm font-semibold text-gray-800 mb-1">Modifier la note de programme</p>
-                <p className="text-xs text-gray-400 mb-2">Rôles pouvant écrire/modifier le texte de programme du jour de la séance.</p>
-                <RoleCheckboxGroup roles={roles} selected={flags.sessionNoteEditRoles}
-                  onChange={next => setFlags(f => ({ ...f, sessionNoteEditRoles: next }))} />
-              </>
-            )}
+          <div>
+            <p className="text-sm font-semibold text-gray-800 mb-1">Modifier la note de programme</p>
+            <p className="text-xs text-gray-400 mb-2">Rôles pouvant écrire/modifier le texte de programme du jour de la séance.</p>
+            <RoleCheckboxGroup roles={roles} selected={flags.sessionNoteEditRoles}
+              onChange={next => setFlags(f => ({ ...f, sessionNoteEditRoles: next }))} />
           </div>
 
           {saved && <p className="text-sm text-green-600">Enregistré.</p>}
