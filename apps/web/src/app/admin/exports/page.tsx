@@ -85,6 +85,39 @@ function money(cents: number): number {
   return Math.round(cents) / 100;
 }
 
+const CATEGORY_SHORT_LABELS: Record<keyof CategoryFlags, string> = {
+  coordonnees: 'coordonnees',
+  compteFamille: 'famille',
+  cotisation: 'cotisation',
+  echeances: 'echeances',
+  annulationRemboursement: 'annulation',
+  suiviBancaire: 'bancaire',
+  coursPresences: 'cours-presences',
+};
+
+function frenchTimestamp(d: Date): string {
+  const date = d.toLocaleDateString('fr-FR').replace(/\//g, '-'); // 05-07-2026
+  const time = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h'); // 14h32
+  return `${date}_${time}`;
+}
+
+function buildExportFilename(
+  seasonLabel: string, sheetName: string, categories: CategoryFlags, allDancers: boolean,
+): string {
+  const checkedLabels = (Object.keys(categories) as (keyof CategoryFlags)[])
+    .filter(k => categories[k])
+    .map(k => CATEGORY_SHORT_LABELS[k]);
+  const parts = [
+    'export',
+    seasonLabel.replace(/\s+/g, '_'),
+    sheetName.replace(/\s+/g, '_'),
+    ...(allDancers ? ['tous-danseurs'] : []),
+    ...checkedLabels,
+    frenchTimestamp(new Date()),
+  ];
+  return `${parts.join('_')}.xlsx`;
+}
+
 export default function AdminExportsPage() {
   const [seasons, setSeasons] = useState<SeasonOption[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState('');
@@ -311,7 +344,8 @@ export default function AdminExportsPage() {
       const wb = XLSX.utils.book_new();
       const sheetName = granularity === 'dancer' ? 'Par danseur' : 'Par échéance';
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(outRows), sheetName);
-      XLSX.writeFile(wb, `export_${season?.label.replace(/\s+/g, '_') ?? selectedSeasonId}_${sheetName.replace(/\s+/g, '_')}.xlsx`);
+      const filename = buildExportFilename(season?.label ?? selectedSeasonId, sheetName, categories, allDancers);
+      XLSX.writeFile(wb, filename);
       setLastCount(outRows.length);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors de la génération de l'export");
