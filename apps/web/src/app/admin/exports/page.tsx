@@ -343,8 +343,16 @@ export default function AdminExportsPage() {
 
       const wb = XLSX.utils.book_new();
       const sheetName = granularity === 'dancer' ? 'Par danseur' : 'Par échéance';
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(outRows), sheetName);
       const filename = buildExportFilename(season?.label ?? selectedSeasonId, sheetName, categories, allDancers);
+      const titleRow = filename.replace(/\.xlsx$/, '');
+      const headers = Object.keys(outRows[0]!);
+      const aoa = [
+        [titleRow],
+        headers,
+        ...outRows.map(row => headers.map(h => row[h] ?? '')),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
       XLSX.writeFile(wb, filename);
       setLastCount(outRows.length);
     } catch (err) {
