@@ -13,4 +13,8 @@ export interface Course {
   instructorId?: string;
   maxParticipants?: number;
   isActive: boolean;
+  // Séance ponctuelle (pas de récurrence hebdomadaire sur la saison) : une
+  // seule session générée, à oneOffDate, au lieu d'une par semaine.
+  isOneOff?: boolean;
+  oneOffDate?: string; // yyyy-mm-dd, requis si isOneOff
 }

@@ -27,13 +27,21 @@ interface Course {
   instructorId?: string;
   maxParticipants?: number;
   isActive: boolean;
+  isOneOff?: boolean;
+  oneOffDate?: string;
 }
 
 const DAY_LABELS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+const MONTH_FR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+
+function formatOneOffDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${d.getDate()} ${MONTH_FR[d.getMonth()]} ${d.getFullYear()}`;
+}
 
 const emptyForm = {
   name: '', danceStyleId: '', levelId: '', roomId: '', seasonId: '',
-  dayOfWeek: '1', startTime: '', endTime: '', instructorId: '',
+  isOneOff: false, dayOfWeek: '1', oneOffDate: '', startTime: '', endTime: '', instructorId: '',
   maxParticipants: '', isActive: true,
 };
 
@@ -79,6 +87,8 @@ export default function CoursesPage() {
       instructorId: d.data().instructorId,
       maxParticipants: d.data().maxParticipants,
       isActive: d.data().isActive ?? true,
+      isOneOff: d.data().isOneOff ?? false,
+      oneOffDate: d.data().oneOffDate,
     })));
     setLoading(false);
   };
@@ -88,18 +98,27 @@ export default function CoursesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    // Séance ponctuelle : le jour de la semaine est déduit de la date choisie
+    // (uniquement pour l'affichage — la génération de séance ne s'appuie que
+    // sur oneOffDate côté Cloud Function).
+    const dayOfWeek = form.isOneOff && form.oneOffDate
+      ? new Date(form.oneOffDate + 'T00:00:00').getDay()
+      : Number(form.dayOfWeek);
+
     const payload: Record<string, unknown> = {
       name: form.name,
       danceStyleId: form.danceStyleId,
       levelId: form.levelId,
       roomId: form.roomId,
       seasonId: form.seasonId,
-      dayOfWeek: Number(form.dayOfWeek),
+      dayOfWeek,
+      isOneOff: form.isOneOff,
       startTime: form.startTime,
       endTime: form.endTime,
       isActive: form.isActive,
       updatedAt: serverTimestamp(),
     };
+    if (form.isOneOff) payload.oneOffDate = form.oneOffDate;
     if (form.instructorId) payload.instructorId = form.instructorId;
     if (form.maxParticipants !== '') payload.maxParticipants = Number(form.maxParticipants);
 
@@ -119,7 +138,9 @@ export default function CoursesPage() {
       levelId: c.levelId,
       roomId: c.roomId,
       seasonId: c.seasonId,
+      isOneOff: c.isOneOff ?? false,
       dayOfWeek: String(c.dayOfWeek),
+      oneOffDate: c.oneOffDate ?? '',
       startTime: c.startTime,
       endTime: c.endTime,
       instructorId: c.instructorId ?? '',
@@ -198,12 +219,32 @@ export default function CoursesPage() {
           </div>
         </div>
 
+        <div className="flex gap-4">
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="radio" checked={!form.isOneOff} onChange={() => setForm(p => ({ ...p, isOneOff: false }))} />
+            Récurrent (toutes les semaines sur la saison)
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="radio" checked={form.isOneOff} onChange={() => setForm(p => ({ ...p, isOneOff: true }))} />
+            Séance ponctuelle (une seule date)
+          </label>
+        </div>
+
         <div className="grid grid-cols-3 gap-4">
           <div>
-            <label className={labelCls}>Jour</label>
-            <select value={form.dayOfWeek} onChange={e => setForm(p => ({ ...p, dayOfWeek: e.target.value }))} required className={inputCls}>
-              {DAY_LABELS.map((label, i) => <option key={i} value={i}>{label}</option>)}
-            </select>
+            {form.isOneOff ? (
+              <>
+                <label className={labelCls}>Date</label>
+                <input type="date" value={form.oneOffDate} onChange={e => setForm(p => ({ ...p, oneOffDate: e.target.value }))} required className={inputCls} />
+              </>
+            ) : (
+              <>
+                <label className={labelCls}>Jour</label>
+                <select value={form.dayOfWeek} onChange={e => setForm(p => ({ ...p, dayOfWeek: e.target.value }))} required className={inputCls}>
+                  {DAY_LABELS.map((label, i) => <option key={i} value={i}>{label}</option>)}
+                </select>
+              </>
+            )}
           </div>
           <div>
             <label className={labelCls}>Début</label>
@@ -258,12 +299,13 @@ export default function CoursesPage() {
                   <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: getStyleColor(c.danceStyleId) }} />
                   <span className="font-semibold text-gray-900">{c.name}</span>
                   {!c.isActive && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Inactif</span>}
+                  {c.isOneOff && <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">Ponctuel</span>}
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {getStyleName(c.danceStyleId)} · {getLevelName(c.levelId)} · {getRoomName(c.roomId)}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {DAY_LABELS[c.dayOfWeek]} {c.startTime}–{c.endTime} · {getSeasonLabel(c.seasonId)}
+                  {c.isOneOff && c.oneOffDate ? formatOneOffDate(c.oneOffDate) : DAY_LABELS[c.dayOfWeek]} {c.startTime}–{c.endTime} · {getSeasonLabel(c.seasonId)}
                   {getInstructorName(c.instructorId) && ` · ${getInstructorName(c.instructorId)}`}
                 </p>
               </div>

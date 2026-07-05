@@ -175,6 +175,28 @@ export const generateSessions = onDocumentWritten(
     const courseId = event.params.courseId;
     const db = getDb();
 
+    // Séance ponctuelle : une seule session à la date choisie, pas de
+    // récurrence hebdomadaire ni de logique d'annulation automatique
+    // (vacances/jours fériés) — l'admin a choisi cette date en connaissance
+    // de cause.
+    if (after.isOneOff) {
+      if (!after.oneOffDate) return;
+      const existingSnap = await db.collection('sessions')
+        .where('courseId', '==', courseId)
+        .where('date', '==', after.oneOffDate)
+        .get();
+      if (!existingSnap.empty) return;
+      await db.collection('sessions').add({
+        courseId,
+        date: after.oneOffDate,
+        startTime: after.startTime,
+        endTime: after.endTime,
+        status: 'scheduled',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+
     // Charge la saison
     const seasonSnap = await db.doc(`seasons/${after.seasonId}`).get();
     if (!seasonSnap.exists) return;
