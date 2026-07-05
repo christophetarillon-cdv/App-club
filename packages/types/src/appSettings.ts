@@ -3,7 +3,7 @@ import type { WithTimestamps } from './common';
 export type ProfileFieldKey =
   | 'firstName' | 'lastName' | 'email'
   | 'birthDate' | 'gender' | 'phone'
-  | 'address' | 'emergencyContact' | 'photo'
+  | 'street' | 'postalCode' | 'city' | 'emergencyContact' | 'photo'
   | 'profession' | 'medicalNotes' | 'healthCertificate'
   | 'marketingConsent' | 'imageRightsConsent';
 
@@ -22,7 +22,9 @@ export const DEFAULT_PROFILE_FIELDS: ProfileFieldsConfig = {
   birthDate:          { enabled: true,  required: false },
   gender:             { enabled: false, required: false },
   phone:              { enabled: true,  required: true },
-  address:            { enabled: true,  required: false },
+  street:             { enabled: true,  required: false },
+  postalCode:         { enabled: true,  required: false },
+  city:               { enabled: true,  required: false },
   emergencyContact:   { enabled: true,  required: false },
   photo:              { enabled: true,  required: false },
   profession:         { enabled: false, required: false },

@@ -14,7 +14,9 @@ export interface Dancer extends WithTimestamps {
   photoUrl?: string;
   memberNumber?: string;
   phone?: string;
-  address?: string;
+  street?: string;
+  postalCode?: string;
+  city?: string;
   emergencyContact?: { name: string; phone: string };
   gender?: string;
   profession?: string;

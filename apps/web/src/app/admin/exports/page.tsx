@@ -58,7 +58,9 @@ interface DancerExportRow {
   roles: string[];
   isActive: boolean;
   phone: string;
-  address: string;
+  street: string;
+  postalCode: string;
+  city: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
   accountEmail: string;
@@ -315,7 +317,9 @@ export default function AdminExportsPage() {
           roles: dancer.roles ?? [],
           isActive: dancer.isActive !== false,
           phone: dancer.phone ?? account?.phone ?? '',
-          address: dancer.address ?? '',
+          street: dancer.street ?? '',
+          postalCode: dancer.postalCode ?? '',
+          city: dancer.city ?? '',
           emergencyContactName: dancer.emergencyContact?.name ?? '',
           emergencyContactPhone: dancer.emergencyContact?.phone ?? '',
           accountEmail: account?.email ?? '',
@@ -454,7 +458,9 @@ function buildDancerRows(rows: DancerExportRow[], cat: CategoryFlags): Record<st
     if (cat.coordonnees) {
       out['Email'] = r.accountEmail;
       out['Téléphone'] = r.phone;
-      out['Adresse'] = r.address;
+      out['Rue'] = r.street;
+      out['Code postal'] = r.postalCode;
+      out['Ville'] = r.city;
       out['Contact urgence (nom)'] = r.emergencyContactName;
       out['Contact urgence (tél.)'] = r.emergencyContactPhone;
     }
@@ -516,7 +522,9 @@ function buildInstallmentRows(rows: DancerExportRow[], cat: CategoryFlags): Reco
       if (cat.coordonnees) {
         line['Email'] = r.accountEmail;
         line['Téléphone'] = r.phone;
-        line['Adresse'] = r.address;
+        line['Rue'] = r.street;
+        line['Code postal'] = r.postalCode;
+        line['Ville'] = r.city;
         line['Contact urgence (nom)'] = r.emergencyContactName;
         line['Contact urgence (tél.)'] = r.emergencyContactPhone;
       }

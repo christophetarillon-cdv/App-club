@@ -2034,7 +2034,9 @@ interface AdminCreateDancerInput {
   role: string;
   birthDate?: string; // yyyy-mm-dd
   gender?: string;
-  address?: string;
+  street?: string;
+  postalCode?: string;
+  city?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
 }
@@ -2139,7 +2141,9 @@ export const adminCreateAccount = onCall(
         isActive: true,
         ...(d.birthDate ? { birthDate: new Date(`${d.birthDate}T00:00:00`) } : {}),
         ...(d.gender?.trim() ? { gender: d.gender.trim() } : {}),
-        ...(d.address?.trim() ? { address: d.address.trim() } : {}),
+        ...(d.street?.trim() ? { street: d.street.trim() } : {}),
+        ...(d.postalCode?.trim() ? { postalCode: d.postalCode.trim() } : {}),
+        ...(d.city?.trim() ? { city: d.city.trim() } : {}),
         ...(d.emergencyContactName?.trim() || d.emergencyContactPhone?.trim()
           ? { emergencyContact: { name: d.emergencyContactName?.trim() ?? '', phone: d.emergencyContactPhone?.trim() ?? '' } }
           : {}),

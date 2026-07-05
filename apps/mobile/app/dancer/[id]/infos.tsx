@@ -364,7 +364,9 @@ export default function InfosScreen() {
   const [lastName, setLastName]                 = useState('');
   const [birthDate, setBirthDate]               = useState('');
   const [gender, setGender]                     = useState('');
-  const [address, setAddress]                   = useState('');
+  const [street, setStreet]                     = useState('');
+  const [postalCode, setPostalCode]             = useState('');
+  const [city, setCity]                         = useState('');
   const [emergencyName, setEmergencyName]       = useState('');
   const [emergencyPhone, setEmergencyPhone]     = useState('');
   const [profession, setProfession]             = useState('');
@@ -420,7 +422,9 @@ export default function InfosScreen() {
     setLastName(selectedDancer.lastName ?? '');
     setBirthDate(isoToDisplay(tsToIso(selectedDancer.birthDate)));
     setGender(selectedDancer.gender ?? '');
-    setAddress(selectedDancer.address ?? '');
+    setStreet(selectedDancer.street ?? '');
+    setPostalCode(selectedDancer.postalCode ?? '');
+    setCity(selectedDancer.city ?? '');
     setEmergencyName(selectedDancer.emergencyContact?.name ?? '');
     setEmergencyPhone(selectedDancer.emergencyContact?.phone ?? '');
     setProfession(selectedDancer.profession ?? '');
@@ -549,7 +553,9 @@ export default function InfosScreen() {
     if (fieldConfig.phone.required && !phone.trim()) missing.push('Téléphone');
     if (fieldConfig.birthDate.required && !birthDate.trim()) missing.push('Date de naissance');
     if (fieldConfig.gender.required && !gender) missing.push('Genre');
-    if (fieldConfig.address.required && !address.trim()) missing.push('Adresse');
+    if (fieldConfig.street.required && !street.trim()) missing.push('Rue');
+    if (fieldConfig.postalCode.required && !postalCode.trim()) missing.push('Code postal');
+    if (fieldConfig.city.required && !city.trim()) missing.push('Ville');
     if (fieldConfig.profession.required && !profession.trim()) missing.push('Profession');
 
     // Validation champs custom requis
@@ -585,7 +591,9 @@ export default function InfosScreen() {
         }
       }
       if (fieldConfig.gender.enabled)            dancerUpdates.gender = gender;
-      if (fieldConfig.address.enabled)            dancerUpdates.address = address.trim();
+      if (fieldConfig.street.enabled)              dancerUpdates.street = street.trim();
+      if (fieldConfig.postalCode.enabled)          dancerUpdates.postalCode = postalCode.trim();
+      if (fieldConfig.city.enabled)                dancerUpdates.city = city.trim();
       if (fieldConfig.emergencyContact.enabled)   dancerUpdates.emergencyContact = { name: emergencyName.trim(), phone: emergencyPhone.trim() };
       if (fieldConfig.profession.enabled)         dancerUpdates.profession = profession.trim();
       if (fieldConfig.medicalNotes.enabled)        dancerUpdates.medicalNotes = medicalNotes.trim();
@@ -810,9 +818,19 @@ export default function InfosScreen() {
                 keyboardType="phone-pad" required={fieldConfig.phone.required} />
             )}
 
-            {fieldConfig.address.enabled && (
-              <Field label="Adresse" value={address} onChangeText={setAddress}
-                autoCapitalize="sentences" required={fieldConfig.address.required} />
+            {fieldConfig.street.enabled && (
+              <Field label="Rue" value={street} onChangeText={setStreet}
+                autoCapitalize="sentences" required={fieldConfig.street.required} />
+            )}
+
+            {fieldConfig.postalCode.enabled && (
+              <Field label="Code postal" value={postalCode} onChangeText={setPostalCode}
+                keyboardType="number-pad" required={fieldConfig.postalCode.required} />
+            )}
+
+            {fieldConfig.city.enabled && (
+              <Field label="Ville" value={city} onChangeText={setCity}
+                autoCapitalize="sentences" required={fieldConfig.city.required} />
             )}
 
             {fieldConfig.emergencyContact.enabled && (

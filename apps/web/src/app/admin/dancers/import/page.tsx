@@ -35,7 +35,9 @@ interface DancerDraft {
   role: string;
   birthDate?: string;
   gender?: string;
-  address?: string;
+  street?: string;
+  postalCode?: string;
+  city?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   error?: string;
@@ -127,7 +129,9 @@ export default function AdminImportDancersPage() {
         const phone = getCell(row, 'Téléphone', 'Telephone');
         const birthDate = parseExcelDate(getRawCell(row, 'Date de naissance') as string | number | Date | undefined);
         const gender = normalizeGender(getCell(row, 'Genre'));
-        const address = getCell(row, 'Adresse');
+        const street = getCell(row, 'Rue');
+        const postalCode = getCell(row, 'Code postal');
+        const city = getCell(row, 'Ville');
         const emergencyContactName = getCell(row, 'Contact urgence (nom)');
         const emergencyContactPhone = getCell(row, 'Contact urgence (téléphone)', 'Contact urgence (telephone)');
 
@@ -144,7 +148,9 @@ export default function AdminImportDancersPage() {
           firstName, lastName, role: resolvedRole ?? roleRaw,
           ...(birthDate ? { birthDate } : {}),
           ...(gender ? { gender } : {}),
-          ...(address ? { address } : {}),
+          ...(street ? { street } : {}),
+          ...(postalCode ? { postalCode } : {}),
+          ...(city ? { city } : {}),
           ...(emergencyContactName ? { emergencyContactName } : {}),
           ...(emergencyContactPhone ? { emergencyContactPhone } : {}),
         };
@@ -191,7 +197,9 @@ export default function AdminImportDancersPage() {
             firstName: d.firstName, lastName: d.lastName, role: d.role,
             ...(d.birthDate ? { birthDate: d.birthDate } : {}),
             ...(d.gender ? { gender: d.gender } : {}),
-            ...(d.address ? { address: d.address } : {}),
+            ...(d.street ? { street: d.street } : {}),
+            ...(d.postalCode ? { postalCode: d.postalCode } : {}),
+            ...(d.city ? { city: d.city } : {}),
             ...(d.emergencyContactName ? { emergencyContactName: d.emergencyContactName } : {}),
             ...(d.emergencyContactPhone ? { emergencyContactPhone: d.emergencyContactPhone } : {}),
           })),
@@ -235,7 +243,9 @@ export default function AdminImportDancersPage() {
             <li><span className="font-mono">Téléphone</span> — facultatif</li>
             <li><span className="font-mono">Date de naissance</span> — facultatif</li>
             <li><span className="font-mono">Genre</span> — facultatif (Homme/Femme)</li>
-            <li><span className="font-mono">Adresse</span> — facultatif</li>
+            <li><span className="font-mono">Rue</span> — facultatif</li>
+            <li><span className="font-mono">Code postal</span> — facultatif</li>
+            <li><span className="font-mono">Ville</span> — facultatif</li>
             <li><span className="font-mono">Contact urgence (nom)</span> — facultatif</li>
             <li><span className="font-mono">Contact urgence (téléphone)</span> — facultatif</li>
           </ol>

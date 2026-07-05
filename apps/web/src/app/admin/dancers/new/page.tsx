@@ -24,7 +24,9 @@ interface DancerFormRow {
   role: string;
   birthDate: string;
   gender: string;
-  address: string;
+  street: string;
+  postalCode: string;
+  city: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
 }
@@ -37,7 +39,7 @@ interface AdminCreateAccountResult {
 
 const emptyDancer = (defaultRole: string): DancerFormRow => ({
   firstName: '', lastName: '', role: defaultRole,
-  birthDate: '', gender: '', address: '', emergencyContactName: '', emergencyContactPhone: '',
+  birthDate: '', gender: '', street: '', postalCode: '', city: '', emergencyContactName: '', emergencyContactPhone: '',
 });
 
 export default function AdminNewAccountPage() {
@@ -112,7 +114,9 @@ export default function AdminNewAccountPage() {
           firstName: d.firstName.trim(), lastName: d.lastName.trim(), role: d.role,
           birthDate: d.birthDate || undefined,
           gender: d.gender || undefined,
-          address: d.address.trim() || undefined,
+          street: d.street.trim() || undefined,
+          postalCode: d.postalCode.trim() || undefined,
+          city: d.city.trim() || undefined,
           emergencyContactName: d.emergencyContactName.trim() || undefined,
           emergencyContactPhone: d.emergencyContactPhone.trim() || undefined,
         })),
@@ -162,7 +166,9 @@ export default function AdminNewAccountPage() {
         isActive: true,
         ...(d.birthDate ? { birthDate: new Date(`${d.birthDate}T00:00:00`) } : {}),
         ...(d.gender ? { gender: d.gender } : {}),
-        ...(d.address.trim() ? { address: d.address.trim() } : {}),
+        ...(d.street.trim() ? { street: d.street.trim() } : {}),
+        ...(d.postalCode.trim() ? { postalCode: d.postalCode.trim() } : {}),
+        ...(d.city.trim() ? { city: d.city.trim() } : {}),
         ...(d.emergencyContactName.trim() || d.emergencyContactPhone.trim()
           ? { emergencyContact: { name: d.emergencyContactName.trim(), phone: d.emergencyContactPhone.trim() } }
           : {}),
@@ -317,12 +323,30 @@ export default function AdminNewAccountPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-[11px] text-gray-400 mb-1">Adresse</label>
+                      <label className="block text-[11px] text-gray-400 mb-1">Rue</label>
                       <input
-                        type="text" value={d.address}
-                        onChange={e => updateDancer(i, { address: e.target.value })}
+                        type="text" value={d.street}
+                        onChange={e => updateDancer(i, { street: e.target.value })}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                       />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-gray-400 mb-1">Code postal</label>
+                        <input
+                          type="text" value={d.postalCode}
+                          onChange={e => updateDancer(i, { postalCode: e.target.value })}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-400 mb-1">Ville</label>
+                        <input
+                          type="text" value={d.city}
+                          onChange={e => updateDancer(i, { city: e.target.value })}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        />
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
@@ -448,12 +472,30 @@ export default function AdminNewAccountPage() {
               </select>
             </div>
             <div>
-              <label className="block text-[11px] text-gray-400 mb-1">Adresse</label>
+              <label className="block text-[11px] text-gray-400 mb-1">Rue</label>
               <input
-                type="text" value={addDancerForm.address}
-                onChange={e => setAddDancerForm(f => ({ ...f, address: e.target.value }))}
+                type="text" value={addDancerForm.street}
+                onChange={e => setAddDancerForm(f => ({ ...f, street: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">Code postal</label>
+                <input
+                  type="text" value={addDancerForm.postalCode}
+                  onChange={e => setAddDancerForm(f => ({ ...f, postalCode: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">Ville</label>
+                <input
+                  type="text" value={addDancerForm.city}
+                  onChange={e => setAddDancerForm(f => ({ ...f, city: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>

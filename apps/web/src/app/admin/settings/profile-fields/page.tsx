@@ -19,7 +19,9 @@ const FIELD_META: Record<ProfileFieldKey, FieldMeta> = {
   birthDate:          { label: 'Date de naissance',        collection: 'dancer' },
   gender:             { label: 'Genre',                    collection: 'dancer' },
   phone:              { label: 'Téléphone',                collection: 'account' },
-  address:            { label: 'Adresse postale',          collection: 'dancer' },
+  street:             { label: 'Adresse — Rue',            collection: 'dancer' },
+  postalCode:         { label: 'Adresse — Code postal',     collection: 'dancer' },
+  city:               { label: 'Adresse — Ville',          collection: 'dancer' },
   emergencyContact:   { label: "Contact d'urgence",        collection: 'dancer' },
   photo:              { label: 'Photo de profil',          collection: 'dancer', firestoreKey: 'photoUrl' },
   profession:         { label: 'Profession',               collection: 'dancer' },
@@ -31,7 +33,7 @@ const FIELD_META: Record<ProfileFieldKey, FieldMeta> = {
 
 const FIELD_ORDER: ProfileFieldKey[] = [
   'firstName', 'lastName', 'email', 'phone',
-  'birthDate', 'gender', 'address', 'emergencyContact', 'photo',
+  'birthDate', 'gender', 'street', 'postalCode', 'city', 'emergencyContact', 'photo',
   'profession', 'medicalNotes', 'healthCertificate',
   'marketingConsent', 'imageRightsConsent',
 ];

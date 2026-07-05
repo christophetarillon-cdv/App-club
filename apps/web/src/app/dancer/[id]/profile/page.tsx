@@ -187,7 +187,9 @@ export default function DancerPersonalProfilePage() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
+  const [street, setStreet] = useState('');
+  const [postalCode, setPostalCode] = useState('');
+  const [city, setCity] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [gender, setGender] = useState('');
   const [emergencyName, setEmergencyName] = useState('');
@@ -322,7 +324,9 @@ export default function DancerPersonalProfilePage() {
       setFirstName(dancer.firstName);
       setLastName(dancer.lastName);
       setPhone(dancer.phone ?? '');
-      setAddress(dancer.address ?? '');
+      setStreet(dancer.street ?? '');
+      setPostalCode(dancer.postalCode ?? '');
+      setCity(dancer.city ?? '');
       setBirthDate(formatDate(dancer.birthDate as any));
       setGender(dancer.gender ?? '');
       setEmergencyName(dancer.emergencyContact?.name ?? '');
@@ -384,7 +388,9 @@ export default function DancerPersonalProfilePage() {
     try {
       const updates: UpdateDancerInput = { firstName: firstName.trim(), lastName: lastName.trim() };
       if (fieldConfig.phone.enabled) updates.phone = phone.trim() || undefined;
-      if (fieldConfig.address.enabled) updates.address = address.trim() || undefined;
+      if (fieldConfig.street.enabled) updates.street = street.trim() || undefined;
+      if (fieldConfig.postalCode.enabled) updates.postalCode = postalCode.trim() || undefined;
+      if (fieldConfig.city.enabled) updates.city = city.trim() || undefined;
       if (fieldConfig.birthDate.enabled && birthDate) updates.birthDate = new Date(birthDate);
       if (fieldConfig.gender.enabled) updates.gender = gender.trim() || undefined;
       if (fieldConfig.emergencyContact.enabled) {
@@ -679,7 +685,7 @@ export default function DancerPersonalProfilePage() {
             </div>
 
             {/* Coordonnées */}
-            {(fieldConfig.phone.enabled || fieldConfig.address.enabled) && (
+            {(fieldConfig.phone.enabled || fieldConfig.street.enabled || fieldConfig.postalCode.enabled || fieldConfig.city.enabled) && (
               <div className="p-4 space-y-3">
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Coordonnées</p>
                 {fieldConfig.phone.enabled && (
@@ -689,11 +695,29 @@ export default function DancerPersonalProfilePage() {
                       required={fieldConfig.phone.required} className={INPUT} />
                   </div>
                 )}
-                {fieldConfig.address.enabled && (
+                {fieldConfig.street.enabled && (
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Adresse{fieldConfig.address.required && ' *'}</label>
-                    <input value={address} onChange={e => setAddress(e.target.value)}
-                      required={fieldConfig.address.required} className={INPUT} />
+                    <label className="block text-xs text-gray-500 mb-1">Rue{fieldConfig.street.required && ' *'}</label>
+                    <input value={street} onChange={e => setStreet(e.target.value)}
+                      required={fieldConfig.street.required} className={INPUT} />
+                  </div>
+                )}
+                {(fieldConfig.postalCode.enabled || fieldConfig.city.enabled) && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {fieldConfig.postalCode.enabled && (
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Code postal{fieldConfig.postalCode.required && ' *'}</label>
+                        <input value={postalCode} onChange={e => setPostalCode(e.target.value)}
+                          required={fieldConfig.postalCode.required} className={INPUT} />
+                      </div>
+                    )}
+                    {fieldConfig.city.enabled && (
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Ville{fieldConfig.city.required && ' *'}</label>
+                        <input value={city} onChange={e => setCity(e.target.value)}
+                          required={fieldConfig.city.required} className={INPUT} />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

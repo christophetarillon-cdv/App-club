@@ -28,7 +28,7 @@ export default function DancerProfilePage() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
+  const [street, setStreet] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [emergencyName, setEmergencyName] = useState('');
   const [emergencyPhone, setEmergencyPhone] = useState('');
@@ -46,7 +46,7 @@ export default function DancerProfilePage() {
       setFirstName(dancer.firstName);
       setLastName(dancer.lastName);
       setPhone(dancer.phone ?? '');
-      setAddress(dancer.address ?? '');
+      setStreet(dancer.street ?? '');
       const bd = dancer.birthDate as any;
       setBirthDate(bd ? new Date(bd.seconds * 1000).toISOString().split('T')[0] : '');
       setEmergencyName(dancer.emergencyContact?.name ?? '');
@@ -92,7 +92,7 @@ export default function DancerProfilePage() {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         phone: phone.trim(),
-        address: address.trim(),
+        street: street.trim(),
         birthDate: birthDate ? Timestamp.fromDate(new Date(birthDate)) as any : undefined,
         emergencyContact: (emergencyName.trim() || emergencyPhone.trim())
           ? { name: emergencyName.trim(), phone: emergencyPhone.trim() }
@@ -193,7 +193,7 @@ export default function DancerProfilePage() {
 
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Adresse</label>
-            <textarea value={address} onChange={e => setAddress(e.target.value)} rows={2}
+            <textarea value={street} onChange={e => setStreet(e.target.value)} rows={2}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none" />
           </div>
 

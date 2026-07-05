@@ -201,7 +201,9 @@ export interface UpdateDancerInput {
   isMinor?: boolean;
   photoUrl?: string;
   phone?: string;
-  address?: string;
+  street?: string;
+  postalCode?: string;
+  city?: string;
   emergencyContact?: { name: string; phone: string };
   gender?: string;
   profession?: string;
@@ -223,7 +225,9 @@ export const updateDancer = async (dancerId: string, input: UpdateDancerInput) =
   if (input.isMinor !== undefined) updates.isMinor = input.isMinor;
   if (input.photoUrl !== undefined) updates.photoUrl = input.photoUrl;
   if (input.phone !== undefined) updates.phone = input.phone;
-  if (input.address !== undefined) updates.address = input.address;
+  if (input.street !== undefined) updates.street = input.street;
+  if (input.postalCode !== undefined) updates.postalCode = input.postalCode;
+  if (input.city !== undefined) updates.city = input.city;
   if (input.emergencyContact !== undefined) updates.emergencyContact = input.emergencyContact;
   if (input.gender !== undefined) updates.gender = input.gender;
   if (input.profession !== undefined) updates.profession = input.profession;

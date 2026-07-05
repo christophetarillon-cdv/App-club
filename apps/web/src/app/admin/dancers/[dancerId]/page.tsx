@@ -51,7 +51,9 @@ interface Dancer {
   roles: string[];
   isActive: boolean;
   phone?: string;
-  address?: string;
+  street?: string;
+  postalCode?: string;
+  city?: string;
   birthDate?: any;
   isMinor?: boolean;
   memberNumber?: string;
@@ -169,7 +171,9 @@ interface PendingInfo {
   phone: string;
   birthDate: string; // yyyy-mm-dd
   gender: string;
-  address: string;
+  street: string;
+  postalCode: string;
+  city: string;
   profession: string;
   medicalNotes: string;
   memberNumber: string;
@@ -191,7 +195,9 @@ function dancerToPendingInfo(d: Dancer): PendingInfo {
     phone: d.phone ?? '',
     birthDate,
     gender: d.gender ?? '',
-    address: d.address ?? '',
+    street: d.street ?? '',
+    postalCode: d.postalCode ?? '',
+    city: d.city ?? '',
     profession: d.profession ?? '',
     medicalNotes: d.medicalNotes ?? '',
     memberNumber: d.memberNumber ?? '',
@@ -245,7 +251,9 @@ export default function DancerDetailPage() {
         phone: pendingInfo.phone || null,
         birthDate: pendingInfo.birthDate ? new Date(pendingInfo.birthDate + 'T00:00:00') : null,
         gender: pendingInfo.gender || null,
-        address: pendingInfo.address || null,
+        street: pendingInfo.street || null,
+        postalCode: pendingInfo.postalCode || null,
+        city: pendingInfo.city || null,
         profession: pendingInfo.profession || null,
         medicalNotes: pendingInfo.medicalNotes || null,
         memberNumber: pendingInfo.memberNumber || null,
@@ -260,7 +268,9 @@ export default function DancerDetailPage() {
         phone: pendingInfo.phone || undefined,
         birthDate: pendingInfo.birthDate ? new Date(pendingInfo.birthDate + 'T00:00:00') : undefined,
         gender: pendingInfo.gender || undefined,
-        address: pendingInfo.address || undefined,
+        street: pendingInfo.street || undefined,
+        postalCode: pendingInfo.postalCode || undefined,
+        city: pendingInfo.city || undefined,
         profession: pendingInfo.profession || undefined,
         medicalNotes: pendingInfo.medicalNotes || undefined,
         memberNumber: pendingInfo.memberNumber || undefined,
@@ -441,7 +451,9 @@ export default function DancerDetailPage() {
           roles: d.roles ?? [],
           isActive: d.isActive !== false,
           phone: d.phone,
-          address: d.address,
+          street: d.street,
+          postalCode: d.postalCode,
+          city: d.city,
           birthDate: d.birthDate,
           isMinor: d.isMinor,
           memberNumber: d.memberNumber,
@@ -664,7 +676,9 @@ export default function DancerDetailPage() {
           <InfoRow label="Téléphone" value={phone} disabled={!fieldConfig.phone.enabled && !!phone} />
           <InfoRow label="Date de naissance" value={formatDate(dancer.birthDate)} disabled={!fieldConfig.birthDate.enabled && !!dancer.birthDate} />
           <InfoRow label="Genre" value={genderLabel(dancer.gender)} disabled={!fieldConfig.gender.enabled && !!dancer.gender} />
-          <InfoRow label="Adresse" value={dancer.address} disabled={!fieldConfig.address.enabled && !!dancer.address} />
+          <InfoRow label="Rue" value={dancer.street} disabled={!fieldConfig.street.enabled && !!dancer.street} />
+          <InfoRow label="Code postal" value={dancer.postalCode} disabled={!fieldConfig.postalCode.enabled && !!dancer.postalCode} />
+          <InfoRow label="Ville" value={dancer.city} disabled={!fieldConfig.city.enabled && !!dancer.city} />
           <InfoRow label="Profession" value={dancer.profession} disabled={!fieldConfig.profession.enabled && !!dancer.profession} />
           <InfoRow label="Notes médicales" value={dancer.medicalNotes} disabled={!fieldConfig.medicalNotes.enabled && !!dancer.medicalNotes} />
         </div>
@@ -691,9 +705,17 @@ export default function DancerDetailPage() {
               ))}
             </select>
           </EditField>
-          <EditField label="Adresse">
-            <input type="text" className={INPUT} value={pendingInfo.address}
-              onChange={e => setPendingInfo(p => p && { ...p, address: e.target.value })} />
+          <EditField label="Rue">
+            <input type="text" className={INPUT} value={pendingInfo.street}
+              onChange={e => setPendingInfo(p => p && { ...p, street: e.target.value })} />
+          </EditField>
+          <EditField label="Code postal">
+            <input type="text" className={INPUT} value={pendingInfo.postalCode}
+              onChange={e => setPendingInfo(p => p && { ...p, postalCode: e.target.value })} />
+          </EditField>
+          <EditField label="Ville">
+            <input type="text" className={INPUT} value={pendingInfo.city}
+              onChange={e => setPendingInfo(p => p && { ...p, city: e.target.value })} />
           </EditField>
           <EditField label="Profession">
             <input type="text" className={INPUT} value={pendingInfo.profession}
