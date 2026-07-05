@@ -342,7 +342,7 @@ service cloud.firestore {
     }
 
     match /bankDeposits/{id} {
-      allow read: if hasPagePermission('/admin/payments/bank-deposits') || hasPagePermission('/admin/finances/dashboard');
+      allow read: if hasPagePermission('/admin/payments/bank-deposits') || hasPagePermission('/admin/finances/dashboard') || hasPagePermission('/admin/exports');
       allow write: if hasPagePermission('/admin/payments/bank-deposits');
     }
 
@@ -352,7 +352,7 @@ service cloud.firestore {
     }
 
     match /attendances/{id} {
-      allow read: if isInstructor();
+      allow read: if isInstructor() || hasPagePermission('/admin/exports');
       allow create: if false; // Cloud Function uniquement
       allow update, delete: if isAdmin();
     }

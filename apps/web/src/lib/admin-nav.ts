@@ -108,4 +108,10 @@ export const ADMIN_NAV: NavGroup[] = [
       { label: 'Messages privés', href: '/admin/private-messages' },
     ],
   },
+  {
+    label: 'Exports',
+    items: [
+      { label: 'Export de données', href: '/admin/exports' },
+    ],
+  },
 ];
