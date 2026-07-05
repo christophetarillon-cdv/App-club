@@ -8,12 +8,13 @@ import { AppShell } from '@/components/AppShell';
 import Link from 'next/link';
 
 interface DanceStyle { id: string; name: string; color: string; }
-interface Course { id: string; name: string; danceStyleId: string; dayOfWeek: number; startTime: string; endTime: string; roomId: string; }
+interface Level { id: string; name: string; }
+interface Course { id: string; name: string; danceStyleId: string; levelId: string; dayOfWeek: number; startTime: string; endTime: string; roomId: string; }
 interface Room { id: string; name: string; }
 interface SessionWithCourse {
   id: string; courseId: string; date: string; startTime: string; endTime: string;
   status: 'scheduled' | 'cancelled' | 'extra'; cancellationReason?: string;
-  course?: Course; style?: DanceStyle; room?: Room;
+  course?: Course; style?: DanceStyle; level?: Level; room?: Room;
 }
 
 const DAY_SHORT = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
@@ -38,24 +39,26 @@ export default function PlanningPage() {
   const [registrationDates, setRegistrationDates] = useState<Map<string, string>>(new Map());
 
   const loadRefs = useCallback(async () => {
-    const [stylesSnap, coursesSnap, roomsSnap] = await Promise.all([
+    const [stylesSnap, coursesSnap, roomsSnap, levelsSnap] = await Promise.all([
       getDocs(query(collection(db, 'danceStyles'), orderBy('name'))),
       getDocs(collection(db, 'courses')),
       getDocs(collection(db, 'rooms')),
+      getDocs(collection(db, 'levels')),
     ]);
     const styles: DanceStyle[] = stylesSnap.docs.map(d => ({ id: d.id, name: d.data().name, color: d.data().color ?? '#6B7280' }));
     const courses: Course[] = coursesSnap.docs.map(d => ({
-      id: d.id, name: d.data().name, danceStyleId: d.data().danceStyleId,
+      id: d.id, name: d.data().name, danceStyleId: d.data().danceStyleId, levelId: d.data().levelId,
       dayOfWeek: d.data().dayOfWeek, startTime: d.data().startTime, endTime: d.data().endTime, roomId: d.data().roomId,
     }));
     const rooms: Room[] = roomsSnap.docs.map(d => ({ id: d.id, name: d.data().name }));
-    return { styles, courses, rooms };
+    const levels: Level[] = levelsSnap.docs.map(d => ({ id: d.id, name: d.data().name }));
+    return { styles, courses, rooms, levels };
   }, []);
 
   const loadSessions = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const { styles, courses, rooms } = await loadRefs();
+      const { styles, courses, rooms, levels } = await loadRefs();
       const startStr = toDateStr(weekStart);
       const endStr   = toDateStr(addDays(weekStart, 6));
       const snap = await getDocs(query(
@@ -66,11 +69,13 @@ export default function PlanningPage() {
       const courseMap = new Map(courses.map(c => [c.id, c]));
       const styleMap  = new Map(styles.map(s => [s.id, s]));
       const roomMap   = new Map(rooms.map(r => [r.id, r]));
+      const levelMap  = new Map(levels.map(l => [l.id, l]));
       setSessions(snap.docs.map(d => {
         const data = d.data(); const course = courseMap.get(data.courseId);
         return { id: d.id, courseId: data.courseId, date: data.date, startTime: data.startTime,
           endTime: data.endTime, status: data.status, cancellationReason: data.cancellationReason,
           course, style: course ? styleMap.get(course.danceStyleId) : undefined,
+          level: course ? levelMap.get(course.levelId) : undefined,
           room: course ? roomMap.get(course.roomId) : undefined };
       }));
     } catch (e: unknown) { setError(e instanceof Error ? e.message : String(e)); }
@@ -168,10 +173,22 @@ export default function PlanningPage() {
                       <div className="flex-1 px-4 py-3.5">
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <p className={`font-semibold text-sm ${s.status === 'cancelled' ? 'line-through text-gray-400' : 'text-gray-900'}`}>
-                              {s.course?.name ?? s.courseId}
+                            <div className="flex items-center gap-1.5">
+                              <p className={`font-semibold text-sm ${s.status === 'cancelled' ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                                {s.course?.name ?? s.courseId}
+                              </p>
+                              {s.style && (
+                                <span
+                                  className="text-[10px] font-medium px-1.5 py-0.5 rounded"
+                                  style={{ backgroundColor: `${accent}25`, color: accent }}
+                                >
+                                  {s.style.name}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {s.startTime} – {s.endTime}{s.level ? ` · ${s.level.name}` : ''}{s.room ? ` · ${s.room.name}` : ''}
                             </p>
-                            <p className="text-xs text-gray-500 mt-0.5">{s.startTime} – {s.endTime}{s.room ? ` · ${s.room.name}` : ''}</p>
                           </div>
                           <div className="flex flex-col items-end gap-1 shrink-0">
                             {s.status === 'cancelled' && (
