@@ -47,6 +47,7 @@ interface Slot {
   endTime: string;
   status: 'scheduled' | 'cancelled' | 'extra';
   style?: DanceStyle;
+  level?: Level;
   room?: Room;
 }
 
@@ -82,10 +83,12 @@ export default function WeekScreen() {
       getDocs(collection(db, 'courses')),
       getDocs(collection(db, 'danceStyles')),
       getDocs(collection(db, 'rooms')),
-    ]).then(([sessionsSnap, coursesSnap, stylesSnap, roomsSnap]) => {
+      getDocs(collection(db, 'levels')),
+    ]).then(([sessionsSnap, coursesSnap, stylesSnap, roomsSnap, levelsSnap]) => {
       const courses = new Map(coursesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Course]));
       const styles = new Map(stylesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as DanceStyle]));
       const rooms = new Map(roomsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Room]));
+      const levels = new Map(levelsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Level]));
 
       const map = new Map<string, Slot[]>();
 
@@ -100,6 +103,7 @@ export default function WeekScreen() {
           endTime: s.endTime,
           status: s.status,
           style: course ? styles.get(course.danceStyleId) : undefined,
+          level: course ? levels.get(course.levelId) : undefined,
           room: course ? rooms.get(course.roomId) : undefined,
         });
         map.set(s.date, existing);
@@ -120,6 +124,7 @@ export default function WeekScreen() {
             endTime: course.endTime,
             status: 'scheduled',
             style: styles.get(course.danceStyleId),
+            level: levels.get(course.levelId),
             room: rooms.get(course.roomId),
           });
           map.set(dateStr, existing);
@@ -243,7 +248,7 @@ function SlotCard({ slot }: { slot: Slot }) {
         )}
       </View>
       <Text style={[styles.slotMeta, cancelled && styles.slotMetaCancelled]}>
-        {slot.startTime}–{slot.endTime}{slot.room ? ` · ${slot.room.name}` : ''}
+        {slot.startTime}–{slot.endTime}{slot.level ? ` · ${slot.level.name}` : ''}{slot.room ? ` · ${slot.room.name}` : ''}
         {cancelled ? '  ·  Annulé' : ''}
       </Text>
     </View>
