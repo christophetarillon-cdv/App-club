@@ -50,4 +50,7 @@ export interface AppSettings extends WithTimestamps {
   sessionVideoUploadRoles?: string[];
   sessionVideoViewRoles?: string[];
   sessionNoteEditRoles?: string[];
+  // Active ou masque entièrement la zone "Programme" sur la fiche détail
+  // (indépendant des rôles d'édition ci-dessus).
+  sessionNoteEnabled?: boolean;
 }

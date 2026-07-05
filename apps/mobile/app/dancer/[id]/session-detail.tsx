@@ -50,6 +50,7 @@ export default function SessionDetailScreen() {
   const [uploadRoles, setUploadRoles] = useState<string[]>([]);
   const [viewRoles, setViewRoles] = useState<string[]>([]);
   const [noteEditRoles, setNoteEditRoles] = useState<string[]>([]);
+  const [noteEnabled, setNoteEnabled] = useState(true);
 
   const [videos, setVideos] = useState<Media[]>([]);
   const [showUpload, setShowUpload] = useState(false);
@@ -88,6 +89,7 @@ export default function SessionDetailScreen() {
       setUploadRoles(settingsSnap.data()?.sessionVideoUploadRoles ?? []);
       setViewRoles(settingsSnap.data()?.sessionVideoViewRoles ?? []);
       setNoteEditRoles(settingsSnap.data()?.sessionNoteEditRoles ?? []);
+      setNoteEnabled(settingsSnap.data()?.sessionNoteEnabled ?? true);
       setVideos(mediaSnap.docs.map(d => ({ id: d.id, ...d.data() } as Media)));
 
       if (courseSnap.exists()) {
@@ -151,6 +153,7 @@ export default function SessionDetailScreen() {
             </View>
 
             {/* Programme du jour */}
+            {noteEnabled && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Programme</Text>
               {editingNote ? (
@@ -187,6 +190,7 @@ export default function SessionDetailScreen() {
                 </TouchableOpacity>
               )}
             </View>
+            )}
 
             {/* Vidéo */}
             {(canViewVideo && videos.length > 0) && (
