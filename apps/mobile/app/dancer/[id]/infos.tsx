@@ -11,8 +11,9 @@ import {
   collection, serverTimestamp, arrayUnion,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { httpsCallable } from 'firebase/functions';
 import * as ImagePicker from 'expo-image-picker';
-import { auth, db, storage } from '@/lib/firebase';
+import { auth, db, storage, functions } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
 import { Colors } from '@/constants/Colors';
@@ -406,6 +407,11 @@ export default function InfosScreen() {
   const [pwError, setPwError]           = useState('');
   const [pwSaved, setPwSaved]           = useState(false);
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [delPassword, setDelPassword]             = useState('');
+  const [delError, setDelError]                   = useState('');
+  const [deleting, setDeleting]                   = useState(false);
+
   // ── Chargement config standard ────────────────────────────────────────────
 
   useEffect(() => {
@@ -707,6 +713,53 @@ export default function InfosScreen() {
       { text: 'Annuler', style: 'cancel' },
       { text: 'Se déconnecter', style: 'destructive', onPress: () => signOut(auth) },
     ]);
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!selectedDancer || !user) return;
+    setDelError('');
+    if (hasEmailProvider && !delPassword) {
+      setDelError('Saisissez votre mot de passe pour confirmer.');
+      return;
+    }
+    Alert.alert(
+      'Supprimer mon compte',
+      `Cette action est irréversible. Vos informations personnelles (${selectedDancer.firstName} ${selectedDancer.lastName}) seront définitivement anonymisées. Continuer ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer définitivement',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              if (hasEmailProvider && user.email) {
+                const credential = EmailAuthProvider.credential(user.email, delPassword);
+                await reauthenticateWithCredential(user, credential);
+              }
+              const res = await httpsCallable<{ dancerId: string }, { accountDeleted: boolean }>(
+                functions, 'deleteDancerAccount',
+              )({ dancerId: selectedDancer.id });
+
+              if (res.data.accountDeleted) {
+                await signOut(auth);
+                router.replace('/login');
+              } else {
+                clearDancer();
+                router.replace('/select-dancer');
+              }
+            } catch (e: any) {
+              if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
+                setDelError('Mot de passe incorrect.');
+              } else {
+                setDelError('Erreur lors de la suppression. Réessayez.');
+              }
+              setDeleting(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const initials = selectedDancer
@@ -1084,6 +1137,52 @@ export default function InfosScreen() {
             </View>
             <Text style={[styles.menuLabel, { color: '#EF4444' }]}>Se déconnecter</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* ── 5. Zone de danger ── */}
+        <SectionTitle label="Zone de danger" />
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.toggleRow}
+            onPress={() => { setShowDeleteConfirm(v => !v); setDelError(''); setDelPassword(''); }}
+            activeOpacity={0.75}
+          >
+            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+              <Path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z" stroke="#EF4444" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+            <Text style={[styles.toggleLabel, { color: '#EF4444' }]}>Supprimer mon compte</Text>
+            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+              <Path d={showDeleteConfirm ? 'M18 15l-6-6-6 6' : 'M6 9l6 6 6-6'} stroke={Colors.textSecondary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </TouchableOpacity>
+
+          {showDeleteConfirm && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.cardBody}>
+                <Text style={styles.helpText}>
+                  Vos informations personnelles seront définitivement effacées. Les paiements et
+                  adhésions déjà enregistrés sont conservés de façon anonyme pour les obligations
+                  comptables du club.
+                </Text>
+                {hasEmailProvider && (
+                  <Field label="Mot de passe" value={delPassword} onChangeText={setDelPassword} secureTextEntry showToggle />
+                )}
+                {delError ? <Text style={styles.errorText}>{delError}</Text> : null}
+                <TouchableOpacity
+                  style={[styles.btnPrimary, { backgroundColor: '#EF4444' }, deleting && styles.btnDisabled]}
+                  onPress={handleDeleteAccount}
+                  disabled={deleting}
+                  activeOpacity={0.8}
+                >
+                  {deleting
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={styles.btnPrimaryText}>Supprimer définitivement mon compte</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
 
       </ScrollView>

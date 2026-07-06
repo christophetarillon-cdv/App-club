@@ -32,4 +32,7 @@ export interface Dancer extends WithTimestamps {
   chatLastRead?: Record<string, number>;
   validatedSeasonIds?: string[];
   isActive: boolean;
+  // Anonymisation suite à une demande de suppression de compte du danseur.
+  isDeleted?: boolean;
+  deletedAt?: FirestoreTimestamp;
 }

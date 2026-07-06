@@ -69,7 +69,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubDancers = onSnapshot(
         query(collection(db, 'dancers'), where('accountId', '==', firebaseUser.uid)),
         (snap) => {
-          setDancers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Dancer)));
+          // Les danseurs anonymisés (suppression de compte) restent en base
+          // pour les obligations comptables mais ne doivent plus apparaître
+          // côté app.
+          setDancers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Dancer)).filter(d => !d.isDeleted));
           dancersLoaded = true;
           checkLoaded();
         },

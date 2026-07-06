@@ -1288,6 +1288,82 @@ export const deleteMedia = onCall(
   },
 );
 
+// ── deleteDancerAccount — anonymise la fiche d'un danseur à sa demande ────────
+export const deleteDancerAccount = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const uid = request.auth.uid;
+
+    const { dancerId } = request.data as { dancerId: string };
+    if (!dancerId) throw new HttpsError('invalid-argument', 'dancerId requis');
+
+    const db = getDb();
+    const dancerRef = db.doc(`dancers/${dancerId}`);
+    const dancerSnap = await dancerRef.get();
+    if (!dancerSnap.exists || dancerSnap.data()?.accountId !== uid) {
+      throw new HttpsError('permission-denied', 'Danseur invalide');
+    }
+
+    // Anonymisation : les données personnelles sont effacées, mais le doc
+    // danseur est conservé (memberNumber, id) car des paiements/adhésions
+    // peuvent y faire référence pour les obligations comptables.
+    await dancerRef.update({
+      firstName: 'Utilisateur',
+      lastName: 'supprimé',
+      firstNameLower: 'utilisateur',
+      lastNameLower: 'supprime',
+      photoUrl: admin.firestore.FieldValue.delete(),
+      birthDate: admin.firestore.FieldValue.delete(),
+      phone: admin.firestore.FieldValue.delete(),
+      street: admin.firestore.FieldValue.delete(),
+      postalCode: admin.firestore.FieldValue.delete(),
+      city: admin.firestore.FieldValue.delete(),
+      emergencyContact: admin.firestore.FieldValue.delete(),
+      gender: admin.firestore.FieldValue.delete(),
+      profession: admin.firestore.FieldValue.delete(),
+      medicalNotes: admin.firestore.FieldValue.delete(),
+      healthCertificate: admin.firestore.FieldValue.delete(),
+      customFields: admin.firestore.FieldValue.delete(),
+      notificationPreferences: admin.firestore.FieldValue.delete(),
+      levelsByStyle: admin.firestore.FieldValue.delete(),
+      roles: [],
+      isActive: false,
+      isDeleted: true,
+      deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    try {
+      await admin.storage().bucket().file(`dancers/${dancerId}/photo.jpg`).delete();
+    } catch {
+      // pas de photo, ou déjà absente
+    }
+
+    // Si c'était le dernier danseur actif du compte, on supprime aussi le
+    // compte (login) — sinon le compte reste pour les autres danseurs.
+    const remainingSnap = await db.collection('dancers').where('accountId', '==', uid).get();
+    const stillHasActiveDancer = remainingSnap.docs.some(
+      d => d.id !== dancerId && d.data().isDeleted !== true,
+    );
+
+    let accountDeleted = false;
+    if (!stillHasActiveDancer) {
+      await db.doc(`accounts/${uid}`).set(
+        { isDeleted: true, deletedAt: admin.firestore.FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+      try {
+        await admin.auth().deleteUser(uid);
+      } catch {
+        // déjà supprimé ou non trouvé
+      }
+      accountDeleted = true;
+    }
+
+    return { accountDeleted };
+  },
+);
+
 // ── encodeMedia — compresse les vidéos déclenchée par création du doc Firestore
 export const encodeMedia = onDocumentCreated(
   { document: 'media/{id}', region: 'europe-west3', memory: '4GiB', timeoutSeconds: 540, cpu: 2 },
