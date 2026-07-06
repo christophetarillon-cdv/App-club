@@ -265,8 +265,6 @@ function SlotCard({ slot, onPress, opening }: { slot: Slot; onPress: () => void;
   const cancelled = slot.status === 'cancelled';
   const accentColor = slot.style?.color ?? Colors.cardTeal;
   const borderColor = cancelled ? '#ddd' : accentColor;
-  const badgeBg = cancelled ? '#f0f0f0' : (accentColor.length === 7 ? accentColor + '25' : '#eee');
-  const badgeText = cancelled ? '#bbb' : accentColor;
 
   return (
     <Pressable
@@ -278,11 +276,6 @@ function SlotCard({ slot, onPress, opening }: { slot: Slot; onPress: () => void;
         <Text style={[styles.slotName, cancelled && styles.slotNameCancelled]} numberOfLines={1}>
           {slot.courseName}
         </Text>
-        {slot.style && (
-          <View style={[styles.styleBadge, { backgroundColor: badgeBg }]}>
-            <Text style={[styles.styleBadgeText, { color: badgeText }]}>{slot.style.name}</Text>
-          </View>
-        )}
       </View>
       <Text style={[styles.slotMeta, cancelled && styles.slotMetaCancelled]}>
         {slot.startTime}–{slot.endTime}{slot.level ? ` · ${slot.level.name}` : ''}{slot.room ? ` · ${slot.room.name}` : ''}

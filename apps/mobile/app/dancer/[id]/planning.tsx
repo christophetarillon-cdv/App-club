@@ -231,7 +231,6 @@ function SlotCard({ slot, onPress, opening }: { slot: Slot; onPress: () => void;
       </View>
       <View style={styles.cardBody}>
         <View style={styles.badges}>
-          {slot.style && <StyleBadge name={slot.style.name} color={slot.style.color} faded={cancelled} />}
           {slot.level && <LevelBadge name={slot.level.name} faded={cancelled} />}
           {cancelled && (
             <View style={styles.badgeCancelled}>
@@ -253,21 +252,6 @@ function SlotCard({ slot, onPress, opening }: { slot: Slot; onPress: () => void;
       </View>
       {opening && <ActivityIndicator color={Colors.primary} size="small" style={{ marginLeft: 8 }} />}
     </TouchableOpacity>
-  );
-}
-
-function StyleBadge({ name, color, faded }: { name: string; color: string; faded: boolean }) {
-  if (faded) {
-    return (
-      <View style={[styles.badge, { backgroundColor: '#f0f0f0' }]}>
-        <Text style={[styles.badgeText, { color: '#bbb' }]}>{name}</Text>
-      </View>
-    );
-  }
-  return (
-    <View style={[styles.badge, { backgroundColor: color + '22' }]}>
-      <Text style={[styles.badgeText, { color }]}>{name}</Text>
-    </View>
   );
 }
 
