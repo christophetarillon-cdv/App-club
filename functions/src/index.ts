@@ -341,6 +341,141 @@ export const ensureSessionForDate = onCall(
   },
 );
 
+// ── getCalendarSyncLink — génère/retourne le lien d'abonnement iCal d'un danseur
+export const getCalendarSyncLink = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const uid = request.auth.uid;
+    const { dancerId } = request.data as { dancerId: string };
+    if (!dancerId) throw new HttpsError('invalid-argument', 'dancerId requis');
+
+    const db = getDb();
+    const dancerSnap = await db.doc(`dancers/${dancerId}`).get();
+    if (!dancerSnap.exists || dancerSnap.data()?.accountId !== uid) {
+      throw new HttpsError('permission-denied', 'Danseur invalide');
+    }
+    const dancerRoles: string[] = dancerSnap.data()?.roles ?? [];
+
+    const settingsSnap = await db.doc('appSettings/main').get();
+    const syncRoles: string[] = settingsSnap.data()?.calendarSyncRoles ?? [];
+    if (!dancerRoles.includes('admin') && !dancerRoles.some(r => syncRoles.includes(r))) {
+      throw new HttpsError('permission-denied', 'Accès refusé');
+    }
+
+    const existingSnap = await db.collection('calendarTokens')
+      .where('dancerId', '==', dancerId)
+      .limit(1)
+      .get();
+
+    let token: string;
+    if (!existingSnap.empty) {
+      token = existingSnap.docs[0]!.id;
+    } else {
+      token = crypto.randomUUID();
+      await db.collection('calendarTokens').doc(token).set({
+        dancerId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return { url: `https://europe-west3-clubvoiron-dev.cloudfunctions.net/icalFeed?token=${token}` };
+  },
+);
+
+// ── icalFeed — flux iCal en lecture seule du planning du club ─────────────────
+export const icalFeed = onRequest({ region: 'europe-west3' }, async (req, res) => {
+  const token = String(req.query.token ?? '');
+  if (!token) { res.status(400).send('token requis'); return; }
+
+  const db = getDb();
+  const tokenSnap = await db.doc(`calendarTokens/${token}`).get();
+  if (!tokenSnap.exists) { res.status(404).send('Lien invalide'); return; }
+  const { dancerId } = tokenSnap.data()!;
+
+  const dancerSnap = await db.doc(`dancers/${dancerId}`).get();
+  if (!dancerSnap.exists) { res.status(404).send('Danseur introuvable'); return; }
+  const dancerRoles: string[] = dancerSnap.data()?.roles ?? [];
+
+  const settingsSnap = await db.doc('appSettings/main').get();
+  const syncRoles: string[] = settingsSnap.data()?.calendarSyncRoles ?? [];
+  const noteViewRoles: string[] = settingsSnap.data()?.sessionNoteViewRoles ?? [];
+  const isAdmin = dancerRoles.includes('admin');
+  // Revérifié à chaque appel : si le rôle a été retiré au danseur depuis la
+  // génération du lien, le flux doit cesser de fonctionner immédiatement.
+  if (!isAdmin && !dancerRoles.some(r => syncRoles.includes(r))) {
+    res.status(403).send('Accès refusé');
+    return;
+  }
+  const canViewNote = isAdmin || dancerRoles.some(r => noteViewRoles.includes(r));
+
+  const today = new Date();
+  const startStr = today.toISOString().slice(0, 10);
+  const end = new Date(today);
+  end.setDate(end.getDate() + 90);
+  const endStr = end.toISOString().slice(0, 10);
+
+  const [sessionsSnap, coursesSnap, stylesSnap, levelsSnap, roomsSnap] = await Promise.all([
+    db.collection('sessions').where('date', '>=', startStr).where('date', '<=', endStr).get(),
+    db.collection('courses').get(),
+    db.collection('danceStyles').get(),
+    db.collection('levels').get(),
+    db.collection('rooms').get(),
+  ]);
+
+  const courses = new Map(coursesSnap.docs.map(d => [d.id, d.data()]));
+  const styles = new Map(stylesSnap.docs.map(d => [d.id, d.data()]));
+  const levels = new Map(levelsSnap.docs.map(d => [d.id, d.data()]));
+  const rooms = new Map(roomsSnap.docs.map(d => [d.id, d.data()]));
+
+  const escapeIcs = (s: string) => s.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\n/g, '\\n');
+  const toIcsDateTime = (date: string, time: string) => `${date.replace(/-/g, '')}T${time.replace(':', '')}00`;
+
+  const lines: string[] = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//CDV//Planning//FR',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:Planning CDV',
+    'REFRESH-INTERVAL;VALUE=DURATION:PT6H',
+  ];
+
+  for (const d of sessionsSnap.docs) {
+    const s = d.data();
+    const course = courses.get(s.courseId);
+    if (!course) continue;
+    const style = styles.get(course.danceStyleId);
+    const level = levels.get(course.levelId);
+    const room = rooms.get(course.roomId);
+    const cancelled = s.status === 'cancelled';
+    const summary = `${cancelled ? 'Annulé : ' : ''}${course.name ?? style?.name ?? 'Cours'}`;
+    const descParts: string[] = [];
+    if (level?.name) descParts.push(level.name);
+    if (cancelled && s.cancellationReason) descParts.push(`Annulé : ${s.cancellationReason}`);
+    if (canViewNote && s.programNote) descParts.push(s.programNote);
+
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${d.id}@cdv-app`,
+      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
+      `DTSTART:${toIcsDateTime(s.date, s.startTime)}`,
+      `DTEND:${toIcsDateTime(s.date, s.endTime)}`,
+      `SUMMARY:${escapeIcs(summary)}`,
+      ...(room?.name ? [`LOCATION:${escapeIcs(room.name)}`] : []),
+      ...(descParts.length ? [`DESCRIPTION:${escapeIcs(descParts.join(' — '))}`] : []),
+      ...(cancelled ? ['STATUS:CANCELLED'] : ['STATUS:CONFIRMED']),
+      'END:VEVENT',
+    );
+  }
+
+  lines.push('END:VCALENDAR');
+
+  res.set('Content-Type', 'text/calendar; charset=utf-8');
+  res.set('Content-Disposition', 'inline; filename="planning-cdv.ics"');
+  res.send(lines.join('\r\n'));
+});
+
 // ── notifySessionCancellation — notifie quand une séance est annulée ──────────
 export const notifySessionCancellation = onDocumentUpdated(
   { document: 'sessions/{sessionId}', region: 'europe-west3' },

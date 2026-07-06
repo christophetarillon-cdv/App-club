@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator,
-  TextInput, Pressable,
+  TextInput, Pressable, Platform, Keyboard,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, collection, getDocs, query, where, updateDoc } from 'firebase/firestore';
@@ -59,6 +59,17 @@ export default function SessionDetailScreen() {
   const [noteText, setNoteText] = useState('');
   const [editingNote, setEditingNote] = useState(false);
   const [savingNote, setSavingNote] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, (e) => {
+      setKeyboardHeight(Math.max(0, e.endCoordinates.height - insets.bottom));
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, [insets.bottom]);
 
   // Rôles du danseur ACTIF (celui de la route), pas de tous les danseurs du
   // compte — sur un compte famille, un autre danseur (ex: moniteur) ne doit
@@ -131,7 +142,12 @@ export default function SessionDetailScreen() {
   return (
     <View style={StyleSheet.absoluteFill}>
       <Pressable style={styles.backdrop} onPress={() => router.back()} />
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+      <View
+        style={[
+          styles.sheet,
+          { paddingBottom: insets.bottom + 16, transform: [{ translateY: -keyboardHeight }] },
+        ]}
+      >
         <View style={styles.handleWrap}><View style={styles.handle} /></View>
 
         {loading || !session ? (

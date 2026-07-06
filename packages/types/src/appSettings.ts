@@ -51,4 +51,6 @@ export interface AppSettings extends WithTimestamps {
   sessionVideoViewRoles?: string[];
   sessionNoteViewRoles?: string[];
   sessionNoteEditRoles?: string[];
+  // Rôles autorisés à s'abonner au flux iCal de leur planning.
+  calendarSyncRoles?: string[];
 }

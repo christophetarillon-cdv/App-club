@@ -56,6 +56,7 @@ export const ADMIN_NAV: NavGroup[] = [
       { label: 'Jours fériés', href: '/admin/public-holidays' },
       { label: 'Planning', href: '/admin/settings/planning' },
       { label: 'Fiche séance', href: '/admin/settings/session-detail' },
+      { label: 'Sync agenda', href: '/admin/settings/calendar-sync' },
     ],
   },
   {

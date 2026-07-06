@@ -75,6 +75,14 @@ const MENU_ITEMS: MenuItem[] = [
   },
   {
     permKey: null,
+    label: 'Synchroniser mon planning',
+    subtitle: "Abonnement à l'agenda (iOS/Google)",
+    screen: 'calendar-sync',
+    accentColor: '#0E7490',
+    bgColor: '#CFFAFE',
+  },
+  {
+    permKey: null,
     requiredRoles: ['admin', 'bureau'],
     label: 'Paramètres',
     subtitle: 'Administration du club',
@@ -123,6 +131,12 @@ function MenuIcon({ screen, color }: { screen: string; color: string }) {
         stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
+  if (screen === 'calendar-sync') return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"
+        stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
   if (screen === 'trombinoscope') return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
       <Circle cx={9} cy={7} r={3} stroke={color} strokeWidth={1.8} />
@@ -148,13 +162,16 @@ export default function ProfileScreen() {
   const { selectedDancer } = useDancer();
 
   const [pagePermissions, setPagePermissions] = useState<Record<string, string[]>>({});
+  const [calendarSyncRoles, setCalendarSyncRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     getDoc(doc(db, 'appSettings', 'main'))
       .then(snap => {
         if (snap.exists()) {
-          setPagePermissions((snap.data().pagePermissions ?? {}) as Record<string, string[]>);
+          const data = snap.data();
+          setPagePermissions((data.pagePermissions ?? {}) as Record<string, string[]>);
+          setCalendarSyncRoles((data.calendarSyncRoles ?? []) as string[]);
         }
       })
       .catch(() => {})
@@ -177,9 +194,12 @@ export default function ProfileScreen() {
     return userRoles.some(r => requiredRoles.includes(r));
   };
 
-  const visibleItems = MENU_ITEMS.filter(
-    item => hasPerm(item.permKey) && hasRequiredRoles(item.requiredRoles),
-  );
+  const visibleItems = MENU_ITEMS.filter(item => {
+    if (item.screen === 'calendar-sync') {
+      return isAdmin || userRoles.some(r => calendarSyncRoles.includes(r));
+    }
+    return hasPerm(item.permKey) && hasRequiredRoles(item.requiredRoles);
+  });
 
   return (
     <View style={styles.root}>
