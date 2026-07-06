@@ -49,6 +49,15 @@ function DocIcon() {
   );
 }
 
+function KioskIcon() {
+  return (
+    <Svg width={44} height={44} viewBox="0 0 24 24" fill="none">
+      <Path d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z" stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+      <Path d="M13.5 13.5h1.5v1.5h-1.5zM19.5 13.5H21v1.5h-1.5zM13.5 19.5h1.5V21h-1.5zM19.5 19.5H21V21h-1.5zM16.5 16.5H18V18h-1.5z" fill="white"/>
+    </Svg>
+  );
+}
+
 // ── Vague décorative des cartes ────────────────────────────────────────────
 
 function CardWaves() {
@@ -255,6 +264,14 @@ export default function DancerHomeScreen() {
             <Text style={styles.actionLabel}>Mon espace</Text>
             <DocIcon />
           </TouchableOpacity>
+
+          {hasPerm('/kiosk') && (
+            <TouchableOpacity style={[styles.actionCard, { marginTop: 12 }]} onPress={() => nav('kiosk')} activeOpacity={0.85}>
+              <CardWaves />
+              <Text style={styles.actionLabel}>Kiosque de pointage</Text>
+              <KioskIcon />
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 

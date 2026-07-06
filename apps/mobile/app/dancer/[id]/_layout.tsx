@@ -18,6 +18,7 @@ export default function DancerLayout() {
       <Stack.Screen name="membership-create" options={{ animation: 'slide_from_bottom' }} />
       <Stack.Screen name="infos" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="chat" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="kiosk" options={{ animation: 'slide_from_right' }} />
     </Stack>
   );
 }
