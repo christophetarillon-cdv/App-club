@@ -4,7 +4,8 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/lib/firebase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,6 +15,7 @@ import type { Course, Session, DanceStyle, Level, Room } from '@cdv/types';
 
 interface Slot {
   id?: string; // id du doc sessions — absent pour les créneaux virtuels générés côté client
+  date: string;
   courseId: string;
   courseName: string;
   startTime: string;
@@ -54,6 +56,29 @@ export default function PlanningScreen() {
 
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openingSlot, setOpeningSlot] = useState<string | null>(null);
+
+  const handleSlotPress = async (slot: Slot) => {
+    if (openingSlot) return;
+    if (slot.id) {
+      router.push({ pathname: '/dancer/[id]/session-detail', params: { id, sessionId: slot.id } });
+      return;
+    }
+    // Créneau virtuel (pas encore de doc sessions pour cette date) — on le
+    // crée à la volée via une Cloud Function (les danseurs n'ont pas le droit
+    // d'écrire directement dans `sessions`).
+    setOpeningSlot(slot.courseId);
+    try {
+      const res = await httpsCallable<{ courseId: string; date: string }, { sessionId: string }>(functions, 'ensureSessionForDate')({
+        courseId: slot.courseId, date: slot.date,
+      });
+      router.push({ pathname: '/dancer/[id]/session-detail', params: { id, sessionId: res.data.sessionId } });
+    } catch {
+      // silencieux — l'utilisateur peut réessayer
+    } finally {
+      setOpeningSlot(null);
+    }
+  };
 
   useEffect(() => {
     const dateStr = todayIso();
@@ -80,6 +105,7 @@ export default function PlanningScreen() {
         const course = courses.get(s.courseId);
         result.push({
           id: s.id,
+          date: s.date,
           courseId: s.courseId,
           courseName: course?.name ?? '—',
           startTime: s.startTime,
@@ -96,6 +122,7 @@ export default function PlanningScreen() {
         if (handled.has(courseId)) continue;
         if (!course.isActive || course.dayOfWeek !== todayDow) continue;
         result.push({
+          date: dateStr,
           courseId,
           courseName: course.name,
           startTime: course.startTime,
@@ -158,7 +185,8 @@ export default function PlanningScreen() {
                 <SlotCard
                   key={slot.courseId}
                   slot={slot}
-                  onPress={slot.id ? () => router.push({ pathname: '/dancer/[id]/session-detail', params: { id, sessionId: slot.id! } }) : undefined}
+                  onPress={() => handleSlotPress(slot)}
+                  opening={openingSlot === slot.courseId}
                 />
               ))}
             </>
@@ -185,7 +213,7 @@ export default function PlanningScreen() {
   );
 }
 
-function SlotCard({ slot, onPress }: { slot: Slot; onPress?: () => void }) {
+function SlotCard({ slot, onPress, opening }: { slot: Slot; onPress: () => void; opening?: boolean }) {
   const cancelled = slot.status === 'cancelled';
   const iconColor = cancelled ? '#ccc' : '#888';
 
@@ -193,8 +221,8 @@ function SlotCard({ slot, onPress }: { slot: Slot; onPress?: () => void }) {
     <TouchableOpacity
       style={[styles.card, cancelled && styles.cardCancelled]}
       onPress={onPress}
-      disabled={!onPress}
-      activeOpacity={onPress ? 0.8 : 1}
+      disabled={opening}
+      activeOpacity={0.8}
     >
       <View style={styles.cardTimeline}>
         <Text style={[styles.timeStart, cancelled && styles.timeFaded]}>{slot.startTime}</Text>
@@ -223,6 +251,7 @@ function SlotCard({ slot, onPress }: { slot: Slot; onPress?: () => void }) {
           </View>
         )}
       </View>
+      {opening && <ActivityIndicator color={Colors.primary} size="small" style={{ marginLeft: 8 }} />}
     </TouchableOpacity>
   );
 }

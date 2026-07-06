@@ -4,7 +4,8 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/lib/firebase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
 import type { Course, Session, DanceStyle, Level, Room } from '@cdv/types';
@@ -42,6 +43,7 @@ function weekLabel(monday: Date): string {
 
 interface Slot {
   id?: string; // id du doc sessions — absent pour les créneaux virtuels générés côté client
+  date: string;
   courseId: string;
   courseName: string;
   startTime: string;
@@ -66,6 +68,28 @@ export default function WeekScreen() {
   const [currentIndex, setCurrentIndex] = useState(CENTER_INDEX);
   const [slotsByDate, setSlotsByDate] = useState<Map<string, Slot[]>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [openingSlot, setOpeningSlot] = useState<string | null>(null);
+
+  const handleSlotPress = async (slot: Slot) => {
+    if (openingSlot) return;
+    if (slot.id) {
+      router.push({ pathname: '/dancer/[id]/session-detail', params: { id: dancerId, sessionId: slot.id } });
+      return;
+    }
+    // Créneau virtuel (pas encore de doc sessions pour cette date) — on le
+    // crée à la volée via Cloud Function (écriture directe interdite aux danseurs).
+    setOpeningSlot(slot.courseId + slot.date);
+    try {
+      const res = await httpsCallable<{ courseId: string; date: string }, { sessionId: string }>(functions, 'ensureSessionForDate')({
+        courseId: slot.courseId, date: slot.date,
+      });
+      router.push({ pathname: '/dancer/[id]/session-detail', params: { id: dancerId, sessionId: res.data.sessionId } });
+    } catch {
+      // silencieux — l'utilisateur peut réessayer
+    } finally {
+      setOpeningSlot(null);
+    }
+  };
 
   const todayStr = useMemo(() => toDateStr(new Date()), []);
 
@@ -99,6 +123,7 @@ export default function WeekScreen() {
         const existing = map.get(s.date) ?? [];
         existing.push({
           id: s.id,
+          date: s.date,
           courseId: s.courseId,
           courseName: course?.name ?? '—',
           startTime: s.startTime,
@@ -120,6 +145,7 @@ export default function WeekScreen() {
           const existing = map.get(dateStr) ?? [];
           if (existing.some(s => s.courseId === courseId)) continue;
           existing.push({
+            date: dateStr,
             courseId,
             courseName: course.name,
             startTime: course.startTime,
@@ -188,7 +214,8 @@ export default function WeekScreen() {
                     <SlotCard
                       key={slot.courseId + dateStr}
                       slot={slot}
-                      onPress={slot.id ? () => router.push({ pathname: '/dancer/[id]/session-detail', params: { id: dancerId, sessionId: slot.id! } }) : undefined}
+                      onPress={() => handleSlotPress(slot)}
+                      opening={openingSlot === slot.courseId + slot.date}
                     />
                   ))
                 )}
@@ -198,7 +225,7 @@ export default function WeekScreen() {
         })}
       </ScrollView>
     );
-  }, [slotsByDate, todayStr, dancerId, router]);
+  }, [slotsByDate, todayStr, dancerId, router, openingSlot]);
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -234,7 +261,7 @@ export default function WeekScreen() {
   );
 }
 
-function SlotCard({ slot, onPress }: { slot: Slot; onPress?: () => void }) {
+function SlotCard({ slot, onPress, opening }: { slot: Slot; onPress: () => void; opening?: boolean }) {
   const cancelled = slot.status === 'cancelled';
   const accentColor = slot.style?.color ?? Colors.cardTeal;
   const borderColor = cancelled ? '#ddd' : accentColor;
@@ -245,7 +272,7 @@ function SlotCard({ slot, onPress }: { slot: Slot; onPress?: () => void }) {
     <Pressable
       style={[styles.slotCard, { borderLeftColor: borderColor }, cancelled && styles.slotCancelled]}
       onPress={onPress}
-      disabled={!onPress}
+      disabled={opening}
     >
       <View style={styles.slotTop}>
         <Text style={[styles.slotName, cancelled && styles.slotNameCancelled]} numberOfLines={1}>
@@ -261,6 +288,7 @@ function SlotCard({ slot, onPress }: { slot: Slot; onPress?: () => void }) {
         {slot.startTime}–{slot.endTime}{slot.level ? ` · ${slot.level.name}` : ''}{slot.room ? ` · ${slot.room.name}` : ''}
         {cancelled ? '  ·  Annulé' : ''}
       </Text>
+      {opening && <ActivityIndicator color={Colors.primary} size="small" style={{ marginTop: 4 }} />}
     </Pressable>
   );
 }

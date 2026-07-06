@@ -299,6 +299,48 @@ export const generateSessions = onDocumentWritten(
   },
 );
 
+// ── ensureSessionForDate — crée à la volée le doc session d'un créneau ────────
+// Certains cours n'ont pas encore de session générée pour une date donnée
+// (créneau "virtuel" affiché côté client à partir du cours récurrent, ex. si
+// generateSessions n'a jamais tourné sur ce cours). La fiche détail de séance
+// a besoin d'un id de session réel pour rattacher vidéo/programme — cette
+// fonction le crée si besoin (les danseurs n'ont pas le droit d'écrire
+// directement dans `sessions`, seul un admin/permission /admin/courses peut).
+export const ensureSessionForDate = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+
+    const { courseId, date } = request.data as { courseId: string; date: string };
+    if (!courseId || !date) throw new HttpsError('invalid-argument', 'courseId et date requis');
+
+    const db = getDb();
+
+    const existingSnap = await db.collection('sessions')
+      .where('courseId', '==', courseId)
+      .where('date', '==', date)
+      .limit(1)
+      .get();
+    if (!existingSnap.empty) return { sessionId: existingSnap.docs[0]!.id };
+
+    const courseSnap = await db.doc(`courses/${courseId}`).get();
+    if (!courseSnap.exists) throw new HttpsError('not-found', 'Cours introuvable');
+    const course = courseSnap.data()!;
+
+    const ref = db.collection('sessions').doc();
+    await ref.set({
+      courseId,
+      date,
+      startTime: course.startTime,
+      endTime: course.endTime,
+      status: 'scheduled',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return { sessionId: ref.id };
+  },
+);
+
 // ── notifySessionCancellation — notifie quand une séance est annulée ──────────
 export const notifySessionCancellation = onDocumentUpdated(
   { document: 'sessions/{sessionId}', region: 'europe-west3' },
