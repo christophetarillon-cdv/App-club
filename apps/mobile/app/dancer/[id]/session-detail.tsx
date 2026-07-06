@@ -34,10 +34,10 @@ interface SessionData {
 interface CourseData { id: string; name: string; danceStyleId: string; levelId: string; roomId: string; seasonId: string; }
 
 export default function SessionDetailScreen() {
-  const { sessionId } = useLocalSearchParams<{ id: string; sessionId: string }>();
+  const { id: dancerId, sessionId } = useLocalSearchParams<{ id: string; sessionId: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { account, dancers } = useAuth();
+  const { dancers } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<SessionData | null>(null);
@@ -60,11 +60,12 @@ export default function SessionDetailScreen() {
   const [editingNote, setEditingNote] = useState(false);
   const [savingNote, setSavingNote] = useState(false);
 
+  // Rôles du danseur ACTIF (celui de la route), pas de tous les danseurs du
+  // compte — sur un compte famille, un autre danseur (ex: moniteur) ne doit
+  // pas donner ses droits au danseur actuellement affiché.
   const callerRoles = useMemo(() => {
-    const accountRoles = account?.roles ?? [];
-    const dancerRoles = dancers.flatMap(d => d.roles ?? []);
-    return [...new Set([...accountRoles, ...dancerRoles])];
-  }, [account, dancers]);
+    return dancers.find(d => d.id === dancerId)?.roles ?? [];
+  }, [dancers, dancerId]);
   const isAdmin = callerRoles.includes('admin');
   const canUploadVideo = isAdmin || callerRoles.some(r => uploadRoles.includes(r));
   const canViewVideo = isAdmin || callerRoles.some(r => viewRoles.includes(r));
@@ -227,6 +228,7 @@ export default function SessionDetailScreen() {
           danceStyles={[]}
           fixedAttachedTo={`session:${session!.id}`}
           fixedSeasonId={course.seasonId}
+          actingDancerId={dancerId}
           onClose={() => setShowUpload(false)}
           onUploaded={load}
         />

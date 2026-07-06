@@ -30,7 +30,7 @@ function uniqueId(): string {
 }
 
 export default function VideoUploadSheet({
-  seasons, danceStyles, defaultSeasonId, onClose, onUploaded, fixedAttachedTo, fixedSeasonId,
+  seasons, danceStyles, defaultSeasonId, onClose, onUploaded, fixedAttachedTo, fixedSeasonId, actingDancerId,
 }: {
   seasons: SeasonOpt[];
   danceStyles: StyleOpt[];
@@ -41,6 +41,9 @@ export default function VideoUploadSheet({
   // on masque les sélecteurs cours/saison et on les fige.
   fixedAttachedTo?: string;
   fixedSeasonId?: string | null;
+  // Danseur actif (pas tout le compte) dont les rôles doivent être vérifiés
+  // côté serveur pour l'upload (fiche détail de séance).
+  actingDancerId?: string;
 }) {
   const insets = useSafeAreaInsets();
 
@@ -131,6 +134,7 @@ export default function VideoUploadSheet({
         type: 'video',
         seasonId: (fixedAttachedTo ? fixedSeasonId : seasonId) || null,
         attachedTo: attachedTo || null,
+        actingDancerId: actingDancerId || null,
         mimeType: file.mimeType,
         sizeBytes: (blob as any).size || file.size,
         durationSeconds: file.duration,

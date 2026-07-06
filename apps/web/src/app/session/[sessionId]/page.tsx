@@ -7,6 +7,7 @@ import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebas
 import { httpsCallable } from 'firebase/functions';
 import { db, storage, functions } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDancer } from '@/contexts/DancerContext';
 import { AppShell } from '@/components/AppShell';
 import type { Media } from '@cdv/types';
 
@@ -27,7 +28,8 @@ interface CourseData { id: string; name: string; danceStyleId: string; levelId: 
 export default function SessionDetailPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const router = useRouter();
-  const { user, account, dancers } = useAuth();
+  const { user } = useAuth();
+  const { selectedDancer } = useDancer();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(true);
@@ -54,11 +56,10 @@ export default function SessionDetailPage() {
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const callerRoles = useMemo(() => {
-    const accountRoles = account?.roles ?? [];
-    const dancerRoles = dancers.flatMap(d => d.roles ?? []);
-    return [...new Set([...accountRoles, ...dancerRoles])];
-  }, [account, dancers]);
+  // Rôles du danseur ACTIF (celui sélectionné dans l'app), pas de tous les
+  // danseurs du compte — sur un compte famille, un autre danseur (ex:
+  // moniteur) ne doit pas donner ses droits au danseur actuellement affiché.
+  const callerRoles = useMemo(() => selectedDancer?.roles ?? [], [selectedDancer]);
   const isAdmin = callerRoles.includes('admin');
   const canUploadVideo = isAdmin || callerRoles.some(r => uploadRoles.includes(r));
   const canViewVideo = isAdmin || callerRoles.some(r => viewRoles.includes(r));
@@ -158,6 +159,7 @@ export default function SessionDetailPage() {
         type: 'video',
         seasonId: course?.seasonId || null,
         attachedTo: `session:${session.id}`,
+        actingDancerId: selectedDancer?.id || null,
         mimeType: file.type,
         sizeBytes: file.size,
         durationSeconds,

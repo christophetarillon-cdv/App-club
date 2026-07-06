@@ -998,11 +998,12 @@ export const registerMedia = onCall(
 
     const {
       storagePath, sourceUrl, title, description, type,
-      seasonId, attachedTo, mimeType, sizeBytes, durationSeconds, isPublic,
+      seasonId, attachedTo, mimeType, sizeBytes, durationSeconds, isPublic, actingDancerId,
     } = request.data as {
       storagePath: string; sourceUrl: string; title: string; description?: string;
       type: 'audio' | 'video'; seasonId?: string | null; attachedTo?: string | null;
       mimeType: string; sizeBytes: number; durationSeconds?: number; isPublic: boolean;
+      actingDancerId?: string | null;
     };
 
     const db = getDb();
@@ -1044,8 +1045,20 @@ export const registerMedia = onCall(
       if (!isAdmin) {
         const settingsSnap = await db.doc('appSettings/main').get();
         const uploadRoles: string[] = settingsSnap.data()?.sessionVideoUploadRoles ?? [];
-        const callerRoles = await getCallerRoles(db, uid);
-        if (!callerRoles.some(r => uploadRoles.includes(r))) {
+        // Rôles du danseur ACTIF (celui affiché dans la fiche détail), pas de
+        // tout le compte — évite qu'un autre danseur du même compte famille
+        // (ex: un moniteur) ne donne ses droits au danseur affiché.
+        let effectiveRoles: string[];
+        if (actingDancerId) {
+          const dancerSnap = await db.doc(`dancers/${actingDancerId}`).get();
+          if (!dancerSnap.exists || dancerSnap.data()?.accountId !== uid) {
+            throw new HttpsError('permission-denied', 'Danseur invalide');
+          }
+          effectiveRoles = dancerSnap.data()?.roles ?? [];
+        } else {
+          effectiveRoles = await getCallerRoles(db, uid);
+        }
+        if (!effectiveRoles.some(r => uploadRoles.includes(r))) {
           throw new HttpsError('permission-denied', 'Accès refusé');
         }
       }
