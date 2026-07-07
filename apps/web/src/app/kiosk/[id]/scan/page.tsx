@@ -8,9 +8,18 @@ import { db, functions } from '@/lib/firebase';
 import Link from 'next/link';
 
 type ScanResult =
-  | { status: 'registered' | 'walk-in'; isTrial: boolean; dancerName: string; memberNumber: string | null }
+  | {
+      status: 'registered' | 'walk-in'; isTrial: boolean;
+      trialAlert?: 'sessions_exceeded' | 'expired' | null;
+      dancerName: string; memberNumber: string | null;
+    }
   | { status: 'already_registered'; dancerName: string; memberNumber: string | null }
   | { status: 'error'; message: string };
+
+const TRIAL_ALERT_LABEL: Record<'sessions_exceeded' | 'expired', string> = {
+  sessions_exceeded: "Nombre de séances d'essai dépassé",
+  expired: "Période d'essai dépassée",
+};
 
 interface AttendeeInfo {
   dancerId: string;
@@ -481,6 +490,12 @@ function ResultCard({ result }: { result: ScanResult }) {
         <span className="mt-3 inline-block text-xs font-semibold bg-amber-900/50 text-amber-300 border border-amber-800/50 px-3 py-1 rounded-full">
           {"Cours d'essai"}
         </span>
+      )}
+
+      {'trialAlert' in result && result.trialAlert && isSuccess && (
+        <p className="mt-3 text-xs font-semibold bg-red-900/50 text-red-300 border border-red-800/50 px-3 py-1.5 rounded-full inline-block">
+          ⚠️ {TRIAL_ALERT_LABEL[result.trialAlert]}
+        </p>
       )}
 
       <p className="text-gray-600 text-xs mt-5">Appuyer pour continuer</p>

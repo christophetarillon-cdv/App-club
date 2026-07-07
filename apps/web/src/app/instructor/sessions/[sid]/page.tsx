@@ -12,8 +12,14 @@ type AttendanceRow = {
   dancerId: string;
   method: 'qr' | 'manual';
   status: 'registered' | 'walk-in';
+  trialAlert?: 'sessions_exceeded' | 'expired' | null;
   scannedAt: { toDate: () => Date } | null;
   dancer: Pick<Dancer, 'firstName' | 'lastName' | 'memberNumber' | 'roles' | 'photoUrl'> | null;
+};
+
+const TRIAL_ALERT_LABEL: Record<'sessions_exceeded' | 'expired', string> = {
+  sessions_exceeded: 'Essai dépassé (séances)',
+  expired: 'Essai dépassé (période)',
 };
 
 const DAYS_FR = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
@@ -65,6 +71,7 @@ export default function SessionAttendancePage() {
           dancerId: data.dancerId,
           method: data.method,
           status: data.status ?? 'registered',
+          trialAlert: data.trialAlert ?? null,
           scannedAt: data.scannedAt ?? null,
           dancer: dancerMap.get(data.dancerId) ?? null,
         };
@@ -141,7 +148,11 @@ export default function SessionAttendancePage() {
                 <div className="flex flex-col items-end gap-1 shrink-0">
                   <p className="text-xs text-gray-400">{formatTime(a.scannedAt)}</p>
                   <div className="flex gap-1">
-                    {isTrial && (
+                    {a.trialAlert ? (
+                      <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">
+                        ⚠️ {TRIAL_ALERT_LABEL[a.trialAlert]}
+                      </span>
+                    ) : isTrial && (
                       <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">Essai</span>
                     )}
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${

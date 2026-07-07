@@ -1008,18 +1008,20 @@ export const recordAttendance = onCall(
       };
     }
 
-    // 4. Vérifier limites essai
+    // 4. Vérifier limites essai — dépassement = alerte, pas de blocage : la
+    // présence est quand même enregistrée avec un tag spécial pour que le
+    // professeur repère facilement les danseurs hors limites d'essai.
     const isTrial = (dancer.roles as string[])?.includes('trial');
+    let trialAlert: 'sessions_exceeded' | 'expired' | null = null;
     if (isTrial) {
       const settingsSnap = await db.doc('appSettings/main').get();
       const maxTrialSessions: number = (settingsSnap.data()?.trialMaxSessions as number) ?? 3;
       const used: number = (dancer.trialSessionsUsed as number) ?? 0;
-      if (used >= maxTrialSessions) {
-        throw new HttpsError('permission-denied', 'Nombre de séances d\'essai épuisé');
-      }
       const expiresAt = dancer.trialExpiresAt as admin.firestore.Timestamp | undefined;
-      if (expiresAt && expiresAt.toDate() < new Date()) {
-        throw new HttpsError('permission-denied', 'Période d\'essai expirée');
+      if (used >= maxTrialSessions) {
+        trialAlert = 'sessions_exceeded';
+      } else if (expiresAt && expiresAt.toDate() < new Date()) {
+        trialAlert = 'expired';
       }
     }
 
@@ -1048,6 +1050,7 @@ export const recordAttendance = onCall(
         scannedAt: admin.firestore.FieldValue.serverTimestamp(),
         method: qrUid ? 'qr' : 'manual',
         status: attendanceStatus,
+        ...(trialAlert ? { trialAlert } : {}),
       });
 
       tx.update(sessionRef, {
@@ -1083,6 +1086,7 @@ export const recordAttendance = onCall(
     return {
       status: attendanceStatus,
       isTrial,
+      trialAlert,
       dancerName: `${dancer.firstName} ${dancer.lastName}`,
       memberNumber: dancer.memberNumber ?? null,
     };

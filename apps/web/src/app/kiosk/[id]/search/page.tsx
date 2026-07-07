@@ -10,9 +10,18 @@ import Link from 'next/link';
 import { useRoles } from '@/hooks/useRoles';
 
 type ScanResult =
-  | { status: 'registered' | 'walk-in'; isTrial: boolean; dancerName: string; memberNumber: string | null }
+  | {
+      status: 'registered' | 'walk-in'; isTrial: boolean;
+      trialAlert?: 'sessions_exceeded' | 'expired' | null;
+      dancerName: string; memberNumber: string | null;
+    }
   | { status: 'already_registered'; dancerName: string; memberNumber: string | null }
   | { status: 'error'; message: string };
+
+const TRIAL_ALERT_LABEL: Record<'sessions_exceeded' | 'expired', string> = {
+  sessions_exceeded: "Nombre de séances d'essai dépassé",
+  expired: "Période d'essai dépassée",
+};
 
 const recordAttendanceFn = httpsCallable<
   { qrUid?: string; dancerId?: string; kioskSessionId: string },
@@ -168,6 +177,11 @@ export default function KioskSearchPage() {
             <span className="mt-3 inline-block text-xs font-semibold bg-white/20 text-white px-3 py-1 rounded-full">
               Cours d'essai
             </span>
+          )}
+          {'trialAlert' in scanResult && scanResult.trialAlert && isSuccess && (
+            <p className="mt-3 text-xs font-semibold bg-red-900/60 text-white px-3 py-1.5 rounded-full inline-block">
+              ⚠️ {TRIAL_ALERT_LABEL[scanResult.trialAlert]}
+            </p>
           )}
         </div>
         <div className="flex gap-4 mt-6">
