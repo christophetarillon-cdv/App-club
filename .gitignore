@@ -10,6 +10,8 @@ build/
 lib/
 !apps/web/src/lib/
 !apps/web/src/lib/**
+!apps/mobile/src/lib/
+!apps/mobile/src/lib/**
 *.tsbuildinfo
 
 # Env files

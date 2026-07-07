@@ -379,7 +379,7 @@ export const getCalendarSyncLink = onCall(
       });
     }
 
-    return { url: `https://europe-west3-clubvoiron-dev.cloudfunctions.net/icalFeed?token=${token}` };
+    return { url: `https://europe-west3-${process.env.GCLOUD_PROJECT}.cloudfunctions.net/icalFeed?token=${token}` };
   },
 );
 
@@ -590,7 +590,7 @@ export const notifySessionCancellation = onDocumentUpdated(
 
 // ── processChequeOcr — OCR via Vision API REST ────────────────────────────────
 export const processChequeOcr = onObjectFinalized(
-  { region: 'europe-west3', bucket: 'clubvoiron-dev.firebasestorage.app' },
+  { region: 'europe-west3', bucket: `${process.env.GCLOUD_PROJECT}.firebasestorage.app` },
   async (event) => {
     const filePath = event.data.name;
     if (!filePath.startsWith('cheques/')) return;

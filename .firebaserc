@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "clubvoiron-dev"
+    "default": "clubvoiron-dev",
+    "dev": "clubvoiron-dev",
+    "prod": "clubvoiron-prod"
   }
 }
