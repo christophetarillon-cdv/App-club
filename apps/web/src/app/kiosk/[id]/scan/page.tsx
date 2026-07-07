@@ -453,7 +453,7 @@ function ResultCard({ result }: { result: ScanResult }) {
   const isAlready = result.status === 'already_registered';
 
   const config = isSuccess
-    ? { bg: 'bg-green-950/95 border-green-800', icon: <CheckCircleIcon />, iconColor: 'text-green-400', label: result.status === 'walk-in' ? 'Présence enregistrée (visiteur)' : 'Présence enregistrée' }
+    ? { bg: 'bg-green-950/95 border-green-800', icon: <CheckCircleIcon />, iconColor: 'text-green-400', label: 'Présence enregistrée' }
     : isAlready
     ? { bg: 'bg-amber-950/95 border-amber-800', icon: <AlertCircleIcon />, iconColor: 'text-amber-400', label: "Déjà pointé aujourd'hui" }
     : { bg: 'bg-red-950/95 border-red-900', icon: <XCircleIcon />, iconColor: 'text-red-400', label: 'message' in result ? result.message : 'Erreur' };

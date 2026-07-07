@@ -160,8 +160,7 @@ export default function KioskSearchPage() {
             <p className="text-white/70 font-mono text-sm mb-3">{scanResult.memberNumber}</p>
           )}
           <p className="text-white font-semibold text-lg">
-            {isSuccess && scanResult.status === 'registered' && 'Présence enregistrée'}
-            {isSuccess && scanResult.status === 'walk-in' && 'Présence enregistrée (visiteur)'}
+            {isSuccess && 'Présence enregistrée'}
             {isAlready && 'Déjà pointé aujourd\'hui'}
             {'message' in scanResult && scanResult.message}
           </p>
