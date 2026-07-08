@@ -42,18 +42,20 @@ const ScanIcon    = ({ className = 'w-5 h-5' }: SvgProps) => <svg viewBox="0 0 2
 const ClipboardIcon = ({ className = 'w-5 h-5' }: SvgProps) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>;
 
 // ── Card type ─────────────────────────────────────────────────────────────────────
-type CardDef = { href: string; label: string; icon: React.ReactNode; iconBg: string; iconColor: string };
+type CardDef = { href: string; label: string; icon: React.ReactNode; bg: string };
 
+// Palette restreinte teal/orange (cohérente avec les tuiles d'action de
+// l'app mobile), alternée plutôt qu'un arc-en-ciel de couleurs par écran.
 const CARD_CONFIG: Record<string, Omit<CardDef, 'href' | 'label'>> = {
-  '/dancer/card':    { icon: <QrIcon className="w-6 h-6" />,       iconBg: 'bg-orange-50', iconColor: 'text-orange-500' },
-  '/planning':       { icon: <CalendarIcon className="w-6 h-6" />, iconBg: 'bg-blue-50',   iconColor: 'text-blue-600'   },
-  '/chat':           { icon: <ChatIcon className="w-6 h-6" />,     iconBg: 'bg-green-50',  iconColor: 'text-green-600'  },
-  '/media':          { icon: <VideoIcon className="w-6 h-6" />,    iconBg: 'bg-purple-50', iconColor: 'text-purple-600' },
-  '/audio':          { icon: <MusicIcon className="w-6 h-6" />,    iconBg: 'bg-pink-50',   iconColor: 'text-pink-600'   },
-  '/trombinoscope':  { icon: <UsersIcon className="w-6 h-6" />,    iconBg: 'bg-teal-50',   iconColor: 'text-teal-600'   },
-  '/kiosk':          { icon: <ScanIcon className="w-6 h-6" />,       iconBg: 'bg-amber-50',   iconColor: 'text-amber-600'   },
-  '/instructor':       { icon: <ClipboardIcon className="w-6 h-6" />, iconBg: 'bg-indigo-50',  iconColor: 'text-indigo-600'  },
-  '/instructor/stats': { icon: <ClipboardIcon className="w-6 h-6" />, iconBg: 'bg-violet-50',  iconColor: 'text-violet-600'  },
+  '/dancer/card':      { icon: <QrIcon className="w-6 h-6" />,       bg: 'bg-orange' },
+  '/planning':         { icon: <CalendarIcon className="w-6 h-6" />, bg: 'bg-cardTeal' },
+  '/chat':             { icon: <ChatIcon className="w-6 h-6" />,     bg: 'bg-cardTeal' },
+  '/media':            { icon: <VideoIcon className="w-6 h-6" />,    bg: 'bg-orange' },
+  '/audio':            { icon: <MusicIcon className="w-6 h-6" />,    bg: 'bg-cardTeal' },
+  '/trombinoscope':    { icon: <UsersIcon className="w-6 h-6" />,    bg: 'bg-orange' },
+  '/kiosk':            { icon: <ScanIcon className="w-6 h-6" />,     bg: 'bg-cardTeal' },
+  '/instructor':       { icon: <ClipboardIcon className="w-6 h-6" />, bg: 'bg-orange' },
+  '/instructor/stats': { icon: <ClipboardIcon className="w-6 h-6" />, bg: 'bg-cardTeal' },
 };
 
 // ── Page ──────────────────────────────────────────────────────────────────────────
@@ -158,29 +160,61 @@ export default function DancerHubPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
 
-      {/* ── Top bar ── */}
-      <header className="bg-white border-b border-gray-200 px-4 h-14 flex items-center justify-between shrink-0 z-10">
-        <div className="flex items-center gap-2.5">
-          <span className="text-sm font-bold text-primary tracking-tight">CDV</span>
-          <span className="w-px h-4 bg-gray-200 hidden sm:block" />
-          <span className="text-sm text-gray-500 hidden sm:block">{dancer.firstName} {dancer.lastName}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {otherDancers.length > 0 && (
-            <div className="flex items-center -space-x-1 mr-1">
-              {otherDancers.map(d => (
-                <button key={d.id} onClick={() => handleSwitchDancer(d)} title={`Passer à ${d.firstName}`}
-                  className="hover:scale-110 transition-transform ring-2 ring-white rounded-lg">
-                  <Avatar dancer={d} size="sm" />
-                </button>
-              ))}
+      {/* ── En-tête dégradé + vague (identité visuelle mobile) ── */}
+      <header className="relative overflow-hidden shrink-0 z-10 pb-8" style={{
+        background: 'linear-gradient(180deg, #2F86C0 0%, #7FBFE3 55%, #D8EAF3 85%, #F9F7F4 100%)',
+      }}>
+        <div className="max-w-lg mx-auto px-4 pt-4">
+          <div className="flex items-center justify-between mb-5">
+            <span className="text-sm font-bold text-white tracking-tight drop-shadow-sm">CDV</span>
+            <div className="flex items-center gap-2">
+              {otherDancers.length > 0 && (
+                <div className="flex items-center -space-x-1 mr-1">
+                  {otherDancers.map(d => (
+                    <button key={d.id} onClick={() => handleSwitchDancer(d)} title={`Passer à ${d.firstName}`}
+                      className="hover:scale-110 transition-transform ring-2 ring-white/70 rounded-lg">
+                      <Avatar dancer={d} size="sm" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-white hover:bg-white/30 transition-colors">
+                <BellIcon />
+              </button>
             </div>
-          )}
-          <button className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400 hover:text-primary hover:bg-gray-100 transition-colors">
-            <BellIcon />
-          </button>
-          <Avatar dancer={dancer} size="sm" />
+          </div>
+
+          <div className="flex items-center gap-4">
+            <Avatar dancer={dancer} size="lg" />
+            <div className="flex-1 min-w-0">
+              <p className="text-white/80 text-sm">Bienvenue</p>
+              <p className="text-2xl font-extrabold text-white truncate">{dancer.firstName}</p>
+              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                {memberLabel && (
+                  <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
+                    isTrial ? 'bg-orange text-white' : 'bg-white/25 text-white'
+                  }`}>{memberLabel}</span>
+                )}
+                {dancer.memberNumber && (
+                  <span className="text-xs text-white/70 font-mono">{dancer.memberNumber}</span>
+                )}
+              </div>
+            </div>
+            {dancers.length > 1 && (
+              <Link href="/select-dancer" title="Changer de danseur"
+                className="shrink-0 w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-white hover:bg-white/30 transition-colors">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <path d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 3M21 7.5H7.5" />
+                </svg>
+              </Link>
+            )}
+          </div>
         </div>
+
+        {/* Vague décorative */}
+        <svg className="absolute bottom-0 left-0 w-full h-8 text-background" viewBox="0 0 400 44" preserveAspectRatio="none" fill="currentColor">
+          <path d="M0 22 Q100 2 200 18 Q300 32 400 12 L400 44 L0 44 Z" />
+        </svg>
       </header>
 
       {/* ── Body ── */}
@@ -211,56 +245,30 @@ export default function DancerHubPage() {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto p-4 pb-24 md:pb-6 md:p-6">
+        <main className="flex-1 overflow-y-auto p-4 pb-24 md:pb-6 md:p-6 bg-background">
           <div className="max-w-lg mx-auto space-y-5">
 
-            {/* Hero card */}
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 flex items-center gap-4">
-              <Avatar dancer={dancer} size="lg" />
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-gray-900 truncate">{dancer.firstName} {dancer.lastName}</p>
-                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                  {memberLabel && (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${
-                      isTrial ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-blue-50 text-blue-700 border-blue-200'
-                    }`}>{memberLabel}</span>
-                  )}
-                  {dancer.memberNumber && (
-                    <span className="text-xs text-gray-400 font-mono">{dancer.memberNumber}</span>
-                  )}
-                </div>
-              </div>
-              {dancers.length > 1 && (
-                <Link href="/select-dancer" title="Changer de danseur"
-                  className="shrink-0 w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400 hover:text-primary hover:bg-gray-100 transition-colors">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                    <path d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 3M21 7.5H7.5" />
-                  </svg>
-                </Link>
-              )}
-            </div>
-
-            {/* Accès rapide — card grid */}
+            {/* Accès rapide — tuiles pleine couleur, façon mobile */}
             {quickCards.length > 0 && (
               <div>
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest px-1 mb-2.5">Accès rapide</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {quickCards.map(card => (
                     <Link key={card.href} href={card.href}
-                      className="bg-white rounded-2xl border border-gray-200 p-4 flex flex-col gap-3 hover:border-gray-300 hover:shadow-sm active:scale-[0.98] transition-all">
-                      <div className={`w-10 h-10 rounded-xl ${card.iconBg} ${card.iconColor} flex items-center justify-center`}>
+                      className={`${card.bg} rounded-2xl p-4 flex flex-col gap-3 shadow-sm hover:brightness-105 active:scale-[0.98] transition-all text-white`}>
+                      <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
                         {card.icon}
                       </div>
-                      <p className="text-sm font-medium text-gray-800 leading-snug">{card.label}</p>
+                      <p className="text-sm font-semibold leading-snug">{card.label}</p>
                     </Link>
                   ))}
                   {/* Cotisation — toujours visible */}
                   <Link href="/membership"
-                    className="bg-white rounded-2xl border border-gray-200 p-4 flex flex-col gap-3 hover:border-gray-300 hover:shadow-sm active:scale-[0.98] transition-all">
-                    <div className="w-10 h-10 rounded-xl bg-pink-50 text-pink-600 flex items-center justify-center">
+                    className="bg-orange rounded-2xl p-4 flex flex-col gap-3 shadow-sm hover:brightness-105 active:scale-[0.98] transition-all text-white">
+                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
                       <CardIcon className="w-6 h-6" />
                     </div>
-                    <p className="text-sm font-medium text-gray-800 leading-snug">Cotisation</p>
+                    <p className="text-sm font-semibold leading-snug">Cotisation</p>
                   </Link>
                 </div>
               </div>

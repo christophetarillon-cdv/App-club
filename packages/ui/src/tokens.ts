@@ -1,14 +1,22 @@
 // Design tokens — same values consumed by Tailwind (web) and NativeWind (mobile)
 export const colors = {
-  primary: '#1B3A6B',
-  secondary: '#E8B84B',
-  background: '#F8F9FA',
+  primary: '#2563EB',
+  secondary: '#F5A83A',
+  background: '#F9F7F4',
   surface: '#FFFFFF',
   textPrimary: '#1A1A2E',
   textSecondary: '#6B7280',
-  error: '#DC2626',
-  success: '#16A34A',
+  textLight: '#9CA3AF',
+  error: '#EF4444',
+  success: '#22C55E',
   border: '#E5E7EB',
+  // Identité visuelle mobile
+  headerBg: '#BDE0EF',
+  welcomeText: '#3A7FA0',
+  orange: '#F5A83A',
+  orangeDark: '#E8951F',
+  cardTeal: '#4A8B9C',
+  cardTealDark: '#3A7080',
 } as const;
 
 export const spacing = {
