@@ -186,28 +186,35 @@ export default function SessionDetailPage() {
 
   return (
     <AppShell>
-      <div className="max-w-2xl mx-auto px-4 py-5">
-        <button onClick={() => router.back()} className="text-sm text-gray-400 hover:text-gray-700 mb-4">← Retour</button>
-
-        <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-5">
+      <div className="relative overflow-hidden pb-8" style={{
+        background: 'linear-gradient(180deg, #2F86C0 0%, #7FBFE3 33%, #D8EAF3 66%, #F9F7F4 100%)',
+      }}>
+        <div className="max-w-2xl mx-auto px-4 pt-6">
+          <button onClick={() => router.back()} className="text-sm text-white/80 hover:text-white mb-2">← Retour</button>
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-xl font-bold text-gray-900">{course?.name ?? '—'}</h1>
+            <h1 className="text-2xl font-extrabold text-white">{course?.name ?? '—'}</h1>
             {styleName && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded" style={{ backgroundColor: `${styleColor}25`, color: styleColor }}>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-white/25 text-white">
                 {styleName}
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-white/80 mt-1">
             {formatDate(session.date)} · {session.startTime}–{session.endTime}
             {levelName ? ` · ${levelName}` : ''}{roomName ? ` · ${roomName}` : ''}
           </p>
           {session.status === 'cancelled' && (
-            <span className="inline-block mt-2 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-full px-2.5 py-0.5">
+            <span className="inline-block mt-2 text-xs font-semibold text-white bg-red-500/80 rounded-full px-2.5 py-0.5">
               Séance annulée
             </span>
           )}
         </div>
+        <svg className="absolute bottom-0 left-0 w-full h-8 text-background" viewBox="0 0 400 44" preserveAspectRatio="none" fill="currentColor">
+          <path d="M0 22 Q100 2 200 18 Q300 32 400 12 L400 44 L0 44 Z" />
+        </svg>
+      </div>
+
+      <div className="max-w-2xl mx-auto px-4 pb-5 -mt-4 relative">
 
         {/* Programme */}
         {canViewNote && (
