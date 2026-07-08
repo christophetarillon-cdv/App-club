@@ -162,7 +162,7 @@ export default function DancerHubPage() {
 
       {/* ── En-tête dégradé + vague (identité visuelle mobile) ── */}
       <header className="relative overflow-hidden shrink-0 z-10 pb-8" style={{
-        background: 'linear-gradient(180deg, #2F86C0 0%, #7FBFE3 55%, #D8EAF3 85%, #F9F7F4 100%)',
+        background: 'linear-gradient(180deg, #2F86C0 0%, #7FBFE3 33%, #D8EAF3 66%, #F9F7F4 100%)',
       }}>
         <div className="max-w-lg mx-auto px-4 pt-4">
           <div className="flex items-center justify-between mb-5">
@@ -248,28 +248,20 @@ export default function DancerHubPage() {
         <main className="flex-1 overflow-y-auto p-4 pb-24 md:pb-6 md:p-6 bg-background">
           <div className="max-w-lg mx-auto space-y-5">
 
-            {/* Accès rapide — tuiles pleine couleur, façon mobile */}
+            {/* Accès rapide — tuiles pleine largeur, une par ligne (façon mobile) */}
             {quickCards.length > 0 && (
               <div>
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest px-1 mb-2.5">Accès rapide</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {quickCards.map(card => (
+                <div className="flex flex-col sm:grid sm:grid-cols-2 gap-3">
+                  {[...quickCards, { href: '/membership', label: 'Cotisation', icon: <CardIcon className="w-6 h-6" />, bg: 'bg-orange' }].map(card => (
                     <Link key={card.href} href={card.href}
-                      className={`${card.bg} rounded-2xl p-4 flex flex-col gap-3 shadow-sm hover:brightness-105 active:scale-[0.98] transition-all text-white`}>
-                      <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                      className={`${card.bg} rounded-2xl h-[72px] px-5 flex items-center justify-between shadow-sm hover:brightness-105 active:scale-[0.98] transition-all text-white`}>
+                      <p className="text-base font-bold leading-snug">{card.label}</p>
+                      <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center shrink-0">
                         {card.icon}
                       </div>
-                      <p className="text-sm font-semibold leading-snug">{card.label}</p>
                     </Link>
                   ))}
-                  {/* Cotisation — toujours visible */}
-                  <Link href="/membership"
-                    className="bg-orange rounded-2xl p-4 flex flex-col gap-3 shadow-sm hover:brightness-105 active:scale-[0.98] transition-all text-white">
-                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-                      <CardIcon className="w-6 h-6" />
-                    </div>
-                    <p className="text-sm font-semibold leading-snug">Cotisation</p>
-                  </Link>
                 </div>
               </div>
             )}
