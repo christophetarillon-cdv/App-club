@@ -11,7 +11,7 @@ import { Colors } from '@/constants/Colors';
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function Gate() {
-  const { user, account, loading } = useAuth();
+  const { user, account, dancers, loading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
 
@@ -19,10 +19,18 @@ function Gate() {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
 
+  // Verrou permanent (pas juste au login) : un danseur peut être marqué
+  // "profil à compléter" pendant que l'app est déjà ouverte (cotisation
+  // payée par un tiers sans droits d'édition) — grâce aux écouteurs
+  // Firestore temps réel de AuthContext, ce check se redéclenche à chaque
+  // changement, pas seulement à la connexion.
+  const needsProfileCompletion = dancers.some(d => d.profileCompletionRequired);
+
   useEffect(() => {
     if (loading) return;
     const inAuth = segments[0] === '(auth)';
     const onForcePasswordChange = segments[0] === 'force-password-change';
+    const onCompleteProfile = segments[0] === 'complete-profile';
 
     if (user && inAuth) {
       router.replace('/');
@@ -30,8 +38,10 @@ function Gate() {
       router.replace('/(auth)/login');
     } else if (user && account?.mustChangePassword && !onForcePasswordChange) {
       router.replace('/force-password-change');
+    } else if (user && needsProfileCompletion && !onForcePasswordChange && !onCompleteProfile) {
+      router.replace('/complete-profile');
     }
-  }, [user, account, loading, segments]);
+  }, [user, account, needsProfileCompletion, loading, segments]);
 
   if (loading) {
     return (

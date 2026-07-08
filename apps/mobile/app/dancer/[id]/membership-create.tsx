@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput,
-  ActivityIndicator, Alert, Linking, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, Linking, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -11,12 +11,23 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDancer } from '@/contexts/DancerContext';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import type { PricingPlan, Season, Dancer, PaymentMethod, ProfileFieldsConfig } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+import {
+  mergeProfileFieldsConfig, computeMissingAccountFields, computeMissingDancerFields,
+  type MissingField,
+} from '@/lib/profileFields';
+
+const GENDER_OPTIONS = [
+  { value: 'F', label: 'Femme' },
+  { value: 'M', label: 'Homme' },
+  { value: 'other', label: 'Autre' },
+];
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 
@@ -76,12 +87,45 @@ function newInstallment(iso?: string): InstallmentForm {
   return { id: String(Date.now() + Math.random()), date, dateDisplay: isoToDisplay(date), amount: '', chequeNumber: '', draweeBank: '', draweeCity: '' };
 }
 
+// ── Champs du formulaire de complétion de profil ───────────────────────────
+
+function TextField({ label, value, onChangeText, placeholder, keyboardType, multiline }: {
+  label: string; value: string; onChangeText: (v: string) => void;
+  placeholder?: string; keyboardType?: 'default' | 'phone-pad' | 'number-pad';
+  multiline?: boolean;
+}) {
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        style={[styles.textFieldInput, multiline && { height: 72, textAlignVertical: 'top' }]}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={Colors.textLight}
+        keyboardType={keyboardType}
+        multiline={multiline}
+      />
+    </View>
+  );
+}
+
+function ConsentSwitch({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <View style={styles.consentRow}>
+      <Text style={styles.consentLabel}>{label}</Text>
+      <Switch value={value} onValueChange={onChange} trackColor={{ true: Colors.primary }} thumbColor="#fff" />
+    </View>
+  );
+}
+
 // ── Composant principal ──────────────────────────────────────────────────────
 
 export default function MembershipCreateScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, account, dancers: myDancers } = useAuth();
+  const { selectedDancer } = useDancer();
 
   // ── Données de base
   const [availableSeasons, setAvailableSeasons] = useState<Season[]>([]);
@@ -155,14 +199,7 @@ export default function MembershipCreateScreen() {
           getDoc(doc(db, 'appSettings', 'main')),
         ]);
         if (settingsSnap.exists()) {
-          const saved = settingsSnap.data().profileFields as Partial<ProfileFieldsConfig> | undefined;
-          const merged = { ...DEFAULT_PROFILE_FIELDS };
-          if (saved) {
-            for (const key of Object.keys(DEFAULT_PROFILE_FIELDS) as (keyof ProfileFieldsConfig)[]) {
-              if (saved[key]) merged[key] = { ...DEFAULT_PROFILE_FIELDS[key], ...saved[key] };
-            }
-          }
-          setFieldConfig(merged);
+          setFieldConfig(mergeProfileFieldsConfig(settingsSnap.data().profileFields));
         }
         if (seasonSnap.empty) return;
         const all = seasonSnap.docs
@@ -234,36 +271,172 @@ export default function MembershipCreateScreen() {
   const remaining = (creationResult?.totalDue ?? 0) - totalInstallmentsCents;
 
   // ── Vérification fiche d'identité complète ────────────────────────────────
-  // Limité au cas "je paie pour moi" : les autres cas (compte famille,
-  // autre compte) nécessiteraient de basculer le danseur actif pour éditer
-  // sa fiche, ce qui aurait des effets de bord plus larges dans l'app.
-  const missingProfileFields = useMemo(() => {
-    if (payScope !== 'me' || !account) return [];
-    const dancer = allSelected[0];
-    if (!dancer) return [];
-    const missing: string[] = [];
-    if (fieldConfig.phone.required && !account.phone?.trim()) missing.push('Téléphone');
-    if (fieldConfig.birthDate.required && !dancer.birthDate) missing.push('Date de naissance');
-    if (fieldConfig.gender.required && !dancer.gender) missing.push('Genre');
-    if (fieldConfig.street.required && !dancer.street?.trim()) missing.push('Rue');
-    if (fieldConfig.postalCode.required && !dancer.postalCode?.trim()) missing.push('Code postal');
-    if (fieldConfig.city.required && !dancer.city?.trim()) missing.push('Ville');
-    if (fieldConfig.profession.required && !dancer.profession?.trim()) missing.push('Profession');
-    if (fieldConfig.emergencyContact.required && !(dancer.emergencyContact?.name?.trim() && dancer.emergencyContact?.phone?.trim())) {
-      missing.push("Contact d'urgence");
+  // Danseurs de mon propre compte (+ n'importe quel danseur si je suis
+  // admin/bureau) : je peux éditer leur fiche, donc on demande de compléter
+  // directement dans le déroulé. Danseurs d'un autre compte sans droits :
+  // on laisse la cotisation se créer, mais on marque leur fiche pour que
+  // leur titulaire soit obligé de compléter à sa prochaine connexion.
+  const isAdmin = selectedDancer?.roles.includes('admin') ?? false;
+
+  const editableDancers = useMemo(
+    () => allSelected.filter(d => d.accountId === user?.uid || isAdmin),
+    [allSelected, user, isAdmin],
+  );
+  const nonEditableDancers = useMemo(
+    () => allSelected.filter(d => d.accountId !== user?.uid && !isAdmin),
+    [allSelected, user, isAdmin],
+  );
+
+  const accountMissing = useMemo(
+    () => (editableDancers.some(d => d.accountId === user?.uid) ? computeMissingAccountFields(account, fieldConfig) : []),
+    [editableDancers, account, fieldConfig, user],
+  );
+  const dancersMissing = useMemo(
+    () => editableDancers
+      .map(d => ({ dancer: d, fields: computeMissingDancerFields(d, fieldConfig) }))
+      .filter(x => x.fields.length > 0),
+    [editableDancers, fieldConfig],
+  );
+  const nonEditableMissing = useMemo(
+    () => nonEditableDancers
+      .map(d => ({ dancer: d, fields: computeMissingDancerFields(d, fieldConfig) }))
+      .filter(x => x.fields.length > 0),
+    [nonEditableDancers, fieldConfig],
+  );
+
+  const hasIncompleteEditableProfile = accountMissing.length > 0 || dancersMissing.length > 0;
+
+  // ── Formulaire de complétion (Option A : une seule page consolidée) ──────
+  const [profileForm, setProfileForm] = useState<Record<string, string | boolean>>({});
+  const setFormValue = (key: string, value: string | boolean) =>
+    setProfileForm(prev => ({ ...prev, [key]: value }));
+
+  useEffect(() => {
+    if (step !== 'incomplete-profile') return;
+    // Pré-remplit avec les valeurs déjà existantes (non vides) pour ne pas
+    // perdre la saisie si l'utilisateur navigue entre les étapes.
+    setProfileForm(prev => {
+      const next = { ...prev };
+      if (accountMissing.length > 0 && account) {
+        if (next['account.phone'] === undefined) next['account.phone'] = account.phone ?? '';
+        if (next['account.marketingConsent'] === undefined) next['account.marketingConsent'] = account.marketingConsent ?? false;
+        if (next['account.imageRightsConsent'] === undefined) next['account.imageRightsConsent'] = account.imageRightsConsent ?? false;
+      }
+      for (const { dancer } of dancersMissing) {
+        const p = dancer.id;
+        if (next[`${p}.street`] === undefined) next[`${p}.street`] = dancer.street ?? '';
+        if (next[`${p}.postalCode`] === undefined) next[`${p}.postalCode`] = dancer.postalCode ?? '';
+        if (next[`${p}.city`] === undefined) next[`${p}.city`] = dancer.city ?? '';
+        if (next[`${p}.profession`] === undefined) next[`${p}.profession`] = dancer.profession ?? '';
+        if (next[`${p}.medicalNotes`] === undefined) next[`${p}.medicalNotes`] = dancer.medicalNotes ?? '';
+        if (next[`${p}.gender`] === undefined) next[`${p}.gender`] = dancer.gender ?? '';
+        if (next[`${p}.birthDate`] === undefined) {
+          next[`${p}.birthDate`] = dancer.birthDate
+            ? isoToDisplay(new Date(dancer.birthDate.seconds * 1000).toISOString().slice(0, 10))
+            : '';
+        }
+        if (next[`${p}.healthCertificate`] === undefined) next[`${p}.healthCertificate`] = dancer.healthCertificate ?? false;
+        if (next[`${p}.emergencyName`] === undefined) next[`${p}.emergencyName`] = dancer.emergencyContact?.name ?? '';
+        if (next[`${p}.emergencyPhone`] === undefined) next[`${p}.emergencyPhone`] = dancer.emergencyContact?.phone ?? '';
+      }
+      return next;
+    });
+  }, [step]);
+
+  const isFieldMissingValue = (key: string, fieldKey: string): boolean => {
+    const v = profileForm[key];
+    if (fieldKey === 'healthCertificate' || fieldKey === 'marketingConsent' || fieldKey === 'imageRightsConsent') {
+      return v !== true;
     }
-    if (fieldConfig.medicalNotes.required && !dancer.medicalNotes?.trim()) missing.push('Notes médicales');
-    if (fieldConfig.healthCertificate.required && !dancer.healthCertificate) missing.push('Certificat médical');
-    if (fieldConfig.marketingConsent.required && !account.marketingConsent) missing.push('Consentement marketing');
-    if (fieldConfig.imageRightsConsent.required && !account.imageRightsConsent) missing.push("Droit à l'image");
-    return missing;
-  }, [payScope, account, allSelected, fieldConfig]);
+    if (fieldKey === 'emergencyContact') {
+      return !(profileForm[key + 'Name'] as string)?.trim() || !(profileForm[key + 'Phone'] as string)?.trim();
+    }
+    return !(typeof v === 'string' && v.trim());
+  };
+
+  const profileFormValid = (): boolean => {
+    if (accountMissing.some(f => isFieldMissingValue(`account.${f.key}`, f.key))) return false;
+    for (const { dancer, fields } of dancersMissing) {
+      for (const f of fields) {
+        if (f.key === 'emergencyContact') {
+          if (!(profileForm[`${dancer.id}.emergencyName`] as string)?.trim() || !(profileForm[`${dancer.id}.emergencyPhone`] as string)?.trim()) return false;
+        } else if (isFieldMissingValue(`${dancer.id}.${f.key}`, f.key)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  const handleSaveProfileForm = async () => {
+    if (!profileFormValid() || !user) return;
+    setSavingProfile(true);
+    try {
+      const writes: Promise<unknown>[] = [];
+
+      if (accountMissing.length > 0) {
+        const accountUpdates: Record<string, unknown> = { updatedAt: serverTimestamp() };
+        if (accountMissing.some(f => f.key === 'phone')) accountUpdates.phone = (profileForm['account.phone'] as string).trim();
+        if (accountMissing.some(f => f.key === 'marketingConsent')) accountUpdates.marketingConsent = !!profileForm['account.marketingConsent'];
+        if (accountMissing.some(f => f.key === 'imageRightsConsent')) accountUpdates.imageRightsConsent = !!profileForm['account.imageRightsConsent'];
+        writes.push(updateDoc(doc(db, 'accounts', user.uid), accountUpdates));
+      }
+
+      for (const { dancer, fields } of dancersMissing) {
+        const p = dancer.id;
+        const dancerUpdates: Record<string, unknown> = { updatedAt: serverTimestamp() };
+        for (const f of fields) {
+          if (f.key === 'street') dancerUpdates.street = (profileForm[`${p}.street`] as string).trim();
+          if (f.key === 'postalCode') dancerUpdates.postalCode = (profileForm[`${p}.postalCode`] as string).trim();
+          if (f.key === 'city') dancerUpdates.city = (profileForm[`${p}.city`] as string).trim();
+          if (f.key === 'profession') dancerUpdates.profession = (profileForm[`${p}.profession`] as string).trim();
+          if (f.key === 'medicalNotes') dancerUpdates.medicalNotes = (profileForm[`${p}.medicalNotes`] as string).trim();
+          if (f.key === 'gender') dancerUpdates.gender = profileForm[`${p}.gender`];
+          if (f.key === 'healthCertificate') dancerUpdates.healthCertificate = !!profileForm[`${p}.healthCertificate`];
+          if (f.key === 'emergencyContact') {
+            dancerUpdates.emergencyContact = {
+              name: (profileForm[`${p}.emergencyName`] as string).trim(),
+              phone: (profileForm[`${p}.emergencyPhone`] as string).trim(),
+            };
+          }
+          if (f.key === 'birthDate') {
+            const iso = displayToIso(profileForm[`${p}.birthDate`] as string);
+            if (iso) {
+              const [y, m, d] = iso.split('-').map(Number);
+              dancerUpdates.birthDate = new Date(y!, m! - 1, d!);
+            }
+          }
+        }
+        writes.push(updateDoc(doc(db, 'dancers', p), dancerUpdates));
+        // Le flag n'a de sens que si posé précédemment (ancien scan/tiers) —
+        // on le lève une fois la fiche complétée par le titulaire lui-même.
+        if (dancer.profileCompletionRequired) {
+          writes.push(updateDoc(doc(db, 'dancers', p), { profileCompletionRequired: false }));
+        }
+      }
+
+      await Promise.all(writes);
+
+      if (plans.length === 1) {
+        const pre: Record<string, string> = {};
+        allSelected.forEach(d => { pre[d.id] = plans[0]!.id; });
+        setPlanIds(pre);
+      }
+      setStep('plan');
+    } catch {
+      Alert.alert('Erreur', "Impossible d'enregistrer les informations.");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   // ── Step 1 → 2 ──────────────────────────────────────────────────────────
 
   const handleWhoNext = () => {
     if (!canGoToPlan) return;
-    if (missingProfileFields.length > 0) {
+    if (hasIncompleteEditableProfile) {
       setStep('incomplete-profile');
       return;
     }
@@ -347,6 +520,14 @@ export default function MembershipCreateScreen() {
 
         await batch.commit();
         result = { kind: 'group', groupId: groupRef.id, totalDue: groupTotal, method };
+      }
+
+      // Danseurs d'un autre compte dont la fiche est incomplète et que je
+      // n'ai pas le droit d'éditer : leur titulaire devra compléter à sa
+      // prochaine connexion (best-effort, ne bloque pas la cotisation).
+      if (nonEditableMissing.length > 0) {
+        const flagFn = httpsCallable(functions, 'flagProfileCompletion');
+        Promise.all(nonEditableMissing.map(x => flagFn({ dancerId: x.dancer.id }))).catch(() => {});
       }
 
       if (method === 'helloasso') {
@@ -461,7 +642,7 @@ export default function MembershipCreateScreen() {
   const handleBack = () => {
     if (step === 'who') router.back();
     else if (step === 'incomplete-profile') setStep('who');
-    else if (step === 'plan') setStep(missingProfileFields.length > 0 ? 'incomplete-profile' : 'who');
+    else if (step === 'plan') setStep(hasIncompleteEditableProfile ? 'incomplete-profile' : 'who');
     else if (step === 'installments') setStep('plan');
     else router.back();
   };
@@ -591,55 +772,126 @@ export default function MembershipCreateScreen() {
     </KeyboardAvoidingView>
   );
 
-  // ── STEP INTERMÉDIAIRE : PROFIL INCOMPLET ───────────────────────────────
+  // ── STEP INTERMÉDIAIRE : PROFIL INCOMPLET (Option A, page consolidée) ────
 
   function renderIncompleteProfile() {
-    const dancer = allSelected[0];
+    const valid = profileFormValid();
     return (
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.incompleteCard}>
-          <Text style={styles.incompleteTitle}>Fiche d'identité incomplète</Text>
-          <Text style={styles.incompleteSub}>
-            {dancer ? `${dancer.firstName} ${dancer.lastName}` : 'Ce danseur'} doit compléter les
-            informations suivantes avant de choisir une cotisation :
-          </Text>
-          <View style={styles.missingList}>
-            {missingProfileFields.map(label => (
-              <View key={label} style={styles.missingRow}>
-                <View style={styles.missingDot} />
-                <Text style={styles.missingLabel}>{label}</Text>
-              </View>
-            ))}
+        <Text style={styles.incompleteIntro}>
+          Merci de compléter les informations manquantes avant de choisir une cotisation.
+        </Text>
+
+        {nonEditableMissing.length > 0 && (
+          <View style={styles.noticeCard}>
+            <Text style={styles.noticeText}>
+              ⚠️ {nonEditableMissing.map(x => `${x.dancer.firstName} ${x.dancer.lastName}`).join(', ')}
+              {nonEditableMissing.length > 1 ? ' ont' : ' a'} une fiche incomplète, mais vous n'avez pas les
+              droits pour la modifier. La cotisation sera quand même créée ; leur titulaire de compte devra
+              compléter sa fiche à sa prochaine connexion.
+            </Text>
           </View>
-        </View>
+        )}
+
+        {accountMissing.length > 0 && (
+          <View style={styles.incompleteCard}>
+            <Text style={styles.incompleteSectionTitle}>Mes informations de compte</Text>
+            {accountMissing.some(f => f.key === 'phone') && (
+              <TextField
+                label="Téléphone"
+                value={profileForm['account.phone'] as string ?? ''}
+                onChangeText={v => setFormValue('account.phone', v)}
+                keyboardType="phone-pad"
+              />
+            )}
+            {accountMissing.some(f => f.key === 'marketingConsent') && (
+              <ConsentSwitch
+                label="J'accepte de recevoir des communications marketing du club."
+                value={!!profileForm['account.marketingConsent']}
+                onChange={v => setFormValue('account.marketingConsent', v)}
+              />
+            )}
+            {accountMissing.some(f => f.key === 'imageRightsConsent') && (
+              <ConsentSwitch
+                label="J'autorise le club à utiliser mon image (photos/vidéos)."
+                value={!!profileForm['account.imageRightsConsent']}
+                onChange={v => setFormValue('account.imageRightsConsent', v)}
+              />
+            )}
+          </View>
+        )}
+
+        {dancersMissing.map(({ dancer, fields }) => (
+          <View key={dancer.id} style={styles.incompleteCard}>
+            <Text style={styles.incompleteSectionTitle}>{dancer.firstName} {dancer.lastName}</Text>
+            {fields.some(f => f.key === 'birthDate') && (
+              <TextField label="Date de naissance (JJ/MM/AAAA)" value={profileForm[`${dancer.id}.birthDate`] as string ?? ''}
+                onChangeText={v => setFormValue(`${dancer.id}.birthDate`, v)} placeholder="JJ/MM/AAAA" />
+            )}
+            {fields.some(f => f.key === 'gender') && (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={styles.fieldLabel}>Genre</Text>
+                <View style={styles.chipsRow}>
+                  {GENDER_OPTIONS.map(opt => {
+                    const active = profileForm[`${dancer.id}.gender`] === opt.value;
+                    return (
+                      <TouchableOpacity key={opt.value} style={[styles.chip, active && styles.chipActive]}
+                        onPress={() => setFormValue(`${dancer.id}.gender`, opt.value)} activeOpacity={0.75}>
+                        <Text style={[styles.chipText, active && styles.chipTextActive]}>{opt.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+            {fields.some(f => f.key === 'street') && (
+              <TextField label="Rue" value={profileForm[`${dancer.id}.street`] as string ?? ''}
+                onChangeText={v => setFormValue(`${dancer.id}.street`, v)} />
+            )}
+            {fields.some(f => f.key === 'postalCode') && (
+              <TextField label="Code postal" value={profileForm[`${dancer.id}.postalCode`] as string ?? ''}
+                onChangeText={v => setFormValue(`${dancer.id}.postalCode`, v)} keyboardType="number-pad" />
+            )}
+            {fields.some(f => f.key === 'city') && (
+              <TextField label="Ville" value={profileForm[`${dancer.id}.city`] as string ?? ''}
+                onChangeText={v => setFormValue(`${dancer.id}.city`, v)} />
+            )}
+            {fields.some(f => f.key === 'profession') && (
+              <TextField label="Profession" value={profileForm[`${dancer.id}.profession`] as string ?? ''}
+                onChangeText={v => setFormValue(`${dancer.id}.profession`, v)} />
+            )}
+            {fields.some(f => f.key === 'emergencyContact') && (
+              <>
+                <TextField label="Contact d'urgence — nom" value={profileForm[`${dancer.id}.emergencyName`] as string ?? ''}
+                  onChangeText={v => setFormValue(`${dancer.id}.emergencyName`, v)} />
+                <TextField label="Contact d'urgence — téléphone" value={profileForm[`${dancer.id}.emergencyPhone`] as string ?? ''}
+                  onChangeText={v => setFormValue(`${dancer.id}.emergencyPhone`, v)} keyboardType="phone-pad" />
+              </>
+            )}
+            {fields.some(f => f.key === 'medicalNotes') && (
+              <TextField label="Notes médicales" value={profileForm[`${dancer.id}.medicalNotes`] as string ?? ''}
+                onChangeText={v => setFormValue(`${dancer.id}.medicalNotes`, v)} multiline />
+            )}
+            {fields.some(f => f.key === 'healthCertificate') && (
+              <ConsentSwitch
+                label="Certificat médical fourni"
+                value={!!profileForm[`${dancer.id}.healthCertificate`]}
+                onChange={v => setFormValue(`${dancer.id}.healthCertificate`, v)}
+              />
+            )}
+          </View>
+        ))}
 
         <TouchableOpacity
-          style={styles.primaryBtn}
-          onPress={() => router.push(`/dancer/${dancer!.id}/infos` as any)}
+          style={[styles.primaryBtn, (!valid || savingProfile) && styles.btnDisabled]}
+          onPress={handleSaveProfileForm}
+          disabled={!valid || savingProfile}
           activeOpacity={0.85}
         >
-          <Text style={styles.primaryBtnText}>Compléter mon profil</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.secondaryBtn}
-          onPress={() => {
-            if (missingProfileFields.length > 0) {
-              Alert.alert('Profil encore incomplet', 'Il reste des informations à renseigner.');
-              return;
-            }
-            if (plans.length === 1) {
-              const pre: Record<string, string> = {};
-              allSelected.forEach(d => { pre[d.id] = plans[0]!.id; });
-              setPlanIds(pre);
-            }
-            setStep('plan');
-          }}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.secondaryBtnText}>
-            {missingProfileFields.length === 0 ? 'Continuer →' : "J'ai complété mon profil"}
-          </Text>
+          {savingProfile
+            ? <ActivityIndicator color="#fff" />
+            : <Text style={styles.primaryBtnText}>Continuer →</Text>
+          }
         </TouchableOpacity>
       </ScrollView>
     );
@@ -1049,11 +1301,23 @@ const styles = StyleSheet.create({
   emptySub: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
 
   // Profil incomplet
-  incompleteCard: { backgroundColor: Colors.white, borderRadius: 16, padding: 18, marginBottom: 8, borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.06)' },
+  incompleteIntro: { fontSize: 14, color: Colors.textSecondary, lineHeight: 20, marginBottom: 14 },
+  incompleteCard: { backgroundColor: Colors.white, borderRadius: 16, padding: 18, marginBottom: 12, borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.06)' },
   incompleteTitle: { fontSize: 17, fontWeight: '700', color: Colors.text, marginBottom: 6 },
   incompleteSub: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19, marginBottom: 14 },
+  incompleteSectionTitle: { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 12 },
   missingList: { gap: 8 },
   missingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   missingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#EF4444' },
   missingLabel: { fontSize: 14, color: Colors.text, fontWeight: '500' },
+  noticeCard: { backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FED7AA', borderRadius: 14, padding: 14, marginBottom: 12 },
+  noticeText: { fontSize: 13, color: '#9A3412', lineHeight: 19 },
+  textFieldInput: { backgroundColor: Colors.background, borderWidth: 0.5, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.text },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.background, borderWidth: 0.5, borderColor: Colors.border },
+  chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  chipText: { fontSize: 13, color: Colors.text, fontWeight: '500' },
+  chipTextActive: { color: '#fff' },
+  consentRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 4 },
+  consentLabel: { flex: 1, fontSize: 13, color: Colors.text, lineHeight: 18 },
 });

@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getApp } from 'firebase/app';
 import {
-  collection, getDocs, query, where, addDoc, doc, getDoc,
+  collection, getDocs, query, where, addDoc, doc, getDoc, updateDoc,
   deleteDoc, writeBatch, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -14,8 +14,17 @@ import { useDancer } from '@/contexts/DancerContext';
 import { AppShell } from '@/components/AppShell';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { ProfileFieldsConfig } from '@cdv/types';
+import type { ProfileFieldsConfig, Dancer as FullDancer } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+import {
+  mergeProfileFieldsConfig, computeMissingAccountFields, computeMissingDancerFields,
+} from '@/lib/profileFields';
+
+const GENDER_OPTIONS = [
+  { value: 'F', label: 'Femme' },
+  { value: 'M', label: 'Homme' },
+  { value: 'other', label: 'Autre' },
+];
 
 interface Dancer { id: string; firstName: string; lastName: string; accountEmail?: string; }
 interface Season { id: string; label: string; }
@@ -102,6 +111,21 @@ export default function MembershipPage() {
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('cheque');
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Fiches complètes des danseurs d'autres comptes sélectionnés (pour
+  // vérifier les champs obligatoires manquants).
+  const [fullOtherDancersMap, setFullOtherDancersMap] = useState<Record<string, FullDancer>>({});
+  useEffect(() => {
+    const missingIds = selectedOtherDancers.map(d => d.id).filter(id => !fullOtherDancersMap[id]);
+    if (missingIds.length === 0) return;
+    Promise.all(missingIds.map(id => getDoc(doc(db, 'dancers', id)))).then(snaps => {
+      setFullOtherDancersMap(prev => {
+        const next = { ...prev };
+        snaps.forEach(s => { if (s.exists()) next[s.id] = { id: s.id, ...s.data() } as FullDancer; });
+        return next;
+      });
+    });
+  }, [selectedOtherDancers]);
 
   useEffect(() => {
     if (!user) return;
@@ -250,15 +274,7 @@ export default function MembershipPage() {
 
   useEffect(() => {
     getDoc(doc(db, 'appSettings', 'main')).then(snap => {
-      if (!snap.exists()) return;
-      const saved = snap.data().profileFields as Partial<ProfileFieldsConfig> | undefined;
-      const merged = { ...DEFAULT_PROFILE_FIELDS };
-      if (saved) {
-        for (const key of Object.keys(DEFAULT_PROFILE_FIELDS) as (keyof ProfileFieldsConfig)[]) {
-          if (saved[key]) merged[key] = { ...DEFAULT_PROFILE_FIELDS[key], ...saved[key] };
-        }
-      }
-      setFieldConfig(merged);
+      if (snap.exists()) setFieldConfig(mergeProfileFieldsConfig(snap.data().profileFields));
     }).catch(() => {});
   }, []);
 
@@ -350,31 +366,150 @@ export default function MembershipPage() {
   ];
   const dancersToCreate = allSelectedDancers.filter(d => !alreadyEnrolledIds.has(d.id));
 
-  // Vérification fiche d'identité complète — limité au cas "je paie pour
-  // moi" : les autres cas nécessiteraient de basculer le danseur actif
-  // pour éditer sa fiche, un effet de bord plus large que voulu ici.
-  const missingProfileFields: string[] = (() => {
-    if (payScope !== 'me' || !account) return [];
-    const meId = myDancers[0]?.id;
-    const dancer = fullDancers.find(d => d.id === meId);
-    if (!dancer) return [];
-    const missing: string[] = [];
-    if (fieldConfig.phone.required && !account.phone?.trim()) missing.push('Téléphone');
-    if (fieldConfig.birthDate.required && !dancer.birthDate) missing.push('Date de naissance');
-    if (fieldConfig.gender.required && !dancer.gender) missing.push('Genre');
-    if (fieldConfig.street.required && !dancer.street?.trim()) missing.push('Rue');
-    if (fieldConfig.postalCode.required && !dancer.postalCode?.trim()) missing.push('Code postal');
-    if (fieldConfig.city.required && !dancer.city?.trim()) missing.push('Ville');
-    if (fieldConfig.profession.required && !dancer.profession?.trim()) missing.push('Profession');
-    if (fieldConfig.emergencyContact.required && !(dancer.emergencyContact?.name?.trim() && dancer.emergencyContact?.phone?.trim())) {
-      missing.push("Contact d'urgence");
+  // ── Vérification fiche d'identité complète ────────────────────────────────
+  // Danseurs de mon compte (+ n'importe quel danseur si je suis admin/bureau)
+  // : je peux éditer leur fiche, donc on demande de compléter directement
+  // dans le déroulé. Danseurs d'un autre compte sans droits : la cotisation
+  // se crée quand même, mais leur fiche est marquée pour que leur titulaire
+  // soit obligé de la compléter à sa prochaine connexion.
+  const isAdmin = (selectedDancer?.roles.includes('admin') ?? false) || (account?.roles?.includes('admin') ?? false);
+
+  const editableSelectedDancers = allSelectedDancers.filter(d => {
+    const full = fullDancers.find(fd => fd.id === d.id) ?? fullOtherDancersMap[d.id];
+    return isAdmin || (full ? full.accountId === user?.uid : true);
+  });
+  const nonEditableSelectedDancers = allSelectedDancers.filter(d => !editableSelectedDancers.includes(d));
+
+  const accountMissing = editableSelectedDancers.some(d => fullDancers.some(fd => fd.id === d.id))
+    ? computeMissingAccountFields(account, fieldConfig)
+    : [];
+
+  const dancersMissing = editableSelectedDancers
+    .map(d => ({ dancer: d, full: fullDancers.find(fd => fd.id === d.id) ?? fullOtherDancersMap[d.id] }))
+    .filter((x): x is { dancer: Dancer; full: FullDancer } => !!x.full)
+    .map(x => ({ ...x, fields: computeMissingDancerFields(x.full, fieldConfig) }))
+    .filter(x => x.fields.length > 0);
+
+  const nonEditableMissing = nonEditableSelectedDancers
+    .map(d => ({ dancer: d, full: fullOtherDancersMap[d.id] }))
+    .filter((x): x is { dancer: Dancer; full: FullDancer } => !!x.full)
+    .map(x => ({ ...x, fields: computeMissingDancerFields(x.full, fieldConfig) }))
+    .filter(x => x.fields.length > 0);
+
+  const hasIncompleteEditableProfile = accountMissing.length > 0 || dancersMissing.length > 0;
+
+  // ── Formulaire de complétion (Option A : une seule page consolidée) ──────
+  const [profileForm, setProfileForm] = useState<Record<string, string | boolean>>({});
+  const [savingProfile, setSavingProfile] = useState(false);
+  const setFormValue = (key: string, value: string | boolean) => setProfileForm(prev => ({ ...prev, [key]: value }));
+
+  useEffect(() => {
+    if (step !== 'incomplete-profile') return;
+    setProfileForm(prev => {
+      const next = { ...prev };
+      if (accountMissing.length > 0 && account) {
+        if (next['account.phone'] === undefined) next['account.phone'] = account.phone ?? '';
+        if (next['account.marketingConsent'] === undefined) next['account.marketingConsent'] = account.marketingConsent ?? false;
+        if (next['account.imageRightsConsent'] === undefined) next['account.imageRightsConsent'] = account.imageRightsConsent ?? false;
+      }
+      for (const { dancer, full } of dancersMissing) {
+        const p = dancer.id;
+        if (next[`${p}.street`] === undefined) next[`${p}.street`] = full.street ?? '';
+        if (next[`${p}.postalCode`] === undefined) next[`${p}.postalCode`] = full.postalCode ?? '';
+        if (next[`${p}.city`] === undefined) next[`${p}.city`] = full.city ?? '';
+        if (next[`${p}.profession`] === undefined) next[`${p}.profession`] = full.profession ?? '';
+        if (next[`${p}.medicalNotes`] === undefined) next[`${p}.medicalNotes`] = full.medicalNotes ?? '';
+        if (next[`${p}.gender`] === undefined) next[`${p}.gender`] = full.gender ?? '';
+        if (next[`${p}.birthDate`] === undefined) {
+          next[`${p}.birthDate`] = full.birthDate
+            ? new Date(full.birthDate.seconds * 1000).toISOString().slice(0, 10)
+            : '';
+        }
+        if (next[`${p}.healthCertificate`] === undefined) next[`${p}.healthCertificate`] = full.healthCertificate ?? false;
+        if (next[`${p}.emergencyName`] === undefined) next[`${p}.emergencyName`] = full.emergencyContact?.name ?? '';
+        if (next[`${p}.emergencyPhone`] === undefined) next[`${p}.emergencyPhone`] = full.emergencyContact?.phone ?? '';
+      }
+      return next;
+    });
+  }, [step]);
+
+  const isFieldMissingValue = (key: string, fieldKey: string): boolean => {
+    const v = profileForm[key];
+    if (fieldKey === 'healthCertificate' || fieldKey === 'marketingConsent' || fieldKey === 'imageRightsConsent') {
+      return v !== true;
     }
-    if (fieldConfig.medicalNotes.required && !dancer.medicalNotes?.trim()) missing.push('Notes médicales');
-    if (fieldConfig.healthCertificate.required && !dancer.healthCertificate) missing.push('Certificat médical');
-    if (fieldConfig.marketingConsent.required && !account.marketingConsent) missing.push('Consentement marketing');
-    if (fieldConfig.imageRightsConsent.required && !account.imageRightsConsent) missing.push("Droit à l'image");
-    return missing;
-  })();
+    return !(typeof v === 'string' && v.trim());
+  };
+
+  const profileFormValid = (): boolean => {
+    if (accountMissing.some(f => isFieldMissingValue(`account.${f.key}`, f.key))) return false;
+    for (const { dancer, fields } of dancersMissing) {
+      for (const f of fields) {
+        if (f.key === 'emergencyContact') {
+          if (!(profileForm[`${dancer.id}.emergencyName`] as string)?.trim() || !(profileForm[`${dancer.id}.emergencyPhone`] as string)?.trim()) return false;
+        } else if (f.key === 'gender') {
+          if (!profileForm[`${dancer.id}.gender`]) return false;
+        } else if (isFieldMissingValue(`${dancer.id}.${f.key}`, f.key)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+
+  const handleSaveProfileForm = async () => {
+    if (!profileFormValid() || !user) return;
+    setSavingProfile(true);
+    try {
+      const writes: Promise<unknown>[] = [];
+
+      if (accountMissing.length > 0) {
+        const accountUpdates: Record<string, unknown> = { updatedAt: serverTimestamp() };
+        if (accountMissing.some(f => f.key === 'phone')) accountUpdates.phone = (profileForm['account.phone'] as string).trim();
+        if (accountMissing.some(f => f.key === 'marketingConsent')) accountUpdates.marketingConsent = !!profileForm['account.marketingConsent'];
+        if (accountMissing.some(f => f.key === 'imageRightsConsent')) accountUpdates.imageRightsConsent = !!profileForm['account.imageRightsConsent'];
+        writes.push(updateDoc(doc(db, 'accounts', user.uid), accountUpdates));
+      }
+
+      for (const { dancer, fields } of dancersMissing) {
+        const p = dancer.id;
+        const dancerUpdates: Record<string, unknown> = { updatedAt: serverTimestamp() };
+        for (const f of fields) {
+          if (f.key === 'street') dancerUpdates.street = (profileForm[`${p}.street`] as string).trim();
+          if (f.key === 'postalCode') dancerUpdates.postalCode = (profileForm[`${p}.postalCode`] as string).trim();
+          if (f.key === 'city') dancerUpdates.city = (profileForm[`${p}.city`] as string).trim();
+          if (f.key === 'profession') dancerUpdates.profession = (profileForm[`${p}.profession`] as string).trim();
+          if (f.key === 'medicalNotes') dancerUpdates.medicalNotes = (profileForm[`${p}.medicalNotes`] as string).trim();
+          if (f.key === 'gender') dancerUpdates.gender = profileForm[`${p}.gender`];
+          if (f.key === 'healthCertificate') dancerUpdates.healthCertificate = !!profileForm[`${p}.healthCertificate`];
+          if (f.key === 'emergencyContact') {
+            dancerUpdates.emergencyContact = {
+              name: (profileForm[`${p}.emergencyName`] as string).trim(),
+              phone: (profileForm[`${p}.emergencyPhone`] as string).trim(),
+            };
+          }
+          if (f.key === 'birthDate') {
+            const iso = profileForm[`${p}.birthDate`] as string;
+            if (iso) dancerUpdates.birthDate = new Date(iso + 'T00:00:00');
+          }
+        }
+        writes.push(updateDoc(doc(db, 'dancers', p), dancerUpdates));
+      }
+
+      await Promise.all(writes);
+
+      if (plans.length === 1) {
+        const pre: Record<string, string> = {};
+        dancersToCreate.forEach(d => { pre[d.id] = plans[0]!.id; });
+        setSelectedPlanIds(pre);
+      }
+      setStep('plan');
+    } catch {
+      alert("Impossible d'enregistrer les informations.");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const resetCreateForm = () => {
     setStep('who');
@@ -393,6 +528,15 @@ export default function MembershipPage() {
     if (!user || !season || !allPlansFilled) return;
     setSubmitting(true);
     setCreateError(null);
+
+    // Danseurs d'un autre compte dont la fiche est incomplète et que je
+    // n'ai pas le droit d'éditer : leur titulaire devra compléter à sa
+    // prochaine connexion (best-effort, ne bloque pas la cotisation).
+    if (nonEditableMissing.length > 0) {
+      const flagFn = httpsCallable(getFunctions(getApp(), 'europe-west3'), 'flagProfileCompletion');
+      Promise.all(nonEditableMissing.map(x => flagFn({ dancerId: x.dancer.id }))).catch(() => {});
+    }
+
     try {
       if (dancersToCreate.length === 1) {
         const dancer = dancersToCreate[0]!;
@@ -677,7 +821,7 @@ export default function MembershipPage() {
                     )}
 
                     <button
-                      onClick={() => setStep(missingProfileFields.length > 0 ? 'incomplete-profile' : 'plan')}
+                      onClick={() => setStep(hasIncompleteEditableProfile ? 'incomplete-profile' : 'plan')}
                       disabled={dancersToCreate.length === 0}
                       className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors"
                     >
@@ -686,44 +830,159 @@ export default function MembershipPage() {
                   </>
                 )}
 
-                {/* Step intermédiaire : profil incomplet */}
+                {/* Step intermédiaire : profil incomplet (Option A, page consolidée) */}
                 {step === 'incomplete-profile' && (
                   <>
                     <button onClick={() => setStep('who')} className="text-sm text-gray-400 hover:text-gray-600">
                       ← Retour
                     </button>
-                    <div className="bg-red-50 border border-red-100 rounded-xl p-4">
-                      <p className="font-semibold text-gray-900 mb-1">Fiche d'identité incomplète</p>
-                      <p className="text-sm text-gray-600 mb-3">
-                        {myDancers[0] ? `${myDancers[0].firstName} ${myDancers[0].lastName}` : 'Ce danseur'} doit
-                        compléter les informations suivantes avant de choisir une cotisation :
-                      </p>
-                      <ul className="space-y-1.5">
-                        {missingProfileFields.map(label => (
-                          <li key={label} className="flex items-center gap-2 text-sm text-gray-700">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
-                            {label}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <Link
-                      href={`/dancer/${myDancers[0]?.id}/profile`}
-                      className="block w-full text-center bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 text-sm transition-colors"
-                    >
-                      Compléter mon profil
-                    </Link>
+                    <p className="text-sm text-gray-600">
+                      Merci de compléter les informations manquantes avant de choisir une cotisation.
+                    </p>
+
+                    {nonEditableMissing.length > 0 && (
+                      <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+                        <p className="text-sm text-orange-800">
+                          ⚠️ {nonEditableMissing.map(x => `${x.dancer.firstName} ${x.dancer.lastName}`).join(', ')}
+                          {nonEditableMissing.length > 1 ? ' ont' : ' a'} une fiche incomplète, mais vous n'avez pas
+                          les droits pour la modifier. La cotisation sera quand même créée ; leur titulaire de
+                          compte devra compléter sa fiche à sa prochaine connexion.
+                        </p>
+                      </div>
+                    )}
+
+                    {accountMissing.length > 0 && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                        <p className="font-semibold text-gray-900 text-sm">Mes informations de compte</p>
+                        {accountMissing.some(f => f.key === 'phone') && (
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Téléphone</label>
+                            <input type="tel" value={profileForm['account.phone'] as string ?? ''}
+                              onChange={e => setFormValue('account.phone', e.target.value)}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                          </div>
+                        )}
+                        {accountMissing.some(f => f.key === 'marketingConsent') && (
+                          <label className="flex items-start gap-2.5 cursor-pointer">
+                            <input type="checkbox" checked={!!profileForm['account.marketingConsent']}
+                              onChange={e => setFormValue('account.marketingConsent', e.target.checked)}
+                              className="mt-0.5 w-4 h-4 rounded" />
+                            <span className="text-xs text-gray-600">J'accepte de recevoir des communications marketing du club.</span>
+                          </label>
+                        )}
+                        {accountMissing.some(f => f.key === 'imageRightsConsent') && (
+                          <label className="flex items-start gap-2.5 cursor-pointer">
+                            <input type="checkbox" checked={!!profileForm['account.imageRightsConsent']}
+                              onChange={e => setFormValue('account.imageRightsConsent', e.target.checked)}
+                              className="mt-0.5 w-4 h-4 rounded" />
+                            <span className="text-xs text-gray-600">J'autorise le club à utiliser mon image (photos/vidéos).</span>
+                          </label>
+                        )}
+                      </div>
+                    )}
+
+                    {dancersMissing.map(({ dancer, fields }) => (
+                      <div key={dancer.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                        <p className="font-semibold text-gray-900 text-sm">{dancer.firstName} {dancer.lastName}</p>
+                        {fields.some(f => f.key === 'birthDate') && (
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Date de naissance</label>
+                            <input type="date" value={profileForm[`${dancer.id}.birthDate`] as string ?? ''}
+                              onChange={e => setFormValue(`${dancer.id}.birthDate`, e.target.value)}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                          </div>
+                        )}
+                        {fields.some(f => f.key === 'gender') && (
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Genre</label>
+                            <div className="flex gap-2">
+                              {GENDER_OPTIONS.map(opt => (
+                                <button key={opt.value} type="button"
+                                  onClick={() => setFormValue(`${dancer.id}.gender`, opt.value)}
+                                  className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
+                                    profileForm[`${dancer.id}.gender`] === opt.value
+                                      ? 'bg-blue-600 border-blue-600 text-white'
+                                      : 'bg-white border-gray-300 text-gray-700'
+                                  }`}>
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {fields.some(f => f.key === 'street') && (
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Rue</label>
+                            <input type="text" value={profileForm[`${dancer.id}.street`] as string ?? ''}
+                              onChange={e => setFormValue(`${dancer.id}.street`, e.target.value)}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                          </div>
+                        )}
+                        {fields.some(f => f.key === 'postalCode') && (
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Code postal</label>
+                            <input type="text" value={profileForm[`${dancer.id}.postalCode`] as string ?? ''}
+                              onChange={e => setFormValue(`${dancer.id}.postalCode`, e.target.value)}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                          </div>
+                        )}
+                        {fields.some(f => f.key === 'city') && (
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Ville</label>
+                            <input type="text" value={profileForm[`${dancer.id}.city`] as string ?? ''}
+                              onChange={e => setFormValue(`${dancer.id}.city`, e.target.value)}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                          </div>
+                        )}
+                        {fields.some(f => f.key === 'profession') && (
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Profession</label>
+                            <input type="text" value={profileForm[`${dancer.id}.profession`] as string ?? ''}
+                              onChange={e => setFormValue(`${dancer.id}.profession`, e.target.value)}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                          </div>
+                        )}
+                        {fields.some(f => f.key === 'emergencyContact') && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Contact d'urgence — nom</label>
+                              <input type="text" value={profileForm[`${dancer.id}.emergencyName`] as string ?? ''}
+                                onChange={e => setFormValue(`${dancer.id}.emergencyName`, e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Téléphone</label>
+                              <input type="tel" value={profileForm[`${dancer.id}.emergencyPhone`] as string ?? ''}
+                                onChange={e => setFormValue(`${dancer.id}.emergencyPhone`, e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                            </div>
+                          </div>
+                        )}
+                        {fields.some(f => f.key === 'medicalNotes') && (
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Notes médicales</label>
+                            <textarea value={profileForm[`${dancer.id}.medicalNotes`] as string ?? ''}
+                              onChange={e => setFormValue(`${dancer.id}.medicalNotes`, e.target.value)} rows={2}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none" />
+                          </div>
+                        )}
+                        {fields.some(f => f.key === 'healthCertificate') && (
+                          <label className="flex items-start gap-2.5 cursor-pointer">
+                            <input type="checkbox" checked={!!profileForm[`${dancer.id}.healthCertificate`]}
+                              onChange={e => setFormValue(`${dancer.id}.healthCertificate`, e.target.checked)}
+                              className="mt-0.5 w-4 h-4 rounded" />
+                            <span className="text-xs text-gray-600">Certificat médical fourni</span>
+                          </label>
+                        )}
+                      </div>
+                    ))}
+
                     <button
-                      onClick={() => {
-                        if (missingProfileFields.length > 0) {
-                          alert('Il reste des informations à renseigner.');
-                          return;
-                        }
-                        setStep('plan');
-                      }}
-                      className="w-full bg-white border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-50 text-sm transition-colors"
+                      onClick={handleSaveProfileForm}
+                      disabled={!profileFormValid() || savingProfile}
+                      className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors"
                     >
-                      {missingProfileFields.length === 0 ? 'Continuer →' : "J'ai complété mon profil"}
+                      {savingProfile ? 'Enregistrement…' : 'Continuer →'}
                     </button>
                   </>
                 )}

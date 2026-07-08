@@ -1374,6 +1374,28 @@ export const deleteDancerAccount = onCall(
   },
 );
 
+// ── flagProfileCompletion — marque une fiche danseur à compléter ─────────────
+// Utilisée quand un tiers (paiement pour un danseur d'un autre compte) détecte
+// des champs obligatoires manquants mais n'a pas les droits pour les remplir
+// à sa place. Le titulaire du danseur sera bloqué en connexion suivante tant
+// qu'il n'aura pas complété sa fiche (cf. guard côté app).
+export const flagProfileCompletion = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const { dancerId } = request.data as { dancerId: string };
+    if (!dancerId) throw new HttpsError('invalid-argument', 'dancerId requis');
+
+    const db = getDb();
+    const dancerRef = db.doc(`dancers/${dancerId}`);
+    const dancerSnap = await dancerRef.get();
+    if (!dancerSnap.exists) throw new HttpsError('not-found', 'Danseur introuvable');
+
+    await dancerRef.update({ profileCompletionRequired: true });
+    return { ok: true };
+  },
+);
+
 // ── encodeMedia — compresse les vidéos déclenchée par création du doc Firestore
 export const encodeMedia = onDocumentCreated(
   { document: 'media/{id}', region: 'europe-west3', memory: '4GiB', timeoutSeconds: 540, cpu: 2 },

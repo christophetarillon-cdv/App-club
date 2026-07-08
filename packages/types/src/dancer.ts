@@ -35,4 +35,8 @@ export interface Dancer extends WithTimestamps {
   // Anonymisation suite à une demande de suppression de compte du danseur.
   isDeleted?: boolean;
   deletedAt?: FirestoreTimestamp;
+  // Fiche incomplète détectée par un tiers (ex: cotisation payée par un
+  // autre compte) qui n'avait pas les droits pour la compléter à sa place —
+  // complétion à faire obligatoirement à la prochaine connexion du titulaire.
+  profileCompletionRequired?: boolean;
 }
