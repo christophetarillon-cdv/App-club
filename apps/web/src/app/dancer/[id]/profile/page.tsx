@@ -15,6 +15,7 @@ import type { Dancer, ProfileFieldsConfig, CustomField, CustomFieldRole } from '
 import { DEFAULT_PROFILE_FIELDS, ROLE_PRIORITY } from '@cdv/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { GENDER_OPTIONS } from '@/lib/gender-constants';
+import { AppShell } from '@/components/AppShell';
 import Link from 'next/link';
 import { z } from 'zod';
 
@@ -506,13 +507,16 @@ export default function DancerPersonalProfilePage() {
   const INPUT = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 bg-white';
 
   return (
+    <AppShell>
     <div className="min-h-screen" style={{ backgroundColor: '#F9F7F4' }}>
 
-      {/* ── Hero ───────────────────────────────────────────────────────────── */}
-      <div className="bg-white border-b border-gray-100">
-        <div className="max-w-lg mx-auto px-5 pt-5 pb-6">
+      {/* ── Hero dégradé + vague (identité visuelle mobile) ── */}
+      <div className="relative overflow-hidden pb-8" style={{
+        background: 'linear-gradient(180deg, #2F86C0 0%, #7FBFE3 33%, #D8EAF3 66%, #F9F7F4 100%)',
+      }}>
+        <div className="max-w-lg mx-auto px-5 pt-5">
           <Link href={`/dancer/${id}`}
-            className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors mb-5">
+            className="inline-flex items-center gap-1.5 text-xs text-white/80 hover:text-white transition-colors mb-5">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
@@ -528,7 +532,7 @@ export default function DancerPersonalProfilePage() {
                   <img src={photoPreview ?? dancer.photoUrl!} alt={dancer.firstName}
                     className="w-[72px] h-[72px] rounded-full object-cover ring-2 ring-white shadow" />
                 ) : (
-                  <div className="w-[72px] h-[72px] rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-xl font-semibold ring-2 ring-white shadow">
+                  <div className="w-[72px] h-[72px] rounded-full bg-white/20 flex items-center justify-center text-white text-xl font-semibold ring-2 ring-white shadow">
                     {initials}
                   </div>
                 )}
@@ -540,19 +544,19 @@ export default function DancerPersonalProfilePage() {
                 </div>
               </label>
             ) : (
-              <div className="w-[72px] h-[72px] rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-xl font-semibold ring-2 ring-white shadow shrink-0">
+              <div className="w-[72px] h-[72px] rounded-full bg-white/20 flex items-center justify-center text-white text-xl font-semibold ring-2 ring-white shadow shrink-0">
                 {initials}
               </div>
             )}
 
             {/* Nom + email + badge */}
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-semibold text-gray-900 truncate">{dancer.firstName} {dancer.lastName}</h1>
+              <h1 className="text-xl font-bold text-white truncate">{dancer.firstName} {dancer.lastName}</h1>
               {auth.currentUser?.email && (
-                <p className="text-sm text-gray-400 mt-0.5 truncate">{auth.currentUser.email}</p>
+                <p className="text-sm text-white/70 mt-0.5 truncate">{auth.currentUser.email}</p>
               )}
               {badge && (
-                <span className={`mt-2 inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-full ${badge.bg} ${badge.text}`}>
+                <span className={`mt-2 inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full bg-white/25 text-white`}>
                   {badge.label}
                 </span>
               )}
@@ -561,14 +565,17 @@ export default function DancerPersonalProfilePage() {
 
           {photoFile && (
             <button onClick={handleUploadPhoto} disabled={uploadingPhoto}
-              className="mt-4 w-full py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors">
+              className="mt-4 w-full py-2 bg-white text-primary text-sm font-semibold rounded-xl hover:bg-white/90 disabled:opacity-50 transition-colors">
               {uploadingPhoto ? 'Upload en cours…' : 'Enregistrer la photo'}
             </button>
           )}
         </div>
+        <svg className="absolute bottom-0 left-0 w-full h-8 text-background" viewBox="0 0 400 44" preserveAspectRatio="none" fill="currentColor">
+          <path d="M0 22 Q100 2 200 18 Q300 32 400 12 L400 44 L0 44 Z" />
+        </svg>
       </div>
 
-      <div className="max-w-lg mx-auto px-5 py-6 space-y-5 pb-12">
+      <div className="max-w-lg mx-auto px-5 pb-6 -mt-4 relative space-y-5">
 
         {/* ── Accès rapide ───────────────────────────────────────────────── */}
         {QUICK_LINKS.length > 0 && (
@@ -882,5 +889,6 @@ export default function DancerPersonalProfilePage() {
 
       </div>
     </div>
+    </AppShell>
   );
 }

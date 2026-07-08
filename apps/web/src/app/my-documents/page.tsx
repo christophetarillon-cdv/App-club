@@ -4,8 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRouter } from 'next/navigation';
 import type { PersonalDocument } from '@cdv/types';
+import { AppShell } from '@/components/AppShell';
 
 interface Season { id: string; label: string; startDateSeconds: number; isActive: boolean; }
 
@@ -35,7 +35,6 @@ function formatAmount(cents: number): string {
 
 export default function MyDocumentsPage() {
   const { user } = useAuth();
-  const router = useRouter();
 
   const [allDocuments, setAllDocuments]         = useState<PersonalDocument[]>([]);
   const [validatedSeasons, setValidatedSeasons] = useState<Season[]>([]);
@@ -86,12 +85,19 @@ export default function MyDocumentsPage() {
   }, [allDocuments, showSeasonSelector, selectedSeason]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-md mx-auto px-4 py-8">
-        <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => router.back()} className="text-sm text-gray-400 hover:text-gray-700">← Retour</button>
-          <h1 className="text-xl font-bold text-gray-900">Mes documents</h1>
+    <AppShell>
+      <div className="relative overflow-hidden pb-8" style={{
+        background: 'linear-gradient(180deg, #2F86C0 0%, #7FBFE3 33%, #D8EAF3 66%, #F9F7F4 100%)',
+      }}>
+        <div className="max-w-md mx-auto px-4 pt-6">
+          <h1 className="text-2xl font-extrabold text-white">Mes documents</h1>
         </div>
+        <svg className="absolute bottom-0 left-0 w-full h-8 text-background" viewBox="0 0 400 44" preserveAspectRatio="none" fill="currentColor">
+          <path d="M0 22 Q100 2 200 18 Q300 32 400 12 L400 44 L0 44 Z" />
+        </svg>
+      </div>
+
+      <div className="max-w-md mx-auto px-4 pb-8 -mt-4 relative">
 
         {/* Sélecteur de saison — visible uniquement si plusieurs saisons validées */}
         {showSeasonSelector && (
@@ -165,6 +171,6 @@ export default function MyDocumentsPage() {
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }
