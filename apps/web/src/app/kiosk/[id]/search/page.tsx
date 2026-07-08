@@ -155,11 +155,12 @@ export default function KioskSearchPage() {
   if (scanResult) {
     const isSuccess = scanResult.status === 'registered' || scanResult.status === 'walk-in';
     const isAlready = scanResult.status === 'already_registered';
+    const hasTrialAlert = isSuccess && 'trialAlert' in scanResult && !!scanResult.trialAlert;
 
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6">
         <div className={`w-full max-w-sm rounded-3xl p-8 text-center shadow-2xl ${
-          isSuccess ? 'bg-green-600' : isAlready ? 'bg-yellow-600' : 'bg-red-700'
+          hasTrialAlert ? 'bg-orange-600' : isSuccess ? 'bg-green-600' : isAlready ? 'bg-yellow-600' : 'bg-red-700'
         }`}>
           <div className="text-6xl mb-4">{isSuccess ? '✅' : isAlready ? '⚠️' : '❌'}</div>
           {'dancerName' in scanResult && (
@@ -173,13 +174,13 @@ export default function KioskSearchPage() {
             {isAlready && 'Déjà pointé aujourd\'hui'}
             {'message' in scanResult && scanResult.message}
           </p>
-          {'isTrial' in scanResult && scanResult.isTrial && isSuccess && (
+          {'isTrial' in scanResult && scanResult.isTrial && isSuccess && !hasTrialAlert && (
             <span className="mt-3 inline-block text-xs font-semibold bg-white/20 text-white px-3 py-1 rounded-full">
               Cours d'essai
             </span>
           )}
           {'trialAlert' in scanResult && scanResult.trialAlert && isSuccess && (
-            <p className="mt-3 text-xs font-semibold bg-red-900/60 text-white px-3 py-1.5 rounded-full inline-block">
+            <p className="mt-3 text-xs font-bold bg-white text-red-700 px-3 py-1.5 rounded-full inline-block shadow">
               ⚠️ {TRIAL_ALERT_LABEL[scanResult.trialAlert]}
             </p>
           )}

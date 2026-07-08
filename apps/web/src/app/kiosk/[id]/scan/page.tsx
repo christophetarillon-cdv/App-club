@@ -460,8 +460,11 @@ export default function KioskScanPage() {
 function ResultCard({ result }: { result: ScanResult }) {
   const isSuccess = result.status === 'registered' || result.status === 'walk-in';
   const isAlready = result.status === 'already_registered';
+  const hasTrialAlert = isSuccess && 'trialAlert' in result && !!result.trialAlert;
 
-  const config = isSuccess
+  const config = hasTrialAlert
+    ? { bg: 'bg-orange-950/95 border-orange-700', icon: <CheckCircleIcon />, iconColor: 'text-orange-300', label: 'Présence enregistrée' }
+    : isSuccess
     ? { bg: 'bg-green-950/95 border-green-800', icon: <CheckCircleIcon />, iconColor: 'text-green-400', label: 'Présence enregistrée' }
     : isAlready
     ? { bg: 'bg-amber-950/95 border-amber-800', icon: <AlertCircleIcon />, iconColor: 'text-amber-400', label: "Déjà pointé aujourd'hui" }
@@ -486,14 +489,14 @@ function ResultCard({ result }: { result: ScanResult }) {
 
       <p className={`font-semibold text-base ${config.iconColor}`}>{config.label}</p>
 
-      {'isTrial' in result && result.isTrial && isSuccess && (
+      {'isTrial' in result && result.isTrial && isSuccess && !hasTrialAlert && (
         <span className="mt-3 inline-block text-xs font-semibold bg-amber-900/50 text-amber-300 border border-amber-800/50 px-3 py-1 rounded-full">
           {"Cours d'essai"}
         </span>
       )}
 
       {'trialAlert' in result && result.trialAlert && isSuccess && (
-        <p className="mt-3 text-xs font-semibold bg-red-900/50 text-red-300 border border-red-800/50 px-3 py-1.5 rounded-full inline-block">
+        <p className="mt-3 text-xs font-bold bg-white text-red-700 px-3 py-1.5 rounded-full inline-block shadow">
           ⚠️ {TRIAL_ALERT_LABEL[result.trialAlert]}
         </p>
       )}
