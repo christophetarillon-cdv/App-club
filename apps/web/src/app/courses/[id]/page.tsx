@@ -9,6 +9,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { AppShell } from '@/components/AppShell';
 
 interface Course {
   id: string; name: string; danceStyleId: string; levelId: string;
@@ -223,30 +224,44 @@ export default function CourseDetailPage() {
 
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-gray-400">Chargement…</p>
-    </div>
+    <AppShell>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-gray-400">Chargement…</p>
+      </div>
+    </AppShell>
   );
 
   if (!course) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-gray-500">Cours introuvable.</p>
-    </div>
+    <AppShell>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-gray-500">Cours introuvable.</p>
+      </div>
+    </AppShell>
   );
 
   const spotsLeft = course.maxParticipants ? course.maxParticipants - activeCount : null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-2xl mx-auto px-4 py-10">
-        <Link href="/planning" className="text-sm text-gray-400 hover:text-gray-700 mb-6 inline-block">← Planning</Link>
+    <AppShell>
+      <div className="relative overflow-hidden pb-8" style={{
+        background: 'linear-gradient(180deg, #2F86C0 0%, #7FBFE3 33%, #D8EAF3 66%, #F9F7F4 100%)',
+      }}>
+        <div className="max-w-2xl mx-auto px-4 pt-6">
+          <Link href="/planning" className="text-sm text-white/80 hover:text-white mb-2 inline-block">← Planning</Link>
+          <h1 className="text-2xl font-extrabold text-white">{course.name}</h1>
+        </div>
+        <svg className="absolute bottom-0 left-0 w-full h-8 text-background" viewBox="0 0 400 44" preserveAspectRatio="none" fill="currentColor">
+          <path d="M0 22 Q100 2 200 18 Q300 32 400 12 L400 44 L0 44 Z" />
+        </svg>
+      </div>
+
+      <div className="max-w-2xl mx-auto px-4 pb-10 -mt-4 relative">
 
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="h-2" style={{ backgroundColor: styleColor }} />
           <div className="px-6 py-6">
             <div className="flex items-start justify-between gap-4 mb-4">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">{course.name}</h1>
                 <div className="flex gap-2 mt-2 flex-wrap">
                   <span className="text-xs px-2 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: styleColor }}>{styleName}</span>
                   {levelName && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{levelName}</span>}
@@ -442,6 +457,6 @@ export default function CourseDetailPage() {
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

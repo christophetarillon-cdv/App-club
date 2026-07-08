@@ -12,6 +12,7 @@ import { useDancer } from '@/contexts/DancerContext';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { ChatChannel, ChatMessage } from '@cdv/types';
+import { AppShell } from '@/components/AppShell';
 
 function timeAgo(ts: any): string {
   if (!ts) return '';
@@ -179,11 +180,12 @@ export default function ChatChannelPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
-        <Link href="/chat" className="text-sm text-gray-400 hover:text-gray-700">← Retour</Link>
-        <h1 className="text-lg font-bold text-gray-900">{channel?.name ?? '…'}</h1>
+    <AppShell>
+    <div className="min-h-screen bg-background flex flex-col">
+      {/* Header — plat, comme l'écran de discussion mobile (pas de vague ici, priorité à l'espace messages) */}
+      <div className="bg-[#2F86C0] px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
+        <Link href="/chat" className="text-sm text-white/80 hover:text-white">← Retour</Link>
+        <h1 className="text-lg font-bold text-white">{channel?.name ?? '…'}</h1>
       </div>
 
       {/* Messages */}
@@ -274,5 +276,6 @@ export default function ChatChannelPage() {
         </div>
       )}
     </div>
+    </AppShell>
   );
 }
