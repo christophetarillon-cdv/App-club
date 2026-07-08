@@ -1015,13 +1015,19 @@ export const recordAttendance = onCall(
     let trialAlert: 'sessions_exceeded' | 'expired' | null = null;
     if (isTrial) {
       const settingsSnap = await db.doc('appSettings/main').get();
-      const maxTrialSessions: number = (settingsSnap.data()?.trialMaxSessions as number) ?? 3;
+      const settings = settingsSnap.data() ?? {};
+      const trialMode: 'sessions' | 'days' | 'fixed' = settings.trialMode ?? 'sessions';
       const used: number = (dancer.trialSessionsUsed as number) ?? 0;
-      const expiresAt = dancer.trialExpiresAt as admin.firestore.Timestamp | undefined;
-      if (used >= maxTrialSessions) {
-        trialAlert = 'sessions_exceeded';
-      } else if (expiresAt && expiresAt.toDate() < new Date()) {
-        trialAlert = 'expired';
+
+      if (trialMode === 'sessions') {
+        const maxTrialSessions: number = settings.trialMaxSessions ?? 3;
+        if (used >= maxTrialSessions) trialAlert = 'sessions_exceeded';
+      } else if (trialMode === 'days') {
+        const expiresAt = dancer.trialExpiresAt as admin.firestore.Timestamp | undefined;
+        if (expiresAt && expiresAt.toDate() < new Date()) trialAlert = 'expired';
+      } else if (trialMode === 'fixed') {
+        const trialEndDate: string | undefined = settings.trialEndDate;
+        if (trialEndDate && today > trialEndDate) trialAlert = 'expired';
       }
     }
 
