@@ -244,7 +244,7 @@ export default function CourseDetailPage() {
   return (
     <AppShell>
       <div className="relative overflow-hidden pb-8" style={{
-        background: 'linear-gradient(180deg, #2F86C0 0%, #7FBFE3 33%, #D8EAF3 66%, #F9F7F4 100%)',
+        background: 'linear-gradient(180deg, #2F86C0 0%, #2F86C0 45%, #7FBFE3 70%, #D8EAF3 88%, #F9F7F4 100%)',
       }}>
         <div className="max-w-2xl mx-auto px-4 pt-6">
           <Link href="/planning" className="text-sm text-white/80 hover:text-white mb-2 inline-block">← Planning</Link>

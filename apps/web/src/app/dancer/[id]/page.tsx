@@ -171,7 +171,7 @@ export default function DancerHubPage() {
 
       {/* ── En-tête dégradé + vague (identité visuelle mobile) ── */}
       <header className="relative overflow-hidden shrink-0 z-10 pb-8" style={{
-        background: 'linear-gradient(180deg, #2F86C0 0%, #7FBFE3 33%, #D8EAF3 66%, #F9F7F4 100%)',
+        background: 'linear-gradient(180deg, #2F86C0 0%, #2F86C0 45%, #7FBFE3 70%, #D8EAF3 88%, #F9F7F4 100%)',
       }}>
         <div className="max-w-lg mx-auto px-4 pt-4">
           <div className="flex items-center justify-between mb-5">

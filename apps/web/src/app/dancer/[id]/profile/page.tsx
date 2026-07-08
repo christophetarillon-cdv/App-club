@@ -512,7 +512,7 @@ export default function DancerPersonalProfilePage() {
 
       {/* ── Hero dégradé + vague (identité visuelle mobile) ── */}
       <div className="relative overflow-hidden pb-8" style={{
-        background: 'linear-gradient(180deg, #2F86C0 0%, #7FBFE3 33%, #D8EAF3 66%, #F9F7F4 100%)',
+        background: 'linear-gradient(180deg, #2F86C0 0%, #2F86C0 45%, #7FBFE3 70%, #D8EAF3 88%, #F9F7F4 100%)',
       }}>
         <div className="max-w-lg mx-auto px-5 pt-5">
           <Link href={`/dancer/${id}`}
