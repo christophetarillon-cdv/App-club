@@ -14,6 +14,8 @@ import { useDancer } from '@/contexts/DancerContext';
 import { AppShell } from '@/components/AppShell';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import type { ProfileFieldsConfig } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
 
 interface Dancer { id: string; firstName: string; lastName: string; accountEmail?: string; }
 interface Season { id: string; label: string; }
@@ -60,14 +62,14 @@ interface PaymentGroup {
 
 type PaymentMethod = 'cheque' | 'transfer' | 'cash' | 'helloasso';
 type PayScope = 'me' | 'myAccount' | 'otherAccount';
-type Step = 'who' | 'plan';
+type Step = 'who' | 'incomplete-profile' | 'plan';
 
 const METHOD_LABEL: Record<PaymentMethod, string> = {
   cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', helloasso: 'En ligne',
 };
 
 export default function MembershipPage() {
-  const { user } = useAuth();
+  const { user, account, dancers: fullDancers } = useAuth();
   const { selectedDancer } = useDancer();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -81,6 +83,7 @@ export default function MembershipPage() {
   const [globalEnrolledIds, setGlobalEnrolledIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [fieldConfig, setFieldConfig] = useState<ProfileFieldsConfig>(DEFAULT_PROFILE_FIELDS);
 
   // Creation flow
   const [step, setStep] = useState<Step>('who');
@@ -245,6 +248,20 @@ export default function MembershipPage() {
     })();
   }, [user]);
 
+  useEffect(() => {
+    getDoc(doc(db, 'appSettings', 'main')).then(snap => {
+      if (!snap.exists()) return;
+      const saved = snap.data().profileFields as Partial<ProfileFieldsConfig> | undefined;
+      const merged = { ...DEFAULT_PROFILE_FIELDS };
+      if (saved) {
+        for (const key of Object.keys(DEFAULT_PROFILE_FIELDS) as (keyof ProfileFieldsConfig)[]) {
+          if (saved[key]) merged[key] = { ...DEFAULT_PROFILE_FIELDS[key], ...saved[key] };
+        }
+      }
+      setFieldConfig(merged);
+    }).catch(() => {});
+  }, []);
+
   const handlePayOnline = async (membershipId: string | null, groupId: string | null, amount: number) => {
     const id = (membershipId ?? groupId)!;
     setPayingOnlineId(id);
@@ -332,6 +349,32 @@ export default function MembershipPage() {
     ...selectedOtherDancers,
   ];
   const dancersToCreate = allSelectedDancers.filter(d => !alreadyEnrolledIds.has(d.id));
+
+  // Vérification fiche d'identité complète — limité au cas "je paie pour
+  // moi" : les autres cas nécessiteraient de basculer le danseur actif
+  // pour éditer sa fiche, un effet de bord plus large que voulu ici.
+  const missingProfileFields: string[] = (() => {
+    if (payScope !== 'me' || !account) return [];
+    const meId = myDancers[0]?.id;
+    const dancer = fullDancers.find(d => d.id === meId);
+    if (!dancer) return [];
+    const missing: string[] = [];
+    if (fieldConfig.phone.required && !account.phone?.trim()) missing.push('Téléphone');
+    if (fieldConfig.birthDate.required && !dancer.birthDate) missing.push('Date de naissance');
+    if (fieldConfig.gender.required && !dancer.gender) missing.push('Genre');
+    if (fieldConfig.street.required && !dancer.street?.trim()) missing.push('Rue');
+    if (fieldConfig.postalCode.required && !dancer.postalCode?.trim()) missing.push('Code postal');
+    if (fieldConfig.city.required && !dancer.city?.trim()) missing.push('Ville');
+    if (fieldConfig.profession.required && !dancer.profession?.trim()) missing.push('Profession');
+    if (fieldConfig.emergencyContact.required && !(dancer.emergencyContact?.name?.trim() && dancer.emergencyContact?.phone?.trim())) {
+      missing.push("Contact d'urgence");
+    }
+    if (fieldConfig.medicalNotes.required && !dancer.medicalNotes?.trim()) missing.push('Notes médicales');
+    if (fieldConfig.healthCertificate.required && !dancer.healthCertificate) missing.push('Certificat médical');
+    if (fieldConfig.marketingConsent.required && !account.marketingConsent) missing.push('Consentement marketing');
+    if (fieldConfig.imageRightsConsent.required && !account.imageRightsConsent) missing.push("Droit à l'image");
+    return missing;
+  })();
 
   const resetCreateForm = () => {
     setStep('who');
@@ -634,11 +677,53 @@ export default function MembershipPage() {
                     )}
 
                     <button
-                      onClick={() => setStep('plan')}
+                      onClick={() => setStep(missingProfileFields.length > 0 ? 'incomplete-profile' : 'plan')}
                       disabled={dancersToCreate.length === 0}
                       className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors"
                     >
                       Continuer →
+                    </button>
+                  </>
+                )}
+
+                {/* Step intermédiaire : profil incomplet */}
+                {step === 'incomplete-profile' && (
+                  <>
+                    <button onClick={() => setStep('who')} className="text-sm text-gray-400 hover:text-gray-600">
+                      ← Retour
+                    </button>
+                    <div className="bg-red-50 border border-red-100 rounded-xl p-4">
+                      <p className="font-semibold text-gray-900 mb-1">Fiche d'identité incomplète</p>
+                      <p className="text-sm text-gray-600 mb-3">
+                        {myDancers[0] ? `${myDancers[0].firstName} ${myDancers[0].lastName}` : 'Ce danseur'} doit
+                        compléter les informations suivantes avant de choisir une cotisation :
+                      </p>
+                      <ul className="space-y-1.5">
+                        {missingProfileFields.map(label => (
+                          <li key={label} className="flex items-center gap-2 text-sm text-gray-700">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                            {label}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <Link
+                      href={`/dancer/${myDancers[0]?.id}/profile`}
+                      className="block w-full text-center bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 text-sm transition-colors"
+                    >
+                      Compléter mon profil
+                    </Link>
+                    <button
+                      onClick={() => {
+                        if (missingProfileFields.length > 0) {
+                          alert('Il reste des informations à renseigner.');
+                          return;
+                        }
+                        setStep('plan');
+                      }}
+                      className="w-full bg-white border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-50 text-sm transition-colors"
+                    >
+                      {missingProfileFields.length === 0 ? 'Continuer →' : "J'ai complété mon profil"}
                     </button>
                   </>
                 )}

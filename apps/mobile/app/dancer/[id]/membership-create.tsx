@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
-  collection, query, where, getDocs, doc, addDoc, writeBatch,
+  collection, query, where, getDocs, doc, getDoc, addDoc, writeBatch,
   serverTimestamp, updateDoc,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -15,11 +15,12 @@ import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
-import type { PricingPlan, Season, Dancer, PaymentMethod } from '@cdv/types';
+import type { PricingPlan, Season, Dancer, PaymentMethod, ProfileFieldsConfig } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 
-type Step = 'who' | 'plan' | 'installments' | 'helloasso-pending';
+type Step = 'who' | 'incomplete-profile' | 'plan' | 'installments' | 'helloasso-pending';
 type PayScope = 'me' | 'myAccount' | 'otherAccount';
 
 const MAX_INSTALLMENTS: Record<string, number> = {
@@ -80,7 +81,7 @@ function newInstallment(iso?: string): InstallmentForm {
 export default function MembershipCreateScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, dancers: myDancers } = useAuth();
+  const { user, account, dancers: myDancers } = useAuth();
 
   // ── Données de base
   const [availableSeasons, setAvailableSeasons] = useState<Season[]>([]);
@@ -89,6 +90,7 @@ export default function MembershipCreateScreen() {
   const [enrolledIds, setEnrolledIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadingSeasonData, setLoadingSeasonData] = useState(false);
+  const [fieldConfig, setFieldConfig] = useState<ProfileFieldsConfig>(DEFAULT_PROFILE_FIELDS);
 
   // ── Étape courante
   const [step, setStep] = useState<Step>('who');
@@ -148,9 +150,20 @@ export default function MembershipCreateScreen() {
     if (!user) return;
     (async () => {
       try {
-        const seasonSnap = await getDocs(
-          query(collection(db, 'seasons'), where('registrationOpen', '==', true)),
-        );
+        const [seasonSnap, settingsSnap] = await Promise.all([
+          getDocs(query(collection(db, 'seasons'), where('registrationOpen', '==', true))),
+          getDoc(doc(db, 'appSettings', 'main')),
+        ]);
+        if (settingsSnap.exists()) {
+          const saved = settingsSnap.data().profileFields as Partial<ProfileFieldsConfig> | undefined;
+          const merged = { ...DEFAULT_PROFILE_FIELDS };
+          if (saved) {
+            for (const key of Object.keys(DEFAULT_PROFILE_FIELDS) as (keyof ProfileFieldsConfig)[]) {
+              if (saved[key]) merged[key] = { ...DEFAULT_PROFILE_FIELDS[key], ...saved[key] };
+            }
+          }
+          setFieldConfig(merged);
+        }
         if (seasonSnap.empty) return;
         const all = seasonSnap.docs
           .map(d => ({ id: d.id, ...d.data() } as Season))
@@ -220,10 +233,40 @@ export default function MembershipCreateScreen() {
   }, 0);
   const remaining = (creationResult?.totalDue ?? 0) - totalInstallmentsCents;
 
+  // ── Vérification fiche d'identité complète ────────────────────────────────
+  // Limité au cas "je paie pour moi" : les autres cas (compte famille,
+  // autre compte) nécessiteraient de basculer le danseur actif pour éditer
+  // sa fiche, ce qui aurait des effets de bord plus larges dans l'app.
+  const missingProfileFields = useMemo(() => {
+    if (payScope !== 'me' || !account) return [];
+    const dancer = allSelected[0];
+    if (!dancer) return [];
+    const missing: string[] = [];
+    if (fieldConfig.phone.required && !account.phone?.trim()) missing.push('Téléphone');
+    if (fieldConfig.birthDate.required && !dancer.birthDate) missing.push('Date de naissance');
+    if (fieldConfig.gender.required && !dancer.gender) missing.push('Genre');
+    if (fieldConfig.street.required && !dancer.street?.trim()) missing.push('Rue');
+    if (fieldConfig.postalCode.required && !dancer.postalCode?.trim()) missing.push('Code postal');
+    if (fieldConfig.city.required && !dancer.city?.trim()) missing.push('Ville');
+    if (fieldConfig.profession.required && !dancer.profession?.trim()) missing.push('Profession');
+    if (fieldConfig.emergencyContact.required && !(dancer.emergencyContact?.name?.trim() && dancer.emergencyContact?.phone?.trim())) {
+      missing.push("Contact d'urgence");
+    }
+    if (fieldConfig.medicalNotes.required && !dancer.medicalNotes?.trim()) missing.push('Notes médicales');
+    if (fieldConfig.healthCertificate.required && !dancer.healthCertificate) missing.push('Certificat médical');
+    if (fieldConfig.marketingConsent.required && !account.marketingConsent) missing.push('Consentement marketing');
+    if (fieldConfig.imageRightsConsent.required && !account.imageRightsConsent) missing.push("Droit à l'image");
+    return missing;
+  }, [payScope, account, allSelected, fieldConfig]);
+
   // ── Step 1 → 2 ──────────────────────────────────────────────────────────
 
   const handleWhoNext = () => {
     if (!canGoToPlan) return;
+    if (missingProfileFields.length > 0) {
+      setStep('incomplete-profile');
+      return;
+    }
     // Pré-sélection plan si 1 seul plan dispo
     if (plans.length === 1) {
       const pre: Record<string, string> = {};
@@ -417,7 +460,8 @@ export default function MembershipCreateScreen() {
 
   const handleBack = () => {
     if (step === 'who') router.back();
-    else if (step === 'plan') setStep('who');
+    else if (step === 'incomplete-profile') setStep('who');
+    else if (step === 'plan') setStep(missingProfileFields.length > 0 ? 'incomplete-profile' : 'who');
     else if (step === 'installments') setStep('plan');
     else router.back();
   };
@@ -437,6 +481,7 @@ export default function MembershipCreateScreen() {
 
   const STEP_LABELS: Record<Step, string> = {
     'who': 'Bénéficiaires',
+    'incomplete-profile': 'Compléter le profil',
     'plan': 'Forfait & paiement',
     'installments': 'Échéancier',
     'helloasso-pending': 'Paiement en ligne',
@@ -537,6 +582,7 @@ export default function MembershipCreateScreen() {
       ) : (
         <>
           {step === 'who'               && renderWho()}
+          {step === 'incomplete-profile' && renderIncompleteProfile()}
           {step === 'plan'              && renderPlan()}
           {step === 'installments'      && renderInstallments()}
           {step === 'helloasso-pending' && renderHelloAssoPending()}
@@ -544,6 +590,60 @@ export default function MembershipCreateScreen() {
       )}
     </KeyboardAvoidingView>
   );
+
+  // ── STEP INTERMÉDIAIRE : PROFIL INCOMPLET ───────────────────────────────
+
+  function renderIncompleteProfile() {
+    const dancer = allSelected[0];
+    return (
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.incompleteCard}>
+          <Text style={styles.incompleteTitle}>Fiche d'identité incomplète</Text>
+          <Text style={styles.incompleteSub}>
+            {dancer ? `${dancer.firstName} ${dancer.lastName}` : 'Ce danseur'} doit compléter les
+            informations suivantes avant de choisir une cotisation :
+          </Text>
+          <View style={styles.missingList}>
+            {missingProfileFields.map(label => (
+              <View key={label} style={styles.missingRow}>
+                <View style={styles.missingDot} />
+                <Text style={styles.missingLabel}>{label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          onPress={() => router.push(`/dancer/${dancer!.id}/infos` as any)}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.primaryBtnText}>Compléter mon profil</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.secondaryBtn}
+          onPress={() => {
+            if (missingProfileFields.length > 0) {
+              Alert.alert('Profil encore incomplet', 'Il reste des informations à renseigner.');
+              return;
+            }
+            if (plans.length === 1) {
+              const pre: Record<string, string> = {};
+              allSelected.forEach(d => { pre[d.id] = plans[0]!.id; });
+              setPlanIds(pre);
+            }
+            setStep('plan');
+          }}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.secondaryBtnText}>
+            {missingProfileFields.length === 0 ? 'Continuer →' : "J'ai complété mon profil"}
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
 
   // ── STEP 1 : WHO ─────────────────────────────────────────────────────────
 
@@ -939,10 +1039,21 @@ const styles = StyleSheet.create({
   primaryBtn: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 8 },
   btnDisabled: { opacity: 0.4 },
   primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  secondaryBtn: { backgroundColor: Colors.white, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 10, borderWidth: 1, borderColor: 'rgba(0,0,0,0.1)' },
+  secondaryBtnText: { color: Colors.text, fontSize: 15, fontWeight: '600' },
   backBtn: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32, marginTop: 24 },
   backBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 
   // États vides
   emptyTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
   emptySub: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
+
+  // Profil incomplet
+  incompleteCard: { backgroundColor: Colors.white, borderRadius: 16, padding: 18, marginBottom: 8, borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.06)' },
+  incompleteTitle: { fontSize: 17, fontWeight: '700', color: Colors.text, marginBottom: 6 },
+  incompleteSub: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19, marginBottom: 14 },
+  missingList: { gap: 8 },
+  missingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  missingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#EF4444' },
+  missingLabel: { fontSize: 14, color: Colors.text, fontWeight: '500' },
 });
