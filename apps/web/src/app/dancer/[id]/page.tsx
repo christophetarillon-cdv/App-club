@@ -116,8 +116,6 @@ export default function DancerHubPage() {
 
   const navItems = [
     { href: `/dancer/${id}/card`, label: 'Mon QR code', permKey: '/dancer/card' },
-    { href: '/planning',          label: 'Planning',    permKey: '/planning' },
-    { href: '/chat',              label: 'Chat',        permKey: '/chat' },
     { href: '/media',             label: 'Vidéos',      permKey: '/media' },
     { href: '/audio',             label: 'Audio',        permKey: '/audio' },
     { href: '/trombinoscope',     label: 'Trombinoscope', permKey: '/trombinoscope' },
@@ -262,7 +260,7 @@ export default function DancerHubPage() {
               <div>
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest px-1 mb-2.5">Accès rapide</p>
                 <div className="flex flex-col sm:grid sm:grid-cols-2 gap-3">
-                  {[...quickCards, { href: '/membership', label: 'Cotisation', icon: <CardIcon className="w-6 h-6" />, bg: 'bg-orange' }].map(card => (
+                  {quickCards.map(card => (
                     <Link key={card.href} href={card.href}
                       className={`${card.bg} relative overflow-hidden rounded-2xl h-[72px] px-5 flex items-center justify-between shadow-sm hover:brightness-105 active:scale-[0.98] transition-all text-white`}>
                       <CardWaves />
