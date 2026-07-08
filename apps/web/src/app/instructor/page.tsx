@@ -29,7 +29,7 @@ export default function InstructorPage() {
     const load = async () => {
       const today = new Date();
       const from = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      const to = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const to = today.toISOString().slice(0, 10);
 
       const courses = new Map<string, string>();
 
