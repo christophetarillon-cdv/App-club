@@ -490,6 +490,9 @@ export default function DancerPersonalProfilePage() {
     { href: '/library',                    label: 'Bibliothèque du club', sub: 'Documents partagés',          permKey: '/library',
       icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path strokeLinecap="round" strokeLinejoin="round" d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>,
       bg: 'bg-violet-50 text-violet-600' },
+    { href: '/instructor',                 label: 'Vue moniteur',         sub: 'Présences par séance',        permKey: '/instructor',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
+      bg: 'bg-teal-50 text-teal-600' },
     ...(isAdmin ? [{
       href: '/admin/announcements',
       label: 'Actualités',

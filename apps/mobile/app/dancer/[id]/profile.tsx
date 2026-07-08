@@ -65,6 +65,15 @@ const MENU_ITEMS: MenuItem[] = [
     bgColor: '#E8F4FD',
   },
   {
+    permKey: '/instructor',
+    requiredRoles: ['admin', 'instructor', 'bureau', 'benevoles'],
+    label: 'Vue moniteur',
+    subtitle: 'Présences par séance',
+    screen: 'instructor',
+    accentColor: '#0E7490',
+    bgColor: '#CFFAFE',
+  },
+  {
     permKey: '/instructor/stats',
     requiredRoles: ['admin', 'instructor'],
     label: 'Statistiques',
@@ -115,6 +124,12 @@ function MenuIcon({ screen, color }: { screen: string; color: string }) {
       <Rect x={1} y={4} width={22} height={16} rx={2}
         stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
       <Line x1={1} y1={10} x2={23} y2={10} stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+  if (screen === 'instructor') return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path d="M9 12l2 2 4-4" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={1.8} />
     </Svg>
   );
   if (screen === 'stats') return (
