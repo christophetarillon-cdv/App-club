@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import BottomTabBar from '@/components/BottomTabBar';
+import DateField from '@/components/DateField';
 import type { ProfileFieldsConfig, ProfileFieldKey, CustomField, Dancer } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
 
@@ -857,9 +858,8 @@ export default function InfosScreen() {
             </View>
 
             {fieldConfig.birthDate.enabled && (
-              <Field label="Date de naissance" value={birthDate} onChangeText={setBirthDate}
-                placeholder="jj/mm/aaaa" keyboardType="numbers-and-punctuation"
-                required={fieldConfig.birthDate.required} />
+              <DateField label="Date de naissance" value={birthDate} onChangeText={setBirthDate}
+                required={fieldConfig.birthDate.required} maximumDate={new Date()} />
             )}
 
             {fieldConfig.gender.enabled && (

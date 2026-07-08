@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ProfileFieldsConfig } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
 import { mergeProfileFieldsConfig, computeMissingDancerFields } from '@/lib/profileFields';
+import DateField from '@/components/DateField';
 
 const GENDER_OPTIONS = [
   { value: 'F', label: 'Femme' },
@@ -192,8 +193,8 @@ export default function CompleteProfileScreen() {
           <View key={dancer.id} style={styles.card}>
             <Text style={styles.cardTitle}>{dancer.firstName} {dancer.lastName}</Text>
             {fields.some(f => f.key === 'birthDate') && (
-              <TextField label="Date de naissance (JJ/MM/AAAA)" value={form[`${dancer.id}.birthDate`] as string ?? ''}
-                onChangeText={v => setFormValue(`${dancer.id}.birthDate`, v)} placeholder="JJ/MM/AAAA" />
+              <DateField label="Date de naissance" value={form[`${dancer.id}.birthDate`] as string ?? ''}
+                onChangeText={v => setFormValue(`${dancer.id}.birthDate`, v)} maximumDate={new Date()} />
             )}
             {fields.some(f => f.key === 'gender') && (
               <View style={{ marginBottom: 12 }}>

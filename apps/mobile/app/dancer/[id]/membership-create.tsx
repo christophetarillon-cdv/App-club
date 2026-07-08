@@ -16,6 +16,7 @@ import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
+import DateField from '@/components/DateField';
 import type { PricingPlan, Season, Dancer, PaymentMethod, ProfileFieldsConfig } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
 import {
@@ -825,8 +826,8 @@ export default function MembershipCreateScreen() {
           <View key={dancer.id} style={styles.incompleteCard}>
             <Text style={styles.incompleteSectionTitle}>{dancer.firstName} {dancer.lastName}</Text>
             {fields.some(f => f.key === 'birthDate') && (
-              <TextField label="Date de naissance (JJ/MM/AAAA)" value={profileForm[`${dancer.id}.birthDate`] as string ?? ''}
-                onChangeText={v => setFormValue(`${dancer.id}.birthDate`, v)} placeholder="JJ/MM/AAAA" />
+              <DateField label="Date de naissance" value={profileForm[`${dancer.id}.birthDate`] as string ?? ''}
+                onChangeText={v => setFormValue(`${dancer.id}.birthDate`, v)} maximumDate={new Date()} />
             )}
             {fields.some(f => f.key === 'gender') && (
               <View style={{ marginBottom: 12 }}>
@@ -1119,9 +1120,7 @@ export default function MembershipCreateScreen() {
             </View>
             <View style={styles.instFields}>
               <View style={styles.instField}>
-                <Text style={styles.fieldLabel}>Date (JJ/MM/AAAA)</Text>
-                <TextInput style={styles.fieldInput} value={inst.dateDisplay} onChangeText={v => updateInst(inst.id, 'dateDisplay', v)}
-                  placeholder="JJ/MM/AAAA" placeholderTextColor={Colors.textLight} keyboardType="numeric" />
+                <DateField label="Date" value={inst.dateDisplay} onChangeText={v => updateInst(inst.id, 'dateDisplay', v)} />
               </View>
               <View style={styles.instField}>
                 <Text style={styles.fieldLabel}>Montant (€)</Text>

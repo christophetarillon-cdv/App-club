@@ -61,7 +61,8 @@
           "savePhotosPermission": "CDCV enregistre des fichiers dans ta galerie.",
           "isAccessMediaLocationEnabled": false
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true
