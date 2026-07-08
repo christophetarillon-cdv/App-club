@@ -632,8 +632,18 @@ export default function MembershipPage() {
 
   return (
     <AppShell>
-      <div className="max-w-xl mx-auto px-4 py-6">
-        <h1 className="text-lg font-semibold text-gray-900 mb-5">Ma cotisation</h1>
+      <div className="relative overflow-hidden pb-8" style={{
+        background: 'linear-gradient(180deg, #2F86C0 0%, #7FBFE3 33%, #D8EAF3 66%, #F9F7F4 100%)',
+      }}>
+        <div className="max-w-xl mx-auto px-4 pt-6">
+          <h1 className="text-2xl font-extrabold text-white">Ma cotisation</h1>
+        </div>
+        <svg className="absolute bottom-0 left-0 w-full h-8 text-background" viewBox="0 0 400 44" preserveAspectRatio="none" fill="currentColor">
+          <path d="M0 22 Q100 2 200 18 Q300 32 400 12 L400 44 L0 44 Z" />
+        </svg>
+      </div>
+
+      <div className="max-w-xl mx-auto px-4 pb-6 -mt-4 relative">
 
         {onlineStatus === 'success' && (
           <div className="mb-4 bg-green-50 border border-green-200 rounded-2xl p-4 text-green-800 text-sm font-medium">
