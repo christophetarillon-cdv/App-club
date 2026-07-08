@@ -274,18 +274,9 @@ export default function DancerHubPage() {
               </div>
             )}
 
-            {/* Mon compte */}
+            {/* Compte */}
             <div>
-              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest px-1 mb-2.5">Mon compte</p>
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-100">
-                <Link href={`/dancer/${id}/profile`}
-                  className="flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center gap-3 text-gray-500">
-                    <UserIcon />
-                    <span className="text-sm font-medium text-gray-800">Mes informations</span>
-                  </div>
-                  <ChevronRightIcon className="w-4 h-4 text-gray-300" />
-                </Link>
                 {firstAccessibleAdminHref && (
                   <Link href={firstAccessibleAdminHref}
                     className="flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition-colors">
