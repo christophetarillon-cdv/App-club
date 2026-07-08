@@ -58,7 +58,18 @@ export default function TrombinoscOpePage() {
 
   return (
     <AppShell>
-      <div className="max-w-2xl mx-auto px-4 py-5">
+      <div className="relative overflow-hidden pb-8" style={{
+        background: 'linear-gradient(180deg, #2F86C0 0%, #7FBFE3 33%, #D8EAF3 66%, #F9F7F4 100%)',
+      }}>
+        <div className="max-w-2xl mx-auto px-4 pt-6">
+          <h1 className="text-2xl font-extrabold text-white">Trombinoscope</h1>
+        </div>
+        <svg className="absolute bottom-0 left-0 w-full h-8 text-background" viewBox="0 0 400 44" preserveAspectRatio="none" fill="currentColor">
+          <path d="M0 22 Q100 2 200 18 Q300 32 400 12 L400 44 L0 44 Z" />
+        </svg>
+      </div>
+
+      <div className="max-w-2xl mx-auto px-4 pb-5 -mt-4 relative">
 
         {/* Search */}
         <div className="relative mb-5">
