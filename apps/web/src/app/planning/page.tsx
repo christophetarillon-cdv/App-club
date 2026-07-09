@@ -214,7 +214,7 @@ export default function PlanningPage() {
                     </div>
                     <Link href={`/session/${s.id}`}
                       className="block px-4 py-2 text-xs text-gray-400 hover:text-gray-600 border-t border-gray-100">
-                      Programme & vidéo →
+                      Vidéo →
                     </Link>
                   </div>
                 );
