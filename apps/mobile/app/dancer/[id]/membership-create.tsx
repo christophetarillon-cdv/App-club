@@ -262,7 +262,7 @@ export default function MembershipCreateScreen() {
   const myDancersAvailable = myDancers.filter(d => !enrolledIds.has(d.id));
 
   const allSelected: Dancer[] = useMemo(() => {
-    if (payScope === 'me') return myDancers.slice(0, 1);
+    if (payScope === 'me') return myDancers.slice(0, 1).filter(d => !enrolledIds.has(d.id));
     const mySelected = myDancers.filter(d => selectedIds.has(d.id));
     const otherSelected = selectedOthers;
     return [...mySelected, ...otherSelected].filter(d => !enrolledIds.has(d.id));
@@ -1020,6 +1020,9 @@ export default function MembershipCreateScreen() {
           <View style={styles.selectionSummary}>
             <Text style={styles.selectionText}>{allSelected.length} danseur{allSelected.length > 1 ? 's' : ''} sélectionné{allSelected.length > 1 ? 's' : ''}</Text>
           </View>
+        )}
+        {payScope === 'me' && allSelected.length === 0 && myDancers[0] && (
+          <Text style={styles.emptySmall}>Vous avez déjà une cotisation en cours pour cette saison.</Text>
         )}
 
         <TouchableOpacity style={[styles.primaryBtn, !canGoToPlan && styles.btnDisabled]}
