@@ -152,21 +152,19 @@ export default function MembershipPage() {
         if (myDancersList[0]) setSelectedDancerIds(new Set([myDancersList[0].id]));
       }
 
-      // Vérification "danseur déjà engagé" — pas de timeout artificiel : mieux
-      // vaut attendre (l'appel utilise l'Admin SDK, un cold start Vercel peut
-      // dépasser plusieurs secondes) que de laisser passer silencieusement un
-      // doublon si la vérification est interrompue trop tôt. En cas d'échec
-      // réel, on bloque la suite plutôt que de supposer "personne n'est
-      // inscrit".
+      // Vérification "danseur déjà engagé" (approved + pending, tous comptes
+      // confondus) — via la Cloud Function getEnrolledDancerIds (même
+      // fonction utilisée côté mobile), pas de timeout artificiel : mieux
+      // vaut attendre que de laisser passer silencieusement un doublon si la
+      // vérification est interrompue trop tôt. En cas d'échec réel, on
+      // bloque la suite plutôt que de supposer "personne n'est inscrit".
       const fetchEnrolled = async (): Promise<string[] | null> => {
         try {
-          const idToken = await user.getIdToken();
-          const r = await fetch(`/api/dancers/enrolled?seasonId=${activeSeason.id}`, {
-            headers: { Authorization: `Bearer ${idToken}` },
-          });
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const d = await r.json();
-          return Array.isArray(d) ? d as string[] : [];
+          const fn = httpsCallable<{ seasonId: string }, { dancerIds: string[] }>(
+            getFunctions(getApp(), 'europe-west3'), 'getEnrolledDancerIds',
+          );
+          const res = await fn({ seasonId: activeSeason.id });
+          return res.data.dancerIds;
         } catch (err) {
           console.error('fetchEnrolled failed:', err);
           return null;
