@@ -91,6 +91,7 @@ export default function MembershipPage() {
   const [paymentGroups, setPaymentGroups] = useState<PaymentGroup[]>([]);
   const [myDancers, setMyDancers] = useState<Dancer[]>([]);
   const [globalEnrolledIds, setGlobalEnrolledIds] = useState<Set<string>>(new Set());
+  const [enrolledCheckFailed, setEnrolledCheckFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [fieldConfig, setFieldConfig] = useState<ProfileFieldsConfig>(DEFAULT_PROFILE_FIELDS);
@@ -151,20 +152,24 @@ export default function MembershipPage() {
         if (myDancersList[0]) setSelectedDancerIds(new Set([myDancersList[0].id]));
       }
 
-      const fetchEnrolled = async (): Promise<string[]> => {
+      // Vérification "danseur déjà engagé" — pas de timeout artificiel : mieux
+      // vaut attendre (l'appel utilise l'Admin SDK, un cold start Vercel peut
+      // dépasser plusieurs secondes) que de laisser passer silencieusement un
+      // doublon si la vérification est interrompue trop tôt. En cas d'échec
+      // réel, on bloque la suite plutôt que de supposer "personne n'est
+      // inscrit".
+      const fetchEnrolled = async (): Promise<string[] | null> => {
         try {
           const idToken = await user.getIdToken();
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 5000);
           const r = await fetch(`/api/dancers/enrolled?seasonId=${activeSeason.id}`, {
             headers: { Authorization: `Bearer ${idToken}` },
-            signal: ctrl.signal,
           });
-          clearTimeout(timer);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const d = await r.json();
           return Array.isArray(d) ? d as string[] : [];
-        } catch {
-          return [];
+        } catch (err) {
+          console.error('fetchEnrolled failed:', err);
+          return null;
         }
       };
       const [plansSnap, membershipSnap, groupsSnap, enrolledRes] = await Promise.all([
@@ -176,7 +181,12 @@ export default function MembershipPage() {
           where('userId', '==', user.uid), where('seasonId', '==', activeSeason.id))),
         fetchEnrolled(),
       ]);
-      setGlobalEnrolledIds(new Set(enrolledRes));
+      if (enrolledRes === null) {
+        setEnrolledCheckFailed(true);
+      } else {
+        setEnrolledCheckFailed(false);
+        setGlobalEnrolledIds(new Set(enrolledRes));
+      }
 
       const loadedPlans: PricingPlan[] = plansSnap.docs.map(d => ({
         id: d.id, label: d.data().label, amount: d.data().amount,
@@ -851,9 +861,21 @@ export default function MembershipPage() {
                       </div>
                     )}
 
+                    {enrolledCheckFailed && (
+                      <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+                        <p className="text-sm text-red-700">
+                          Impossible de vérifier les cotisations déjà en cours. Réessayez avant de continuer.
+                        </p>
+                        <button type="button" onClick={() => window.location.reload()}
+                          className="shrink-0 text-sm font-semibold text-red-700 underline hover:no-underline">
+                          Réessayer
+                        </button>
+                      </div>
+                    )}
+
                     <button
                       onClick={() => setStep(hasIncompleteEditableProfile ? 'incomplete-profile' : 'plan')}
-                      disabled={dancersToCreate.length === 0}
+                      disabled={dancersToCreate.length === 0 || enrolledCheckFailed}
                       className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors"
                     >
                       Continuer →
