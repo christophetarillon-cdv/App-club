@@ -151,14 +151,6 @@ service cloud.firestore {
         roles.hasAny(perms.get('/admin/payments/today', ['admin']));
     }
 
-    function hasBankAccountsReadAccess() {
-      let roles = userRoles();
-      let perms = pagePerms();
-      return roles.hasAny(['admin']) ||
-        roles.hasAny(perms.get('/admin/settings/bank-accounts', ['admin'])) ||
-        roles.hasAny(perms.get('/admin/payments/bank-deposits', ['admin']));
-    }
-
     // appSettings : plusieurs pages de settings partagent ce document.
     function hasSettingsPageAccess() {
       let roles = userRoles();
@@ -169,7 +161,8 @@ service cloud.firestore {
         roles.hasAny(perms.get('/admin/settings/profile-mapping', ['admin'])) ||
         roles.hasAny(perms.get('/admin/settings/welcome-qr', ['admin'])) ||
         roles.hasAny(perms.get('/admin/settings/session-detail', ['admin'])) ||
-        roles.hasAny(perms.get('/admin/settings/calendar-sync', ['admin']));
+        roles.hasAny(perms.get('/admin/settings/calendar-sync', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/payment-info', ['admin']));
     }
 
     // ── clubProfile ────────────────────────────────────────────────────────────
@@ -362,7 +355,10 @@ service cloud.firestore {
     }
 
     match /bankAccounts/{id} {
-      allow read: if hasBankAccountsReadAccess();
+      // Un RIB est fait pour être communiqué : tout utilisateur connecté peut
+      // le lire (nécessaire pour afficher les coordonnées lors d'un paiement
+      // par virement dans le parcours de cotisation).
+      allow read: if isAuth();
       allow write: if hasPagePermission('/admin/settings/bank-accounts');
     }
 

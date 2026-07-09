@@ -18,7 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import DateField from '@/components/DateField';
 import type { PricingPlan, Season, Dancer, PaymentMethod, ProfileFieldsConfig } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, DEFAULT_PAYMENT_INFO } from '@cdv/types';
 import {
   mergeProfileFieldsConfig, computeMissingAccountFields, computeMissingDancerFields,
   type MissingField,
@@ -32,7 +32,7 @@ const GENDER_OPTIONS = [
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 
-type Step = 'who' | 'incomplete-profile' | 'plan' | 'installments' | 'helloasso-pending';
+type Step = 'who' | 'incomplete-profile' | 'plan' | 'payment-info' | 'installments' | 'helloasso-pending';
 type PayScope = 'me' | 'myAccount' | 'otherAccount';
 
 const MAX_INSTALLMENTS: Record<string, number> = {
@@ -50,6 +50,15 @@ interface InstallmentForm {
   chequeNumber: string;
   draweeBank: string;
   draweeCity: string;
+}
+
+interface BankAccount {
+  id: string;
+  name: string;
+  bank: string;
+  accountNumber: string;
+  holder: string;
+  label: string;
 }
 
 type CreationResult =
@@ -136,6 +145,8 @@ export default function MembershipCreateScreen() {
   const [loading, setLoading] = useState(true);
   const [loadingSeasonData, setLoadingSeasonData] = useState(false);
   const [fieldConfig, setFieldConfig] = useState<ProfileFieldsConfig>(DEFAULT_PROFILE_FIELDS);
+  const [paymentInfo, setPaymentInfo] = useState<Record<'cheque' | 'transfer' | 'cash' | 'helloasso', string>>(DEFAULT_PAYMENT_INFO);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
 
   // ── Étape courante
   const [step, setStep] = useState<Step>('who');
@@ -200,8 +211,24 @@ export default function MembershipCreateScreen() {
           getDoc(doc(db, 'appSettings', 'main')),
         ]);
         if (settingsSnap.exists()) {
-          setFieldConfig(mergeProfileFieldsConfig(settingsSnap.data().profileFields));
+          const settingsData = settingsSnap.data();
+          setFieldConfig(mergeProfileFieldsConfig(settingsData.profileFields));
+          setPaymentInfo({
+            cheque: settingsData.paymentInfoCheque ?? DEFAULT_PAYMENT_INFO.cheque,
+            transfer: settingsData.paymentInfoTransfer ?? DEFAULT_PAYMENT_INFO.transfer,
+            cash: settingsData.paymentInfoCash ?? DEFAULT_PAYMENT_INFO.cash,
+            helloasso: settingsData.paymentInfoHelloasso ?? DEFAULT_PAYMENT_INFO.helloasso,
+          });
         }
+        const bankSnap = await getDocs(collection(db, 'bankAccounts'));
+        setBankAccounts(bankSnap.docs.map(d => ({
+          id: d.id,
+          name: d.data().name ?? '',
+          bank: d.data().bank ?? '',
+          accountNumber: d.data().accountNumber ?? '',
+          holder: d.data().holder ?? '',
+          label: d.data().label ?? '',
+        })));
         if (seasonSnap.empty) return;
         const all = seasonSnap.docs
           .map(d => ({ id: d.id, ...d.data() } as Season))
@@ -644,7 +671,8 @@ export default function MembershipCreateScreen() {
     if (step === 'who') router.back();
     else if (step === 'incomplete-profile') setStep('who');
     else if (step === 'plan') setStep(hasIncompleteEditableProfile ? 'incomplete-profile' : 'who');
-    else if (step === 'installments') setStep('plan');
+    else if (step === 'payment-info') setStep('plan');
+    else if (step === 'installments') setStep('payment-info');
     else router.back();
   };
 
@@ -665,6 +693,7 @@ export default function MembershipCreateScreen() {
     'who': 'Bénéficiaires',
     'incomplete-profile': 'Compléter le profil',
     'plan': 'Forfait & paiement',
+    'payment-info': 'Informations',
     'installments': 'Échéancier',
     'helloasso-pending': 'Paiement en ligne',
   };
@@ -766,6 +795,7 @@ export default function MembershipCreateScreen() {
           {step === 'who'               && renderWho()}
           {step === 'incomplete-profile' && renderIncompleteProfile()}
           {step === 'plan'              && renderPlan()}
+          {step === 'payment-info'      && renderPaymentInfo()}
           {step === 'installments'      && renderInstallments()}
           {step === 'helloasso-pending' && renderHelloAssoPending()}
         </>
@@ -1001,6 +1031,44 @@ export default function MembershipCreateScreen() {
     );
   }
 
+  // ── STEP INTERMÉDIAIRE : INFORMATIONS DE PAIEMENT ────────────────────────
+
+  function renderPaymentInfo() {
+    const text = paymentInfo[method];
+    return (
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.incompleteCard}>
+          <Text style={styles.incompleteSectionTitle}>{METHOD_LABEL[method]}</Text>
+          <Text style={styles.paymentInfoText}>{text}</Text>
+        </View>
+
+        {method === 'transfer' && bankAccounts.length > 0 && (
+          <View style={styles.incompleteCard}>
+            <Text style={styles.incompleteSectionTitle}>Coordonnées bancaires du club</Text>
+            {bankAccounts.map(acc => (
+              <View key={acc.id} style={{ marginBottom: 10 }}>
+                {acc.label ? <Text style={styles.bankLabel}>{acc.label}</Text> : null}
+                <Text style={styles.bankLine}>Titulaire : {acc.holder}</Text>
+                <Text style={styles.bankLine}>Banque : {acc.bank}</Text>
+                <Text style={styles.bankLine}>IBAN : {acc.accountNumber}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <TouchableOpacity style={[styles.primaryBtn, submitting && styles.btnDisabled]}
+          onPress={handleCreate} disabled={submitting} activeOpacity={0.8}>
+          {submitting
+            ? <ActivityIndicator color="#fff" />
+            : <Text style={styles.primaryBtnText}>
+                {method === 'helloasso' ? 'Payer en ligne →' : 'Créer et définir l\'échéancier →'}
+              </Text>
+          }
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
+
   // ── STEP 2 : PLAN ────────────────────────────────────────────────────────
 
   function renderPlan() {
@@ -1051,14 +1119,9 @@ export default function MembershipCreateScreen() {
           </View>
         )}
 
-        <TouchableOpacity style={[styles.primaryBtn, (!canCreate || submitting) && styles.btnDisabled]}
-          onPress={handleCreate} disabled={!canCreate || submitting} activeOpacity={0.8}>
-          {submitting
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.primaryBtnText}>
-                {method === 'helloasso' ? 'Payer en ligne →' : 'Créer et définir l\'échéancier →'}
-              </Text>
-          }
+        <TouchableOpacity style={[styles.primaryBtn, !canCreate && styles.btnDisabled]}
+          onPress={() => setStep('payment-info')} disabled={!canCreate} activeOpacity={0.8}>
+          <Text style={styles.primaryBtnText}>Continuer →</Text>
         </TouchableOpacity>
       </ScrollView>
     );
@@ -1305,6 +1368,9 @@ const styles = StyleSheet.create({
   incompleteTitle: { fontSize: 17, fontWeight: '700', color: Colors.text, marginBottom: 6 },
   incompleteSub: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19, marginBottom: 14 },
   incompleteSectionTitle: { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 12 },
+  paymentInfoText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
+  bankLabel: { fontSize: 13, fontWeight: '700', color: Colors.text, marginBottom: 3 },
+  bankLine: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19 },
   missingList: { gap: 8 },
   missingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   missingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#EF4444' },

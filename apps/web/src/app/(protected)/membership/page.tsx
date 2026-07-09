@@ -15,7 +15,7 @@ import { AppShell } from '@/components/AppShell';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { ProfileFieldsConfig, Dancer as FullDancer } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, DEFAULT_PAYMENT_INFO } from '@cdv/types';
 import {
   mergeProfileFieldsConfig, computeMissingAccountFields, computeMissingDancerFields,
 } from '@/lib/profileFields';
@@ -29,6 +29,7 @@ const GENDER_OPTIONS = [
 interface Dancer { id: string; firstName: string; lastName: string; accountEmail?: string; }
 interface Season { id: string; label: string; }
 interface PricingPlan { id: string; label: string; amount: number; conditions: string; seasonId: string; }
+interface BankAccount { id: string; name: string; bank: string; accountNumber: string; holder: string; label: string; }
 
 interface InstallmentDetail {
   id: string;
@@ -71,7 +72,7 @@ interface PaymentGroup {
 
 type PaymentMethod = 'cheque' | 'transfer' | 'cash' | 'helloasso';
 type PayScope = 'me' | 'myAccount' | 'otherAccount';
-type Step = 'who' | 'incomplete-profile' | 'plan';
+type Step = 'who' | 'incomplete-profile' | 'plan' | 'payment-info';
 
 const METHOD_LABEL: Record<PaymentMethod, string> = {
   cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', helloasso: 'En ligne',
@@ -93,6 +94,8 @@ export default function MembershipPage() {
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [fieldConfig, setFieldConfig] = useState<ProfileFieldsConfig>(DEFAULT_PROFILE_FIELDS);
+  const [paymentInfo, setPaymentInfo] = useState<Record<'cheque' | 'transfer' | 'cash' | 'helloasso', string>>(DEFAULT_PAYMENT_INFO);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
 
   // Creation flow
   const [step, setStep] = useState<Step>('who');
@@ -274,7 +277,25 @@ export default function MembershipPage() {
 
   useEffect(() => {
     getDoc(doc(db, 'appSettings', 'main')).then(snap => {
-      if (snap.exists()) setFieldConfig(mergeProfileFieldsConfig(snap.data().profileFields));
+      if (!snap.exists()) return;
+      const data = snap.data();
+      setFieldConfig(mergeProfileFieldsConfig(data.profileFields));
+      setPaymentInfo({
+        cheque: data.paymentInfoCheque ?? DEFAULT_PAYMENT_INFO.cheque,
+        transfer: data.paymentInfoTransfer ?? DEFAULT_PAYMENT_INFO.transfer,
+        cash: data.paymentInfoCash ?? DEFAULT_PAYMENT_INFO.cash,
+        helloasso: data.paymentInfoHelloasso ?? DEFAULT_PAYMENT_INFO.helloasso,
+      });
+    }).catch(() => {});
+    getDocs(collection(db, 'bankAccounts')).then(snap => {
+      setBankAccounts(snap.docs.map(d => ({
+        id: d.id,
+        name: d.data().name ?? '',
+        bank: d.data().bank ?? '',
+        accountNumber: d.data().accountNumber ?? '',
+        holder: d.data().holder ?? '',
+        label: d.data().label ?? '',
+      })));
     }).catch(() => {});
   }, []);
 
@@ -1063,11 +1084,52 @@ export default function MembershipPage() {
                         className="flex-1 bg-gray-100 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-200 text-sm transition-colors">
                         ← Retour
                       </button>
-                      <button onClick={handleCreate} disabled={!allPlansFilled || submitting}
+                      <button onClick={() => setStep('payment-info')} disabled={!allPlansFilled}
                         className="flex-[2] bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
-                        {submitting ? 'Création…' : dancersToCreate.length > 1 ? `Créer les ${dancersToCreate.length} cotisations` : 'Créer la cotisation'}
+                        Continuer →
                       </button>
                     </div>
+                  </>
+                )}
+
+                {/* Step intermédiaire : informations de paiement */}
+                {step === 'payment-info' && (
+                  <>
+                    <button onClick={() => setStep('plan')} className="text-sm text-gray-400 hover:text-gray-600">
+                      ← Retour
+                    </button>
+
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                      <p className="font-semibold text-gray-900 text-sm mb-2">{METHOD_LABEL[selectedMethod]}</p>
+                      <p className="text-sm text-gray-600 whitespace-pre-line">{paymentInfo[selectedMethod]}</p>
+                    </div>
+
+                    {selectedMethod === 'transfer' && bankAccounts.length > 0 && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                        <p className="font-semibold text-gray-900 text-sm">Coordonnées bancaires du club</p>
+                        {bankAccounts.map(acc => (
+                          <div key={acc.id} className="text-sm text-gray-600">
+                            {acc.label && <p className="font-semibold text-gray-800">{acc.label}</p>}
+                            <p>Titulaire : {acc.holder}</p>
+                            <p>Banque : {acc.bank}</p>
+                            <p>IBAN : {acc.accountNumber}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {createError && (
+                      <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{createError}</p>
+                    )}
+
+                    <button onClick={handleCreate} disabled={submitting}
+                      className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
+                      {submitting
+                        ? 'Création…'
+                        : selectedMethod === 'helloasso'
+                        ? 'Payer en ligne →'
+                        : dancersToCreate.length > 1 ? `Créer les ${dancersToCreate.length} cotisations` : 'Créer la cotisation'}
+                    </button>
                   </>
                 )}
               </div>
