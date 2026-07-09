@@ -258,7 +258,7 @@ export default function SessionDetailPage() {
             {videos.map(v => (
               <div key={v.id}>
                 <p className="text-sm font-medium text-gray-800 mb-1.5">{v.title}</p>
-                <video controls crossOrigin="anonymous" src={v.sourceUrl} className="w-full rounded-xl" style={{ maxHeight: 320 }} />
+                <video controls src={v.sourceUrl} className="w-full rounded-xl" style={{ maxHeight: 320 }} />
               </div>
             ))}
           </div>

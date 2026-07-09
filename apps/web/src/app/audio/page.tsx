@@ -210,7 +210,7 @@ export default function AudioPage() {
                     {isOpen && (
                       <div className="px-4 pb-4 space-y-2.5 border-t border-gray-100 pt-3">
                         {m.description && <p className="text-xs text-gray-500">{m.description}</p>}
-                        <audio controls crossOrigin="anonymous" src={m.sourceUrl} className="w-full"
+                        <audio controls src={m.sourceUrl} className="w-full"
                           ref={el => { if (el) audioEls.current.set(m.id, el as HTMLAudioElement); else audioEls.current.delete(m.id); }} />
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-gray-400 shrink-0">Vitesse</span>

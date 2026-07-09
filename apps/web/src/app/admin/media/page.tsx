@@ -355,10 +355,10 @@ export default function AdminMediaPage() {
                 <div className="px-5 pb-5 border-t border-gray-50 pt-4">
                   {m.description && <p className="text-sm text-gray-600 mb-3">{m.description}</p>}
                   {m.type === 'audio' ? (
-                    <audio controls crossOrigin="anonymous" src={m.sourceUrl} className="w-full"
+                    <audio controls src={m.sourceUrl} className="w-full"
                       ref={el => { if (el) mediaEls.current.set(m.id, el); else mediaEls.current.delete(m.id); }} />
                   ) : (
-                    <video controls crossOrigin="anonymous" src={m.sourceUrl} className="w-full rounded-xl max-h-64"
+                    <video controls src={m.sourceUrl} className="w-full rounded-xl max-h-64"
                       ref={el => { if (el) mediaEls.current.set(m.id, el); else mediaEls.current.delete(m.id); }} />
                   )}
                   <div className="flex items-center gap-3 mt-3">

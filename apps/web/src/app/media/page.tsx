@@ -239,10 +239,10 @@ export default function MediaPage() {
                       <div className="px-3 pb-3 border-t border-gray-100 pt-2.5 space-y-2">
                         {m.description && <p className="text-xs text-gray-500">{m.description}</p>}
                         {m.type === 'audio' ? (
-                          <audio controls crossOrigin="anonymous" src={m.sourceUrl} className="w-full"
+                          <audio controls src={m.sourceUrl} className="w-full"
                             ref={el => { if (el) mediaEls.current.set(m.id, el); else mediaEls.current.delete(m.id); }} />
                         ) : (
-                          <video controls crossOrigin="anonymous" src={m.sourceUrl} className="w-full rounded-xl" style={{ maxHeight: 220 }}
+                          <video controls src={m.sourceUrl} className="w-full rounded-xl" style={{ maxHeight: 220 }}
                             ref={el => { if (el) mediaEls.current.set(m.id, el); else mediaEls.current.delete(m.id); }} />
                         )}
                         <div className="flex items-center gap-2">
