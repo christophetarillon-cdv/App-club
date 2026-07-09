@@ -65,12 +65,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const sidebarNav = [
-    { href: `/dancer/${id}`, label: 'Accueil',  icon: <HomeIcon />,     active: exact(`/dancer/${id}`), permKey: null },
-    { href: '/planning',     label: 'Planning', icon: <CalendarIcon />, active: starts('/planning'),    permKey: '/planning' },
-    { href: '/chat',         label: 'Chat',     icon: <ChatIcon />,     active: starts('/chat'),        permKey: '/chat' },
-    { href: '/media',        label: 'Vidéos',   icon: <VideoIcon />,    active: exact('/media'),        permKey: '/media' },
-    { href: '/audio',        label: 'Audio',    icon: <MusicIcon />,    active: exact('/audio'),        permKey: '/audio' },
-    { href: '/trombinoscope',label: 'Trombi',   icon: <UsersIcon />,    active: exact('/trombinoscope'), permKey: '/trombinoscope' },
+    { href: `/dancer/${id}`,         label: 'Accueil',  icon: <HomeIcon />,     active: exact(`/dancer/${id}`),           permKey: null },
+    { href: '/planning',             label: 'Planning', icon: <CalendarIcon />, active: starts('/planning'),              permKey: '/planning' },
+    { href: '/chat',                 label: 'Chat',     icon: <ChatIcon />,     active: starts('/chat'),                  permKey: '/chat' },
+    { href: `/dancer/${id}/card`,    label: 'Ma carte', icon: <QrIcon />,       active: starts(`/dancer/${id}/card`),     permKey: '/dancer/card' },
+    { href: `/dancer/${id}/profile`, label: 'Profil',   icon: <UserIcon />,     active: starts(`/dancer/${id}/profile`), permKey: null },
   ].filter(item => !item.permKey || hasPerm(item.permKey));
 
   const tabs = [

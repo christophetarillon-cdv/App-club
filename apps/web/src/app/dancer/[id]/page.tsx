@@ -156,12 +156,11 @@ export default function DancerHubPage() {
     { href: `/dancer/${id}`,     label: 'Accueil',  icon: <HomeIcon />,     permKey: null },
     { href: '/planning',         label: 'Planning', icon: <CalendarIcon />, permKey: '/planning' },
     { href: '/chat',             label: 'Chat',     icon: <ChatIcon />,     permKey: '/chat' },
-    { href: '/media',            label: 'Vidéos',   icon: <VideoIcon />,    permKey: '/media' },
-    { href: '/audio',            label: 'Audio',    icon: <MusicIcon />,    permKey: '/audio' },
-    { href: '/trombinoscope',    label: 'Trombi',   icon: <UsersIcon />,    permKey: '/trombinoscope' },
+    { href: `/dancer/${id}/card`, label: 'Ma carte', icon: <QrIcon />,      permKey: '/dancer/card' },
     { href: '/kiosk/setup',      label: 'Kiosque',     icon: <ScanIcon />,       permKey: '/kiosk' },
     { href: '/instructor',       label: 'Mes séances',   icon: <ClipboardIcon />,  permKey: '/instructor' },
     { href: '/instructor/stats', label: 'Statistiques',  icon: <ClipboardIcon />,  permKey: '/instructor/stats' },
+    { href: `/dancer/${id}/profile`, label: 'Profil',    icon: <UserIcon />,     permKey: null },
   ].filter(s => !s.permKey || hasPerm(s.permKey));
 
   return (
