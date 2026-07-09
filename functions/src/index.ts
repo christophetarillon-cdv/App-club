@@ -1396,6 +1396,55 @@ export const flagProfileCompletion = onCall(
   },
 );
 
+// ── getEnrolledDancerIds — danseurs déjà engagés sur une cotisation ───────────
+// Utilisée pour empêcher la création d'un doublon (même danseur, même saison)
+// que ce soit par le même payeur ou un autre compte. "approved" et "pending"
+// comptent tous les deux comme "déjà engagé" — un plan en attente de
+// validation ne doit pas pouvoir être dupliqué. Nécessite l'Admin SDK car un
+// membre normal n'a le droit de lire que ses propres cotisations côté client.
+export const getEnrolledDancerIds = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const { seasonId } = request.data as { seasonId: string };
+    if (!seasonId) throw new HttpsError('invalid-argument', 'seasonId requis');
+
+    const db = getDb();
+    const snap = await db.collection('memberships')
+      .where('seasonId', '==', seasonId)
+      .where('paymentPlanStatus', 'in', ['approved', 'pending'])
+      .select('dancerId', 'userId')
+      .get();
+
+    const enrolledIds = new Set<string>();
+    const userIdsToLookup: string[] = [];
+
+    for (const d of snap.docs) {
+      const dancerId = d.data().dancerId as string | undefined;
+      if (dancerId) {
+        enrolledIds.add(dancerId);
+      } else {
+        const userId = d.data().userId as string | undefined;
+        if (userId) userIdsToLookup.push(userId);
+      }
+    }
+
+    if (userIdsToLookup.length > 0) {
+      const accountDocs = await Promise.all(
+        userIdsToLookup.map(uid => db.doc(`accounts/${uid}`).get()),
+      );
+      for (const acc of accountDocs) {
+        if (acc.exists) {
+          const dancerIds: string[] = acc.data()?.dancerIds ?? [];
+          if (dancerIds[0]) enrolledIds.add(dancerIds[0]);
+        }
+      }
+    }
+
+    return { dancerIds: [...enrolledIds] };
+  },
+);
+
 // ── encodeMedia — compresse les vidéos déclenchée par création du doc Firestore
 export const encodeMedia = onDocumentCreated(
   { document: 'media/{id}', region: 'europe-west3', memory: '4GiB', timeoutSeconds: 540, cpu: 2 },

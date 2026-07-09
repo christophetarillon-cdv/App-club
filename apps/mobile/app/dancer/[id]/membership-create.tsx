@@ -173,21 +173,20 @@ export default function MembershipCreateScreen() {
 
   // ── Chargement données d'une saison ─────────────────────────────────────
 
-  const loadSeasonData = async (s: Season, uid: string) => {
+  const loadSeasonData = async (s: Season) => {
     setLoadingSeasonData(true);
     setPlans([]);
     setEnrolledIds(new Set());
     try {
-      const [enrolledSnap, planSnap] = await Promise.all([
-        getDocs(query(collection(db, 'memberships'), where('userId', '==', uid))),
+      // Danseurs déjà engagés (plan approuvé OU en attente) sur cette saison,
+      // tous comptes confondus — évite qu'un même danseur se retrouve avec
+      // deux cotisations en double, y compris si un plan est en attente de
+      // validation ou payé par quelqu'un d'autre.
+      const [enrolledRes, planSnap] = await Promise.all([
+        httpsCallable<{ seasonId: string }, { dancerIds: string[] }>(functions, 'getEnrolledDancerIds')({ seasonId: s.id }),
         getDocs(query(collection(db, 'pricingPlans'), where('seasonId', '==', s.id))),
       ]);
-      setEnrolledIds(new Set(
-        enrolledSnap.docs
-          .filter(d => d.data().seasonId === s.id && d.data().paymentPlanStatus === 'approved')
-          .map(d => d.data().dancerId)
-          .filter(Boolean),
-      ));
+      setEnrolledIds(new Set(enrolledRes.data.dancerIds));
       setPlans(
         planSnap.docs
           .map(d => ({ id: d.id, ...d.data() } as PricingPlan))
@@ -236,7 +235,7 @@ export default function MembershipCreateScreen() {
         setAvailableSeasons(all);
         const s = all[0]!;
         setSeason(s);
-        await loadSeasonData(s, user.uid);
+        await loadSeasonData(s);
       } catch (err) {
         console.error('membership-create loadData:', err);
       } finally {
@@ -686,7 +685,7 @@ export default function MembershipCreateScreen() {
     setPlanIds({});
     setInstallments([newInstallment()]);
     setCreationResult(null);
-    loadSeasonData(s, user.uid);
+    loadSeasonData(s);
   };
 
   const STEP_LABELS: Record<Step, string> = {

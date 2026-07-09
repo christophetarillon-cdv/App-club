@@ -16,9 +16,12 @@ export async function GET(request: NextRequest) {
   if (!seasonId) return NextResponse.json([]);
 
   const db = getAdminFirestore();
+  // "approved" (déjà validée) et "pending" (en attente de validation) sont
+  // toutes les deux considérées comme "déjà engagées" — un plan en attente
+  // ne doit pas pouvoir être dupliqué.
   const snap = await db.collection('memberships')
     .where('seasonId', '==', seasonId)
-    .where('paymentPlanStatus', '==', 'approved')
+    .where('paymentPlanStatus', 'in', ['approved', 'pending'])
     .select('dancerId', 'userId')
     .get();
 
