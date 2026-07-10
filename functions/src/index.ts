@@ -2800,6 +2800,10 @@ async function syncOneDancerToGoogle(
     city: dancer.city ?? '',
     country: 'France',
   }] : [];
+  const birthDateJs: Date | undefined = dancer.birthDate?.toDate?.();
+  const birthdays = birthDateJs ? [{
+    date: { year: birthDateJs.getFullYear(), month: birthDateJs.getMonth() + 1, day: birthDateJs.getDate() },
+  }] : [];
 
   if (dancer.googleContactResourceName) {
     try {
@@ -2808,8 +2812,8 @@ async function syncOneDancerToGoogle(
 
       await peopleClient.people.updateContact({
         resourceName: dancer.googleContactResourceName,
-        updatePersonFields: 'names,emailAddresses,phoneNumbers,addresses',
-        requestBody: { etag, names, emailAddresses, phoneNumbers, addresses },
+        updatePersonFields: 'names,emailAddresses,phoneNumbers,addresses,birthdays',
+        requestBody: { etag, names, emailAddresses, phoneNumbers, addresses, birthdays },
       });
 
       const previousGroupIds: string[] = dancer.googleContactGroupIds ?? [];
@@ -2836,7 +2840,7 @@ async function syncOneDancerToGoogle(
 
   const memberships = desiredGroupIds.map(contactGroupResourceName => ({ contactGroupMembership: { contactGroupResourceName } }));
   const createRes = await peopleClient.people.createContact({
-    requestBody: { names, emailAddresses, phoneNumbers, addresses, memberships },
+    requestBody: { names, emailAddresses, phoneNumbers, addresses, birthdays, memberships },
   });
 
   await db.doc(`dancers/${dancerId}`).update({
