@@ -19,7 +19,6 @@ import VideoPlayerSheet from '@/components/VideoPlayerSheet';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { Colors } from '@/constants/Colors';
 import type { ChatChannel, ChatMessage, Media } from '@cdv/types';
@@ -260,10 +259,6 @@ export default function ChatChannelScreen() {
       const result = await dl.downloadAsync();
       const uri = result?.uri;
       if (!uri) throw new Error('Téléchargement échoué');
-      if (m.mediaType === 'image' || m.mediaType === 'video') {
-        const perm = await MediaLibrary.requestPermissionsAsync(false, ['photo', 'video']);
-        if (perm.granted) { await MediaLibrary.saveToLibraryAsync(uri); Alert.alert('Enregistré', 'Ajouté à ta galerie.'); return; }
-      }
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri);
       } else {

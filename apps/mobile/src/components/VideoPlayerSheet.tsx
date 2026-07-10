@@ -6,7 +6,6 @@ import {
 import { useVideoPlayer, VideoView } from 'expo-video';
 import Slider from '@react-native-community/slider';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
@@ -75,7 +74,6 @@ export default function VideoPlayerSheet({
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      const perm = await MediaLibrary.requestPermissionsAsync(false, ['photo', 'video']);
       const safe = video.title.replace(/[^a-zA-Z0-9._-]/g, '_');
       const dest = `${FileSystem.cacheDirectory}${safe || 'video'}.mp4`;
       // Téléchargement resumable : reprend au lieu d'échouer si l'app passe en
@@ -89,13 +87,10 @@ export default function VideoPlayerSheet({
       const result = await dl.downloadAsync();
       const uri = result?.uri;
       if (!uri) throw new Error('Téléchargement échoué');
-      if (perm.granted) {
-        await MediaLibrary.saveToLibraryAsync(uri);
-        Alert.alert('Enregistrée', 'La vidéo a été ajoutée à ta galerie.');
-      } else if (await Sharing.isAvailableAsync()) {
+      if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, { mimeType: 'video/mp4' });
       } else {
-        Alert.alert('Permission requise', "Autorise l'accès aux photos pour enregistrer la vidéo.");
+        Alert.alert('Erreur', "Le partage n'est pas disponible sur cet appareil.");
       }
     } catch {
       Alert.alert('Erreur', 'Téléchargement impossible.');

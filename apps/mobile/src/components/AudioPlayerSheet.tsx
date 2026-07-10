@@ -7,7 +7,6 @@ import { Audio } from 'expo-av';
 import Slider from '@react-native-community/slider';
 import Svg, { Path } from 'react-native-svg';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
@@ -132,14 +131,15 @@ export default function AudioPlayerSheet({
     if (!current) return;
     setDownloading(true);
     try {
-      const perm = await MediaLibrary.requestPermissionsAsync(false, ['photo', 'video']);
       const safe = current.title.replace(/[^a-zA-Z0-9._-]/g, '_');
       const dest = `${FileSystem.cacheDirectory}${safe || 'audio'}.mp3`;
       const { uri } = await FileSystem.downloadAsync(current.sourceUrl, dest);
-      if (perm.granted) { await MediaLibrary.saveToLibraryAsync(uri); Alert.alert('Enregistré', "L'audio a été ajouté à ta galerie."); }
-      else if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'audio/mpeg' });
-      else Alert.alert('Permission requise', "Autorise l'accès aux photos pour enregistrer.");
-    } catch { Alert.alert('Erreur', 'Téléchargement impossible.'); }
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'audio/mpeg' });
+      else Alert.alert('Erreur', "Le partage n'est pas disponible sur cet appareil.");
+    } catch (err) {
+      console.error('handleDownload failed:', err);
+      Alert.alert('Erreur', 'Téléchargement impossible.');
+    }
     finally { setDownloading(false); }
   };
 
