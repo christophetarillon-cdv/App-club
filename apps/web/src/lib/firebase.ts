@@ -1,7 +1,6 @@
 // Ligne ajoutée intentionnellement pour forcer un nouveau build Vercel via git
-// (un commit touchant uniquement la racine du monorepo est ignoré par
-// l'ignoreCommand du projet, qui ne build que si des fichiers apps/web/ ont
-// changé) — à retirer librement plus tard.
+// après un échec de build transitoire côté Vercel (rien à voir avec le code)
+// — à retirer librement plus tard.
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
