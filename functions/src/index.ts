@@ -2570,3 +2570,12 @@ export const adminCreateAccount = onCall(
     };
   },
 );
+
+export const createWebViewAuthToken = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const customToken = await admin.auth().createCustomToken(request.auth.uid);
+    return { token: customToken };
+  },
+);
