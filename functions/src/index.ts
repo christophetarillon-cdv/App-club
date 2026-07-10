@@ -2772,6 +2772,7 @@ async function syncOneDancerToGoogle(
   groupNameGlobal: string,
   groupNameSeasonTemplate: string,
   seasonsById: Map<string, { label: string; startDateMs: number }>,
+  etagByResourceName: Map<string, string>,
 ): Promise<void> {
   const db = getDb();
   const dancerSnap = await db.doc(`dancers/${dancerId}`).get();
@@ -2802,10 +2803,8 @@ async function syncOneDancerToGoogle(
 
   if (dancer.googleContactResourceName) {
     try {
-      const etag = (await peopleClient.people.get({
-        resourceName: dancer.googleContactResourceName,
-        personFields: 'metadata',
-      })).data.etag;
+      const etag = etagByResourceName.get(dancer.googleContactResourceName);
+      if (!etag) throw new Error('etag introuvable (contact absent du batchGet)');
 
       await peopleClient.people.updateContact({
         resourceName: dancer.googleContactResourceName,
@@ -2873,10 +2872,26 @@ async function runGoogleContactsSync(dancerIds: string[]): Promise<{ synced: num
     });
   }
 
+  // Batch de lecture des etags (contacts existants) : la People API limite
+  // strictement les lectures individuelles ("critical read") par minute,
+  // un getBatchGet (jusqu'à 200 resourceNames) compte comme une seule lecture.
+  const dancerSnaps = await Promise.all(dancerIds.map(id => db.doc(`dancers/${id}`).get()));
+  const existingResourceNames = dancerSnaps
+    .map(s => s.data()?.googleContactResourceName as string | undefined)
+    .filter((r): r is string => !!r);
+  const etagByResourceName = new Map<string, string>();
+  for (let i = 0; i < existingResourceNames.length; i += 200) {
+    const chunk = existingResourceNames.slice(i, i + 200);
+    const res = await peopleClient.people.getBatchGet({ resourceNames: chunk, personFields: 'metadata' });
+    for (const r of res.data.responses ?? []) {
+      if (r.requestedResourceName && r.person?.etag) etagByResourceName.set(r.requestedResourceName, r.person.etag);
+    }
+  }
+
   let synced = 0, errors = 0;
   for (const dancerId of dancerIds) {
     try {
-      await syncOneDancerToGoogle(dancerId, peopleClient, groupCache, groupNameGlobal, groupNameSeasonTemplate, seasonsById);
+      await syncOneDancerToGoogle(dancerId, peopleClient, groupCache, groupNameGlobal, groupNameSeasonTemplate, seasonsById, etagByResourceName);
       synced++;
     } catch (err) {
       console.error(`runGoogleContactsSync failed for dancer ${dancerId}:`, err);
