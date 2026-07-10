@@ -264,8 +264,16 @@ export default function ChatChannelScreen() {
         const perm = await MediaLibrary.requestPermissionsAsync();
         if (perm.granted) { await MediaLibrary.saveToLibraryAsync(uri); Alert.alert('Enregistré', 'Ajouté à ta galerie.'); return; }
       }
-      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri);
-    } catch { Alert.alert('Erreur', 'Téléchargement impossible.'); }
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri);
+      } else {
+        Alert.alert('Erreur', "Le partage n'est pas disponible sur cet appareil.");
+      }
+    } catch (err) {
+      console.error('downloadMedia failed:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert('Erreur', `Téléchargement impossible.\n${msg}`);
+    }
   };
 
   return (
