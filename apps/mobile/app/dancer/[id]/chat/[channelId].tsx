@@ -261,7 +261,7 @@ export default function ChatChannelScreen() {
       const uri = result?.uri;
       if (!uri) throw new Error('Téléchargement échoué');
       if (m.mediaType === 'image' || m.mediaType === 'video') {
-        const perm = await MediaLibrary.requestPermissionsAsync();
+        const perm = await MediaLibrary.requestPermissionsAsync(false, ['photo', 'video']);
         if (perm.granted) { await MediaLibrary.saveToLibraryAsync(uri); Alert.alert('Enregistré', 'Ajouté à ta galerie.'); return; }
       }
       if (await Sharing.isAvailableAsync()) {

@@ -132,7 +132,7 @@ export default function AudioPlayerSheet({
     if (!current) return;
     setDownloading(true);
     try {
-      const perm = await MediaLibrary.requestPermissionsAsync();
+      const perm = await MediaLibrary.requestPermissionsAsync(false, ['photo', 'video']);
       const safe = current.title.replace(/[^a-zA-Z0-9._-]/g, '_');
       const dest = `${FileSystem.cacheDirectory}${safe || 'audio'}.mp3`;
       const { uri } = await FileSystem.downloadAsync(current.sourceUrl, dest);

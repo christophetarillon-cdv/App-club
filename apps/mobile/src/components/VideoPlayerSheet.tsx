@@ -75,7 +75,7 @@ export default function VideoPlayerSheet({
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      const perm = await MediaLibrary.requestPermissionsAsync();
+      const perm = await MediaLibrary.requestPermissionsAsync(false, ['photo', 'video']);
       const safe = video.title.replace(/[^a-zA-Z0-9._-]/g, '_');
       const dest = `${FileSystem.cacheDirectory}${safe || 'video'}.mp4`;
       // Téléchargement resumable : reprend au lieu d'échouer si l'app passe en
