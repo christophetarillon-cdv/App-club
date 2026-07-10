@@ -419,7 +419,10 @@ service cloud.firestore {
     // ── bibliothèque de documents du club ─────────────────────────────────────
     match /documentLibrary/{id} {
       allow read: if isAuth();
-      allow write: if hasPagePermission('/admin/documents-library');
+      allow write: if hasPagePermission('/admin/documents-library') || (
+        isAuth() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['downloadCount'])
+      );
     }
 
     match /documentLibrary/{docId}/versions/{versionId} {

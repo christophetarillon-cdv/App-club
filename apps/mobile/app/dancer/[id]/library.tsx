@@ -93,8 +93,8 @@ function DocCard({ item }: { item: DocumentLibrary }) {
 
   const handleOpen = async () => {
     if (!item.currentFileUrl) return;
-    await updateDoc(doc(db, 'documentLibrary', item.id), { downloadCount: increment(1) });
     Linking.openURL(item.currentFileUrl);
+    updateDoc(doc(db, 'documentLibrary', item.id), { downloadCount: increment(1) }).catch(() => {});
   };
 
   return (

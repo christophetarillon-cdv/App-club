@@ -83,8 +83,8 @@ export default function LibraryPage() {
 
   const handleDownload = async (doc: DocumentLibrary) => {
     if (!doc.currentFileUrl) return;
-    await updateDoc(doc_ref(doc.id), { downloadCount: increment(1) });
     window.open(doc.currentFileUrl, '_blank');
+    updateDoc(doc_ref(doc.id), { downloadCount: increment(1) }).catch(() => {});
   };
 
   const doc_ref = (id: string) => doc(db, 'documentLibrary', id);
