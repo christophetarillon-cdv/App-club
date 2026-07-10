@@ -188,7 +188,8 @@ export default function ChatChannelPage() {
     if (!m.mediaUrl || !m.fileName) return;
     setDownloadingId(m.id);
     try {
-      const res = await fetch(m.mediaUrl);
+      const proxyUrl = `/api/download?url=${encodeURIComponent(m.mediaUrl)}&filename=${encodeURIComponent(m.fileName)}`;
+      const res = await fetch(proxyUrl);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
