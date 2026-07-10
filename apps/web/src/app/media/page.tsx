@@ -63,13 +63,18 @@ export default function MediaPage() {
   const handleDownload = useCallback(async (m: { id: string; title: string; sourceUrl: string; type: string }) => {
     setDownloading(m.id);
     try {
-      const res = await fetch(m.sourceUrl);
-      const blob = await res.blob();
       const ext = m.type === 'video' ? 'mp4' : 'mp3';
+      const filename = `${m.title}.${ext}`;
+      const res = await fetch(`/api/download?url=${encodeURIComponent(m.sourceUrl)}&filename=${encodeURIComponent(filename)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = `${m.title}.${ext}`; a.click();
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* silencieux */ } finally { setDownloading(null); }
+    } catch (err) {
+      console.error('handleDownload failed:', err);
+      alert('Le téléchargement a échoué. Réessayez.');
+    } finally { setDownloading(null); }
   }, []);
 
   const isAdminOrInstructor =
