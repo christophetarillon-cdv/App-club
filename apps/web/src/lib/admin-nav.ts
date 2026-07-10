@@ -79,6 +79,7 @@ export const ADMIN_NAV: NavGroup[] = [
     items: [
       { label: 'Accès pages', href: '/admin/settings/page-permissions' },
       { label: 'Intégration Google', href: '/admin/settings/google-integration' },
+      { label: 'Envoi d\'emails', href: '/admin/emails' },
     ],
   },
   {

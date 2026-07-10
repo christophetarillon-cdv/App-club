@@ -2943,3 +2943,83 @@ export const resyncAllGoogleContacts = onCall(
     return result;
   },
 );
+
+// ── Envoi d'emails via Gmail (Phase 4) ────────────────────────────────────
+
+async function callerHasEmailsPageAccess(callerUid: string): Promise<boolean> {
+  const db = getDb();
+  const accountSnap = await db.doc(`accounts/${callerUid}`).get();
+  const accountData = accountSnap.data() ?? {};
+  const accountRoles: string[] = accountData.roles ?? [];
+  const dancerIds: string[] = accountData.dancerIds ?? [];
+
+  const dancerSnaps = await Promise.all(dancerIds.slice(0, 3).map(id => db.doc(`dancers/${id}`).get()));
+  const dancerRoles = dancerSnaps.flatMap(s => (s.exists ? (s.data()!.roles as string[] ?? []) : []));
+  const roles = [...accountRoles, ...dancerRoles];
+
+  if (roles.includes('admin')) return true;
+
+  const settingsSnap = await db.doc('appSettings/main').get();
+  const pagePermissions = (settingsSnap.data()?.pagePermissions ?? {}) as Record<string, string[]>;
+  const allowed = pagePermissions['/admin/emails'] ?? ['admin'];
+  return roles.some(r => allowed.includes(r));
+}
+
+function base64UrlEncode(input: string): string {
+  return Buffer.from(input, 'utf-8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+export const sendClubEmail = onCall(
+  { region: 'europe-west3', secrets: [googleOAuthClientSecret] },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const hasAccess = await callerHasEmailsPageAccess(request.auth.uid);
+    if (!hasAccess) throw new HttpsError('permission-denied', "Vous n'avez pas accès à cette action");
+
+    const { subject, body, recipientEmails } = request.data as {
+      subject: string; body: string; recipientEmails: string[];
+    };
+    if (!subject?.trim()) throw new HttpsError('invalid-argument', 'Sujet requis');
+    if (!body?.trim()) throw new HttpsError('invalid-argument', 'Message requis');
+    const cleanRecipients = [...new Set((recipientEmails ?? []).filter(e => e?.includes('@')))];
+    if (cleanRecipients.length === 0) throw new HttpsError('invalid-argument', 'Aucun destinataire valide');
+
+    const db = getDb();
+    const settingsSnap = await db.doc('appSettings/googleIntegration').get();
+    const settings = settingsSnap.data() ?? {};
+    if (!settings.connected) throw new HttpsError('failed-precondition', 'Aucun compte Google connecté');
+
+    const accessToken = await getGoogleAccessToken(googleOAuthClientSecret.value());
+    if (!accessToken) throw new HttpsError('failed-precondition', 'Impossible de récupérer un token Google valide, reconnecte le compte');
+
+    const oauth2Client = getGoogleOAuthClient(googleOAuthClientSecret.value());
+    oauth2Client.setCredentials({ access_token: accessToken });
+    const gmailClient = google.gmail({ version: 'v1', auth: oauth2Client });
+
+    const senderName: string = settings.senderDisplayName || 'Club de Danse Voiron / Coublevie';
+    const fromAddress: string = settings.connectedEmail;
+    const replyTo: string | undefined = settings.defaultReplyTo || undefined;
+
+    // Bcc pour que les destinataires ne voient pas les adresses des autres.
+    const headers = [
+      `From: "${senderName}" <${fromAddress}>`,
+      `To: <${fromAddress}>`,
+      `Bcc: ${cleanRecipients.join(', ')}`,
+      replyTo ? `Reply-To: ${replyTo}` : null,
+      `Subject: =?UTF-8?B?${Buffer.from(subject, 'utf-8').toString('base64')}?=`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset="UTF-8"',
+    ].filter(Boolean).join('\r\n');
+
+    const htmlBody = escapeHtml(body).replace(/\n/g, '<br>');
+    const raw = base64UrlEncode(`${headers}\r\n\r\n${htmlBody}`);
+
+    await gmailClient.users.messages.send({ userId: 'me', requestBody: { raw } });
+
+    return { sent: cleanRecipients.length };
+  },
+);

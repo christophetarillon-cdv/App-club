@@ -90,7 +90,8 @@ service cloud.firestore {
         roles.hasAny(perms.get('/admin/chat-channels', ['admin'])) ||
         roles.hasAny(perms.get('/admin/notification-channels', ['admin'])) ||
         roles.hasAny(perms.get('/admin/notifications/send', ['admin'])) ||
-        roles.hasAny(perms.get('/admin/private-messages', ['admin']));
+        roles.hasAny(perms.get('/admin/private-messages', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/emails', ['admin']));
     }
 
     // Écriture memberships/paymentGroups : réservé aux pages qui approuvent
