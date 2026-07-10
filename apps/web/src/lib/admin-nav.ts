@@ -78,6 +78,7 @@ export const ADMIN_NAV: NavGroup[] = [
     label: 'Administration',
     items: [
       { label: 'Accès pages', href: '/admin/settings/page-permissions' },
+      { label: 'Intégration Google', href: '/admin/settings/google-integration' },
     ],
   },
   {

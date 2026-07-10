@@ -10,6 +10,7 @@ import * as path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { google } from 'googleapis';
 
 const helloassoClientId = defineSecret('HELLOASSO_CLIENT_ID');
 const helloassoClientSecret = defineSecret('HELLOASSO_CLIENT_SECRET');
@@ -2577,5 +2578,113 @@ export const createWebViewAuthToken = onCall(
     if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
     const customToken = await admin.auth().createCustomToken(request.auth.uid);
     return { token: customToken };
+  },
+);
+
+// ── Intégration Google (contacts + envoi d'emails) ──────────────────────────
+
+const googleOAuthClientId = '959510245510-0av0cahoc0n0jk4622accc5o90md0h8d.apps.googleusercontent.com';
+const googleOAuthClientSecret = defineSecret('GOOGLE_OAUTH_CLIENT_SECRET');
+const GOOGLE_OAUTH_REDIRECT_URI = 'https://europe-west3-clubvoiron-dev.cloudfunctions.net/googleOAuthCallback';
+const GOOGLE_OAUTH_SCOPES = [
+  'https://www.googleapis.com/auth/contacts',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
+
+// Vérifie que l'appelant a accès à la page /admin/settings/google-integration,
+// via appSettings.pagePermissions (même logique que callerHasDancersPageAccess).
+async function callerHasGoogleSettingsAccess(callerUid: string): Promise<boolean> {
+  const db = getDb();
+  const accountSnap = await db.doc(`accounts/${callerUid}`).get();
+  const accountData = accountSnap.data() ?? {};
+  const accountRoles: string[] = accountData.roles ?? [];
+  const dancerIds: string[] = accountData.dancerIds ?? [];
+
+  const dancerSnaps = await Promise.all(dancerIds.slice(0, 3).map(id => db.doc(`dancers/${id}`).get()));
+  const dancerRoles = dancerSnaps.flatMap(s => (s.exists ? (s.data()!.roles as string[] ?? []) : []));
+  const roles = [...accountRoles, ...dancerRoles];
+
+  if (roles.includes('admin')) return true;
+
+  const settingsSnap = await db.doc('appSettings/main').get();
+  const pagePermissions = (settingsSnap.data()?.pagePermissions ?? {}) as Record<string, string[]>;
+  const allowed = pagePermissions['/admin/settings/google-integration'] ?? ['admin'];
+  return roles.some(r => allowed.includes(r));
+}
+
+function getGoogleOAuthClient(clientSecret: string) {
+  return new google.auth.OAuth2(googleOAuthClientId, clientSecret, GOOGLE_OAUTH_REDIRECT_URI);
+}
+
+export const getGoogleAuthUrl = onCall(
+  { region: 'europe-west3', secrets: [googleOAuthClientSecret] },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const hasAccess = await callerHasGoogleSettingsAccess(request.auth.uid);
+    if (!hasAccess) throw new HttpsError('permission-denied', "Vous n'avez pas accès à cette action");
+
+    const oauth2Client = getGoogleOAuthClient(googleOAuthClientSecret.value());
+    const url = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'consent', // force le renvoi d'un refresh_token même en cas de reconnexion
+      scope: GOOGLE_OAUTH_SCOPES,
+    });
+    return { url };
+  },
+);
+
+export const googleOAuthCallback = onRequest(
+  { region: 'europe-west3', secrets: [googleOAuthClientSecret] },
+  async (req, res) => {
+    const code = req.query.code as string | undefined;
+    const REDIRECT_SUCCESS = 'https://espace-perso.clubdedanse.net/admin/settings/google-integration?connected=1';
+    const REDIRECT_ERROR = 'https://espace-perso.clubdedanse.net/admin/settings/google-integration?connected=0';
+
+    if (!code) { res.redirect(REDIRECT_ERROR); return; }
+
+    try {
+      const oauth2Client = getGoogleOAuthClient(googleOAuthClientSecret.value());
+      const { tokens } = await oauth2Client.getToken(code);
+      oauth2Client.setCredentials(tokens);
+
+      const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+      const { data: userInfo } = await oauth2.userinfo.get();
+
+      const db = getDb();
+      await db.doc('googleTokens/main').set({
+        accessToken: tokens.access_token ?? null,
+        refreshToken: tokens.refresh_token ?? null,
+        expiryDate: tokens.expiry_date ?? null,
+      }, { merge: true });
+
+      await db.doc('appSettings/googleIntegration').set({
+        connected: true,
+        connectedEmail: userInfo.email ?? null,
+        connectedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      res.redirect(REDIRECT_SUCCESS);
+    } catch (err) {
+      console.error('googleOAuthCallback failed:', err);
+      res.redirect(REDIRECT_ERROR);
+    }
+  },
+);
+
+export const disconnectGoogleAccount = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const hasAccess = await callerHasGoogleSettingsAccess(request.auth.uid);
+    if (!hasAccess) throw new HttpsError('permission-denied', "Vous n'avez pas accès à cette action");
+
+    const db = getDb();
+    await db.doc('googleTokens/main').delete();
+    await db.doc('appSettings/googleIntegration').set({
+      connected: false,
+      connectedEmail: null,
+    }, { merge: true });
+    return { ok: true };
   },
 );

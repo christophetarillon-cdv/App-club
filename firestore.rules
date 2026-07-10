@@ -162,7 +162,8 @@ service cloud.firestore {
         roles.hasAny(perms.get('/admin/settings/welcome-qr', ['admin'])) ||
         roles.hasAny(perms.get('/admin/settings/session-detail', ['admin'])) ||
         roles.hasAny(perms.get('/admin/settings/calendar-sync', ['admin'])) ||
-        roles.hasAny(perms.get('/admin/settings/payment-info', ['admin']));
+        roles.hasAny(perms.get('/admin/settings/payment-info', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/google-integration', ['admin']));
     }
 
     // ── clubProfile ────────────────────────────────────────────────────────────
@@ -272,6 +273,11 @@ service cloud.firestore {
     match /calendarTokens/{token} {
       // Écrit/lu uniquement par les Cloud Functions (Admin SDK) — le client
       // n'a jamais besoin d'un accès direct à cette collection.
+      allow read, write: if false;
+    }
+
+    match /googleTokens/{id} {
+      // Tokens OAuth Google (contacts + envoi d'emails) — uniquement Admin SDK.
       allow read, write: if false;
     }
 
