@@ -35,6 +35,8 @@ function GoogleIntegrationPageInner() {
   const [saved, setSaved] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
+  const [resyncResult, setResyncResult] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -89,6 +91,20 @@ function GoogleIntegrationPageInner() {
     }
   };
 
+  const handleResync = async () => {
+    setResyncing(true); setResyncResult(null);
+    try {
+      const fn = httpsCallable<void, { synced: number; errors: number }>(functions, 'resyncAllGoogleContacts');
+      const res = await fn();
+      setResyncResult(`${res.data.synced} contact(s) synchronisé(s)${res.data.errors > 0 ? `, ${res.data.errors} erreur(s)` : ''}.`);
+    } catch (err) {
+      console.error('resyncAllGoogleContacts failed:', err);
+      setResyncResult('La resynchronisation a échoué.');
+    } finally {
+      setResyncing(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true); setSaved(false);
     await setDoc(doc(db, 'appSettings', 'googleIntegration'), {
@@ -133,7 +149,17 @@ function GoogleIntegrationPageInner() {
                   {disconnecting ? 'Déconnexion…' : 'Déconnecter'}
                 </button>
               </div>
-            ) : (
+            ) : null}
+            {settings.connected && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <button onClick={handleResync} disabled={resyncing}
+                  className="text-sm border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 disabled:opacity-50">
+                  {resyncing ? 'Resynchronisation…' : 'Resynchroniser tout'}
+                </button>
+                {resyncResult && <p className="text-sm text-gray-600 mt-2">{resyncResult}</p>}
+              </div>
+            )}
+            {!settings.connected && (
               <button onClick={handleConnect} disabled={connecting}
                 className="bg-blue-600 text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
                 {connecting ? 'Redirection…' : 'Connecter un compte Google'}

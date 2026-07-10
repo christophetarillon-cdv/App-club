@@ -2688,3 +2688,180 @@ export const disconnectGoogleAccount = onCall(
     return { ok: true };
   },
 );
+
+// ── Synchronisation contacts Google (Phase 2 : groupe global uniquement) ────
+
+async function getGoogleAccessToken(clientSecret: string): Promise<string | null> {
+  const db = getDb();
+  const tokenSnap = await db.doc('googleTokens/main').get();
+  if (!tokenSnap.exists) return null;
+  const data = tokenSnap.data()!;
+  if (!data.refreshToken) return null;
+
+  const oauth2Client = getGoogleOAuthClient(clientSecret);
+  oauth2Client.setCredentials({
+    access_token: data.accessToken,
+    refresh_token: data.refreshToken,
+    expiry_date: data.expiryDate,
+  });
+
+  // Rafraîchit si le token expire dans moins de 5 minutes.
+  const expiresSoon = !data.expiryDate || data.expiryDate < Date.now() + 5 * 60 * 1000;
+  if (expiresSoon) {
+    try {
+      const { credentials } = await oauth2Client.refreshAccessToken();
+      await db.doc('googleTokens/main').set({
+        accessToken: credentials.access_token ?? null,
+        expiryDate: credentials.expiry_date ?? null,
+      }, { merge: true });
+      return credentials.access_token ?? null;
+    } catch (err) {
+      console.error('getGoogleAccessToken refresh failed:', err);
+      await db.doc('appSettings/googleIntegration').set({
+        lastSyncError: 'Le rafraîchissement du token a échoué, reconnecte le compte Google.',
+      }, { merge: true });
+      return null;
+    }
+  }
+  return data.accessToken ?? null;
+}
+
+async function getOrCreateContactGroup(
+  peopleClient: ReturnType<typeof google.people>,
+  groupName: string,
+  cache: Map<string, string>,
+): Promise<string> {
+  if (cache.has(groupName)) return cache.get(groupName)!;
+
+  const listRes = await peopleClient.contactGroups.list({ pageSize: 200 });
+  const existing = (listRes.data.contactGroups ?? []).find(g => g.name === groupName);
+  if (existing?.resourceName) {
+    cache.set(groupName, existing.resourceName);
+    return existing.resourceName;
+  }
+
+  const createRes = await peopleClient.contactGroups.create({
+    requestBody: { contactGroup: { name: groupName } },
+  });
+  const resourceName = createRes.data.resourceName!;
+  cache.set(groupName, resourceName);
+  return resourceName;
+}
+
+async function syncOneDancerToGoogle(
+  dancerId: string,
+  peopleClient: ReturnType<typeof google.people>,
+  groupCache: Map<string, string>,
+  groupNameGlobal: string,
+): Promise<void> {
+  const db = getDb();
+  const dancerSnap = await db.doc(`dancers/${dancerId}`).get();
+  if (!dancerSnap.exists) return;
+  const dancer = dancerSnap.data()!;
+
+  const accountSnap = await db.doc(`accounts/${dancer.accountId}`).get();
+  const account = accountSnap.data() ?? {};
+
+  const globalGroupResourceName = await getOrCreateContactGroup(peopleClient, groupNameGlobal, groupCache);
+
+  const names = [{ givenName: dancer.firstName, familyName: dancer.lastName }];
+  const emailAddresses = account.email ? [{ value: account.email }] : [];
+  const phoneNumbers = dancer.phone ? [{ value: dancer.phone }] : [];
+  const memberships = [{ contactGroupMembership: { contactGroupResourceName: globalGroupResourceName } }];
+
+  if (dancer.googleContactResourceName) {
+    try {
+      await peopleClient.people.updateContact({
+        resourceName: dancer.googleContactResourceName,
+        updatePersonFields: 'names,emailAddresses,phoneNumbers',
+        requestBody: {
+          etag: (await peopleClient.people.get({
+            resourceName: dancer.googleContactResourceName,
+            personFields: 'metadata',
+          })).data.etag,
+          names, emailAddresses, phoneNumbers,
+        },
+      });
+      return;
+    } catch (err) {
+      console.error(`syncOneDancerToGoogle update failed for ${dancerId}, recreating:`, err);
+      // Le contact a peut-être été supprimé côté Google — on retombe sur une création.
+    }
+  }
+
+  const createRes = await peopleClient.people.createContact({
+    requestBody: { names, emailAddresses, phoneNumbers, memberships },
+  });
+
+  await db.doc(`dancers/${dancerId}`).update({
+    googleContactResourceName: createRes.data.resourceName,
+    googleContactGroupIds: [globalGroupResourceName],
+  });
+}
+
+async function runGoogleContactsSync(dancerIds: string[]): Promise<{ synced: number; errors: number }> {
+  const db = getDb();
+  const settingsSnap = await db.doc('appSettings/googleIntegration').get();
+  const settings = settingsSnap.data() ?? {};
+  if (!settings.connected) return { synced: 0, errors: 0 };
+
+  const accessToken = await getGoogleAccessToken(googleOAuthClientSecret.value());
+  if (!accessToken) return { synced: 0, errors: dancerIds.length };
+
+  const oauth2Client = getGoogleOAuthClient(googleOAuthClientSecret.value());
+  oauth2Client.setCredentials({ access_token: accessToken });
+  const peopleClient = google.people({ version: 'v1', auth: oauth2Client });
+
+  const groupNameGlobal: string = settings.groupNameGlobal ?? DEFAULT_GOOGLE_GROUP_GLOBAL;
+  const groupCache = new Map<string, string>();
+
+  let synced = 0, errors = 0;
+  for (const dancerId of dancerIds) {
+    try {
+      await syncOneDancerToGoogle(dancerId, peopleClient, groupCache, groupNameGlobal);
+      synced++;
+    } catch (err) {
+      console.error(`runGoogleContactsSync failed for dancer ${dancerId}:`, err);
+      errors++;
+    }
+  }
+
+  await db.doc('appSettings/googleIntegration').set({
+    lastSyncAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastSyncError: errors > 0 ? `${errors} erreur(s) lors de la dernière synchronisation` : null,
+  }, { merge: true });
+
+  return { synced, errors };
+}
+
+const DEFAULT_GOOGLE_GROUP_GLOBAL = 'Tous les danseurs';
+
+export const syncDancerGoogleContact = onDocumentWritten(
+  { document: 'dancers/{dancerId}', region: 'europe-west3', secrets: [googleOAuthClientSecret] },
+  async (event) => {
+    const after = event.data?.after?.data();
+    if (!after) return; // suppression — pas de sync (le contact reste dans Google, à gérer manuellement)
+
+    const settingsSnap = await getDb().doc('appSettings/googleIntegration').get();
+    const settings = settingsSnap.data() ?? {};
+    if (!settings.connected || !settings.autoSyncEnabled) return;
+
+    await runGoogleContactsSync([event.params.dancerId]);
+  },
+);
+
+export const resyncAllGoogleContacts = onCall(
+  { region: 'europe-west3', secrets: [googleOAuthClientSecret], timeoutSeconds: 540 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const hasAccess = await callerHasGoogleSettingsAccess(request.auth.uid);
+    if (!hasAccess) throw new HttpsError('permission-denied', "Vous n'avez pas accès à cette action");
+
+    const db = getDb();
+    const dancersSnap = await db.collection('dancers').get();
+    const dancerIds = dancersSnap.docs.map(d => d.id);
+
+    const result = await runGoogleContactsSync(dancerIds);
+    return result;
+  },
+);
