@@ -286,7 +286,7 @@ export default function VideosScreen() {
                 return (
                   <TouchableOpacity key={opt.value} style={styles.modalOption}
                     onPress={() => { setSelectedCourse(opt.value); setCoursePickerOpen(false); }} activeOpacity={0.7}>
-                    <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]}>{opt.label}</Text>
+                    <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]} numberOfLines={2}>{opt.label}</Text>
                     {selected && (
                       <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
                         <Path d="M5 13l4 4L19 7" stroke="#534AB7" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
@@ -311,7 +311,7 @@ export default function VideosScreen() {
                 return (
                   <TouchableOpacity key={opt.value} style={styles.modalOption}
                     onPress={() => { setSelectedSeason(opt.value); setSeasonPickerOpen(false); }} activeOpacity={0.7}>
-                    <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]}>{opt.label}</Text>
+                    <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]} numberOfLines={2}>{opt.label}</Text>
                     {selected && (
                       <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
                         <Path d="M5 13l4 4L19 7" stroke="#2F86C0" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
@@ -409,8 +409,8 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingTop: 18, paddingBottom: 34, paddingHorizontal: 8 },
   modalTitle: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: 14, marginBottom: 6 },
-  modalOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 14, borderRadius: 12 },
-  modalOptionText: { fontSize: 16, color: Colors.text },
+  modalOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 14, paddingHorizontal: 14, borderRadius: 12 },
+  modalOptionText: { fontSize: 16, color: Colors.text, flex: 1, flexShrink: 1 },
   modalOptionTextSelected: { color: '#2F86C0', fontWeight: '600' },
 
   section: { marginTop: 18 },
