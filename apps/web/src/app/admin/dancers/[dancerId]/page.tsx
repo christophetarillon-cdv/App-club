@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import type { ProfileFieldsConfig, CustomField, RoleConfig, PersonalDocument } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+import { BirthDateSelect } from '@/components/BirthDateSelect';
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   receipt: 'Reçu de paiement',
@@ -693,8 +694,8 @@ export default function DancerDetailPage() {
               onChange={e => setPendingInfo(p => p && { ...p, phone: e.target.value })} />
           </EditField>
           <EditField label="Date de naissance">
-            <input type="date" className={INPUT} value={pendingInfo.birthDate}
-              onChange={e => setPendingInfo(p => p && { ...p, birthDate: e.target.value })} />
+            <BirthDateSelect value={pendingInfo.birthDate}
+              onChange={v => setPendingInfo(p => p && { ...p, birthDate: v })} />
           </EditField>
           <EditField label="Genre">
             <select className={INPUT} value={pendingInfo.gender}

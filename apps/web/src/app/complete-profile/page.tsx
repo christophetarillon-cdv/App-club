@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { ProfileFieldsConfig } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
 import { mergeProfileFieldsConfig, computeMissingDancerFields } from '@/lib/profileFields';
+import { BirthDateSelect } from '@/components/BirthDateSelect';
 
 const GENDER_OPTIONS = [
   { value: 'F', label: 'Femme' },
@@ -141,9 +142,8 @@ export default function CompleteProfilePage() {
             {fields.some(f => f.key === 'birthDate') && (
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Date de naissance</label>
-                <input type="date" value={form[`${dancer.id}.birthDate`] as string ?? ''}
-                  onChange={e => setFormValue(`${dancer.id}.birthDate`, e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                <BirthDateSelect value={form[`${dancer.id}.birthDate`] as string ?? ''}
+                  onChange={v => setFormValue(`${dancer.id}.birthDate`, v)} />
               </div>
             )}
             {fields.some(f => f.key === 'gender') && (

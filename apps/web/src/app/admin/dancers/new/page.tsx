@@ -8,6 +8,7 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import { GENDER_OPTIONS } from '@/lib/gender-constants';
 import Link from 'next/link';
+import { BirthDateSelect } from '@/components/BirthDateSelect';
 
 interface RoleOption { key: string; label: string; }
 
@@ -304,11 +305,7 @@ export default function AdminNewAccountPage() {
                   <div className="col-span-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 pt-2 mt-1 border-t border-gray-100">
                     <div>
                       <label className="block text-[11px] text-gray-400 mb-1">Date de naissance</label>
-                      <input
-                        type="date" value={d.birthDate}
-                        onChange={e => updateDancer(i, { birthDate: e.target.value })}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                      />
+                      <BirthDateSelect value={d.birthDate} onChange={v => updateDancer(i, { birthDate: v })} />
                     </div>
                     <div>
                       <label className="block text-[11px] text-gray-400 mb-1">Genre</label>
@@ -453,11 +450,8 @@ export default function AdminNewAccountPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
             <div>
               <label className="block text-[11px] text-gray-400 mb-1">Date de naissance</label>
-              <input
-                type="date" value={addDancerForm.birthDate}
-                onChange={e => setAddDancerForm(f => ({ ...f, birthDate: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-              />
+              <BirthDateSelect value={addDancerForm.birthDate}
+                onChange={v => setAddDancerForm(f => ({ ...f, birthDate: v }))} />
             </div>
             <div>
               <label className="block text-[11px] text-gray-400 mb-1">Genre</label>

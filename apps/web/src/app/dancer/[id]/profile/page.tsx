@@ -12,6 +12,7 @@ import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 
 import { updateDancer, createDancer } from '@/lib/auth';
 import type { UpdateDancerInput } from '@/lib/auth';
 import type { Dancer, ProfileFieldsConfig, CustomField, CustomFieldRole } from '@cdv/types';
+import { BirthDateSelect } from '@/components/BirthDateSelect';
 import { DEFAULT_PROFILE_FIELDS, ROLE_PRIORITY } from '@cdv/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { GENDER_OPTIONS } from '@/lib/gender-constants';
@@ -675,8 +676,7 @@ export default function DancerPersonalProfilePage() {
               {fieldConfig.birthDate.enabled && (
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Date de naissance{fieldConfig.birthDate.required && ' *'}</label>
-                  <input type="date" value={birthDate} onChange={e => setBirthDate(e.target.value)}
-                    required={fieldConfig.birthDate.required} className={INPUT} />
+                  <BirthDateSelect value={birthDate} onChange={setBirthDate} required={fieldConfig.birthDate.required} />
                 </div>
               )}
               {fieldConfig.gender.enabled && (

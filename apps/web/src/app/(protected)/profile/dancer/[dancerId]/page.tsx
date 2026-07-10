@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import type { Dancer } from '@cdv/types';
 import { useRoles } from '@/hooks/useRoles';
+import { BirthDateSelect } from '@/components/BirthDateSelect';
 
 function formatDate(ts: { seconds: number } | undefined): string {
   if (!ts) return '—';
@@ -199,8 +200,7 @@ export default function DancerProfilePage() {
 
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Date de naissance</label>
-            <input type="date" value={birthDate} onChange={e => setBirthDate(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+            <BirthDateSelect value={birthDate} onChange={setBirthDate} />
           </div>
 
           <div className="space-y-2">

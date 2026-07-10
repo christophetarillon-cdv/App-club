@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { ProfileFieldsConfig, Dancer as FullDancer } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS, DEFAULT_PAYMENT_INFO } from '@cdv/types';
+import { BirthDateSelect } from '@/components/BirthDateSelect';
 import {
   mergeProfileFieldsConfig, computeMissingAccountFields, computeMissingDancerFields,
 } from '@/lib/profileFields';
@@ -938,9 +939,8 @@ export default function MembershipPage() {
                         {fields.some(f => f.key === 'birthDate') && (
                           <div>
                             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Date de naissance</label>
-                            <input type="date" value={profileForm[`${dancer.id}.birthDate`] as string ?? ''}
-                              onChange={e => setFormValue(`${dancer.id}.birthDate`, e.target.value)}
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                            <BirthDateSelect value={profileForm[`${dancer.id}.birthDate`] as string ?? ''}
+                              onChange={v => setFormValue(`${dancer.id}.birthDate`, v)} />
                           </div>
                         )}
                         {fields.some(f => f.key === 'gender') && (
