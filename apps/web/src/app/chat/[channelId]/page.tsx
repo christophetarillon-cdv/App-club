@@ -36,6 +36,7 @@ export default function ChatChannelPage() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [seasonFloorMs, setSeasonFloorMs] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -179,6 +180,27 @@ export default function ChatChannelPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // Safari iOS ignore l'attribut download sur les liens cross-origine (Firebase
+  // Storage) et ouvre le fichier dans l'onglet au lieu de le telecharger.
+  // Contournement : recuperer le fichier en blob (meme origine une fois en
+  // memoire) puis declencher le telechargement via une URL objet locale.
+  const handleDownload = async (m: ChatMessage) => {
+    if (!m.mediaUrl || !m.fileName) return;
+    setDownloadingId(m.id);
+    try {
+      const res = await fetch(m.mediaUrl);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = m.fileName; a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(m.mediaUrl, '_blank');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   return (
     <AppShell>
     <div className="min-h-screen bg-background flex flex-col">
@@ -219,10 +241,10 @@ export default function ChatChannelPage() {
                         {m.mediaType === 'audio' && <audio controls src={m.mediaUrl} className="w-48" />}
                         {m.mediaType === 'video' && <video controls src={m.mediaUrl} className="max-h-48 rounded-xl" />}
                         {m.fileName && (
-                          <a href={m.mediaUrl} download={m.fileName}
-                            className={`block text-xs mt-1 underline ${isMe ? 'text-blue-100' : 'text-blue-600'}`}>
-                            ↓ Télécharger
-                          </a>
+                          <button onClick={() => handleDownload(m)} disabled={downloadingId === m.id}
+                            className={`block text-xs mt-1 underline disabled:opacity-50 ${isMe ? 'text-blue-100' : 'text-blue-600'}`}>
+                            {downloadingId === m.id ? 'Téléchargement…' : '↓ Télécharger'}
+                          </button>
                         )}
                       </div>
                     )}
