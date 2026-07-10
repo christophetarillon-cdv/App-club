@@ -189,13 +189,15 @@ export default function ChatChannelPage() {
     setDownloadingId(m.id);
     try {
       const res = await fetch(m.mediaUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = m.fileName; a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      window.open(m.mediaUrl, '_blank');
+    } catch (err) {
+      console.error('handleDownload failed:', err);
+      alert("Le téléchargement a échoué. Réessayez.");
     } finally {
       setDownloadingId(null);
     }
