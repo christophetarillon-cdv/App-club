@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { signOut } from 'firebase/auth';
+import { db, auth } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -209,6 +210,13 @@ export default function ProfileScreen() {
     return userRoles.some(r => requiredRoles.includes(r));
   };
 
+  const handleSignOut = () => {
+    Alert.alert('Se déconnecter', 'Confirmer la déconnexion ?', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Se déconnecter', style: 'destructive', onPress: () => signOut(auth) },
+    ]);
+  };
+
   const visibleItems = MENU_ITEMS.filter(item => {
     if (item.screen === 'calendar-sync') {
       return isAdmin || userRoles.some(r => calendarSyncRoles.includes(r));
@@ -265,6 +273,12 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             ))
           )}
+
+          {!loading && (
+            <TouchableOpacity style={styles.logoutRow} onPress={handleSignOut} activeOpacity={0.75}>
+              <Text style={styles.logoutText}>Se déconnecter</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 
@@ -310,4 +324,7 @@ const styles = StyleSheet.create({
   cardBody: { flex: 1 },
   cardLabel: { fontSize: 15, fontWeight: '600', color: Colors.text, marginBottom: 2 },
   cardSub: { fontSize: 12, color: Colors.textSecondary },
+
+  logoutRow: { alignItems: 'center', paddingVertical: 18, marginTop: 4 },
+  logoutText: { fontSize: 14, fontWeight: '500', color: '#EF4444' },
 });

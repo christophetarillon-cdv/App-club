@@ -9,7 +9,8 @@ import {
   collection, query, orderBy, limit, getDocs,
   addDoc, deleteDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { signOut } from 'firebase/auth';
+import { auth, db } from '@/lib/firebase';
 import { useDancer } from '@/contexts/DancerContext';
 import { usePagePermissions } from '@/contexts/PagePermissionsContext';
 import { Colors } from '@/constants/Colors';
@@ -98,6 +99,13 @@ export default function DancerHomeScreen() {
   useEffect(() => { loadAnnouncements(); }, []);
 
   const nav = (screen: string) => router.push(`/dancer/${id}/${screen}` as any);
+
+  const handleSignOut = () => {
+    Alert.alert('Se déconnecter', 'Confirmer la déconnexion ?', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Se déconnecter', style: 'destructive', onPress: () => signOut(auth) },
+    ]);
+  };
 
   const openSheet = () => {
     setTitle('');
@@ -272,6 +280,10 @@ export default function DancerHomeScreen() {
               <KioskIcon />
             </TouchableOpacity>
           )}
+
+          <TouchableOpacity style={styles.logoutRow} onPress={handleSignOut} activeOpacity={0.75}>
+            <Text style={styles.logoutText}>Se déconnecter</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -455,6 +467,9 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   actionLabel: { fontSize: 17, fontWeight: '700', color: '#fff', flex: 1 },
+
+  logoutRow: { alignItems: 'center', paddingVertical: 18, marginTop: 12 },
+  logoutText: { fontSize: 14, fontWeight: '500', color: '#EF4444' },
 
   // Bottom sheet
   sheetOverlay: {
