@@ -7,7 +7,7 @@ import { Audio } from 'expo-av';
 import Slider from '@react-native-community/slider';
 import Svg, { Path } from 'react-native-svg';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
+import { saveDownloadedFile } from '@/lib/downloadFile';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
 import type { Media } from '@cdv/types';
@@ -134,8 +134,8 @@ export default function AudioPlayerSheet({
       const safe = current.title.replace(/[^a-zA-Z0-9._-]/g, '_');
       const dest = `${FileSystem.cacheDirectory}${safe || 'audio'}.mp3`;
       const { uri } = await FileSystem.downloadAsync(current.sourceUrl, dest);
-      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'audio/mpeg' });
-      else Alert.alert('Erreur', "Le partage n'est pas disponible sur cet appareil.");
+      const outcome = await saveDownloadedFile(uri, `${safe || 'audio'}.mp3`, 'audio/mpeg');
+      if (outcome === 'saved') Alert.alert('Téléchargé', "L'audio a été enregistré dans ton dossier de téléchargements.");
     } catch (err) {
       console.error('handleDownload failed:', err);
       Alert.alert('Erreur', 'Téléchargement impossible.');

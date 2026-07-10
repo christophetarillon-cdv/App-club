@@ -6,7 +6,7 @@ import {
 import { useVideoPlayer, VideoView } from 'expo-video';
 import Slider from '@react-native-community/slider';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
+import { saveDownloadedFile } from '@/lib/downloadFile';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
 import type { Media } from '@cdv/types';
@@ -87,11 +87,8 @@ export default function VideoPlayerSheet({
       const result = await dl.downloadAsync();
       const uri = result?.uri;
       if (!uri) throw new Error('Téléchargement échoué');
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { mimeType: 'video/mp4' });
-      } else {
-        Alert.alert('Erreur', "Le partage n'est pas disponible sur cet appareil.");
-      }
+      const outcome = await saveDownloadedFile(uri, `${safe || 'video'}.mp4`, 'video/mp4');
+      if (outcome === 'saved') Alert.alert('Téléchargée', 'La vidéo a été enregistrée dans ton dossier de téléchargements.');
     } catch {
       Alert.alert('Erreur', 'Téléchargement impossible.');
     } finally {

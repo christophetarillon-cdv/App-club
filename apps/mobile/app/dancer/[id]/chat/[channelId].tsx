@@ -19,7 +19,7 @@ import VideoPlayerSheet from '@/components/VideoPlayerSheet';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
+import { saveDownloadedFile } from '@/lib/downloadFile';
 import { Colors } from '@/constants/Colors';
 import type { ChatChannel, ChatMessage, Media } from '@cdv/types';
 
@@ -259,11 +259,8 @@ export default function ChatChannelScreen() {
       const result = await dl.downloadAsync();
       const uri = result?.uri;
       if (!uri) throw new Error('Téléchargement échoué');
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri);
-      } else {
-        Alert.alert('Erreur', "Le partage n'est pas disponible sur cet appareil.");
-      }
+      const outcome = await saveDownloadedFile(uri, m.fileName ?? safe, 'application/octet-stream');
+      if (outcome === 'saved') Alert.alert('Téléchargé', 'Enregistré dans ton dossier de téléchargements.');
     } catch (err) {
       console.error('downloadMedia failed:', err);
       const msg = err instanceof Error ? err.message : String(err);
