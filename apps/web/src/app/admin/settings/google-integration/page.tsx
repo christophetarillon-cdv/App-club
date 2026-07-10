@@ -94,7 +94,7 @@ function GoogleIntegrationPageInner() {
   const handleResync = async () => {
     setResyncing(true); setResyncResult(null);
     try {
-      const fn = httpsCallable<void, { synced: number; errors: number }>(functions, 'resyncAllGoogleContacts');
+      const fn = httpsCallable<void, { synced: number; errors: number }>(functions, 'resyncAllGoogleContacts', { timeout: 480000 });
       const res = await fn();
       setResyncResult(`${res.data.synced} contact(s) synchronisé(s)${res.data.errors > 0 ? `, ${res.data.errors} erreur(s)` : ''}.`);
     } catch (err) {
