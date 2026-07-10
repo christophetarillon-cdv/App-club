@@ -2748,11 +2748,30 @@ async function getOrCreateContactGroup(
   return resourceName;
 }
 
+// Détermine la saison la plus récente (par startDate) parmi les saisons
+// validées du danseur — c'est la seule dont le groupe de contacts sera
+// conservé, les groupes des saisons plus anciennes sont retirés.
+function resolveMostRecentSeason(
+  validatedSeasonIds: string[] | undefined,
+  seasonsById: Map<string, { label: string; startDateMs: number }>,
+): { label: string } | null {
+  if (!validatedSeasonIds || validatedSeasonIds.length === 0) return null;
+  let best: { label: string; startDateMs: number } | null = null;
+  for (const id of validatedSeasonIds) {
+    const season = seasonsById.get(id);
+    if (!season) continue;
+    if (!best || season.startDateMs > best.startDateMs) best = season;
+  }
+  return best;
+}
+
 async function syncOneDancerToGoogle(
   dancerId: string,
   peopleClient: ReturnType<typeof google.people>,
   groupCache: Map<string, string>,
   groupNameGlobal: string,
+  groupNameSeasonTemplate: string,
+  seasonsById: Map<string, { label: string; startDateMs: number }>,
 ): Promise<void> {
   const db = getDb();
   const dancerSnap = await db.doc(`dancers/${dancerId}`).get();
@@ -2764,24 +2783,45 @@ async function syncOneDancerToGoogle(
 
   const globalGroupResourceName = await getOrCreateContactGroup(peopleClient, groupNameGlobal, groupCache);
 
+  const mostRecentSeason = resolveMostRecentSeason(dancer.validatedSeasonIds, seasonsById);
+  const seasonGroupResourceName = mostRecentSeason
+    ? await getOrCreateContactGroup(peopleClient, groupNameSeasonTemplate.replace('{season}', mostRecentSeason.label), groupCache)
+    : null;
+
+  const desiredGroupIds = [globalGroupResourceName, ...(seasonGroupResourceName ? [seasonGroupResourceName] : [])];
+
   const names = [{ givenName: dancer.firstName, familyName: dancer.lastName }];
   const emailAddresses = account.email ? [{ value: account.email }] : [];
   const phoneNumbers = dancer.phone ? [{ value: dancer.phone }] : [];
-  const memberships = [{ contactGroupMembership: { contactGroupResourceName: globalGroupResourceName } }];
 
   if (dancer.googleContactResourceName) {
     try {
+      const etag = (await peopleClient.people.get({
+        resourceName: dancer.googleContactResourceName,
+        personFields: 'metadata',
+      })).data.etag;
+
       await peopleClient.people.updateContact({
         resourceName: dancer.googleContactResourceName,
         updatePersonFields: 'names,emailAddresses,phoneNumbers',
-        requestBody: {
-          etag: (await peopleClient.people.get({
-            resourceName: dancer.googleContactResourceName,
-            personFields: 'metadata',
-          })).data.etag,
-          names, emailAddresses, phoneNumbers,
-        },
+        requestBody: { etag, names, emailAddresses, phoneNumbers },
       });
+
+      const previousGroupIds: string[] = dancer.googleContactGroupIds ?? [];
+      const toAdd = desiredGroupIds.filter(id => !previousGroupIds.includes(id));
+      const toRemove = previousGroupIds.filter(id => !desiredGroupIds.includes(id));
+      await Promise.all([
+        ...toAdd.map(groupResourceName => peopleClient.contactGroups.members.modify({
+          resourceName: groupResourceName,
+          requestBody: { resourceNamesToAdd: [dancer.googleContactResourceName] },
+        })),
+        ...toRemove.map(groupResourceName => peopleClient.contactGroups.members.modify({
+          resourceName: groupResourceName,
+          requestBody: { resourceNamesToRemove: [dancer.googleContactResourceName] },
+        })),
+      ]);
+
+      await db.doc(`dancers/${dancerId}`).update({ googleContactGroupIds: desiredGroupIds });
       return;
     } catch (err) {
       console.error(`syncOneDancerToGoogle update failed for ${dancerId}, recreating:`, err);
@@ -2789,13 +2829,14 @@ async function syncOneDancerToGoogle(
     }
   }
 
+  const memberships = desiredGroupIds.map(contactGroupResourceName => ({ contactGroupMembership: { contactGroupResourceName } }));
   const createRes = await peopleClient.people.createContact({
     requestBody: { names, emailAddresses, phoneNumbers, memberships },
   });
 
   await db.doc(`dancers/${dancerId}`).update({
     googleContactResourceName: createRes.data.resourceName,
-    googleContactGroupIds: [globalGroupResourceName],
+    googleContactGroupIds: desiredGroupIds,
   });
 }
 
@@ -2813,12 +2854,23 @@ async function runGoogleContactsSync(dancerIds: string[]): Promise<{ synced: num
   const peopleClient = google.people({ version: 'v1', auth: oauth2Client });
 
   const groupNameGlobal: string = settings.groupNameGlobal ?? DEFAULT_GOOGLE_GROUP_GLOBAL;
+  const groupNameSeasonTemplate: string = settings.groupNameSeasonTemplate ?? DEFAULT_GOOGLE_GROUP_SEASON_TEMPLATE;
   const groupCache = new Map<string, string>();
+
+  const seasonsSnap = await db.collection('seasons').get();
+  const seasonsById = new Map<string, { label: string; startDateMs: number }>();
+  for (const doc of seasonsSnap.docs) {
+    const data = doc.data();
+    seasonsById.set(doc.id, {
+      label: data.label,
+      startDateMs: data.startDate?.toMillis?.() ?? 0,
+    });
+  }
 
   let synced = 0, errors = 0;
   for (const dancerId of dancerIds) {
     try {
-      await syncOneDancerToGoogle(dancerId, peopleClient, groupCache, groupNameGlobal);
+      await syncOneDancerToGoogle(dancerId, peopleClient, groupCache, groupNameGlobal, groupNameSeasonTemplate, seasonsById);
       synced++;
     } catch (err) {
       console.error(`runGoogleContactsSync failed for dancer ${dancerId}:`, err);
@@ -2835,6 +2887,7 @@ async function runGoogleContactsSync(dancerIds: string[]): Promise<{ synced: num
 }
 
 const DEFAULT_GOOGLE_GROUP_GLOBAL = 'Tous les danseurs';
+const DEFAULT_GOOGLE_GROUP_SEASON_TEMPLATE = 'Danseurs {season}';
 
 export const syncDancerGoogleContact = onDocumentWritten(
   { document: 'dancers/{dancerId}', region: 'europe-west3', secrets: [googleOAuthClientSecret] },
