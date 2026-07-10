@@ -110,7 +110,7 @@ function HBarChart({ data, width }: { data: CourseStat[]; width: number }) {
         const w = (d.avg / maxVal) * barW;
         const y = i * (barH + gap) + 4;
         return (
-          <G key={d.name}>
+          <G key={`${d.name}-${i}`}>
             <SvgText x={0} y={y + barH / 2 + 4} fontSize={10} fill="#6B7280">
               {d.name.length > 16 ? d.name.slice(0, 14) + '…' : d.name}
             </SvgText>
