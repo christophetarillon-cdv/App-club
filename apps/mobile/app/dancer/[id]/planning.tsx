@@ -319,7 +319,7 @@ const styles = StyleSheet.create({
   courseNameCancelled: { color: '#bbb', textDecorationLine: 'line-through' },
 
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  infoText: { fontSize: 12, color: Colors.textSecondary },
+  infoText: { fontSize: 12, color: Colors.textSecondary, flexShrink: 1 },
   infoTextFaded: { color: '#bbb' },
 
   empty: { alignItems: 'center', paddingTop: 48, paddingBottom: 24 },
