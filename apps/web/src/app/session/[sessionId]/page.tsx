@@ -21,9 +21,10 @@ function formatDate(dateStr: string): string {
 
 interface SessionData {
   id: string; courseId: string; date: string; startTime: string; endTime: string;
-  status: string; programNote?: string;
+  status: string; programNote?: string; roomId?: string;
 }
 interface CourseData { id: string; name: string; danceStyleId: string; levelId: string; roomId: string; seasonId: string; }
+interface RoomOption { id: string; name: string; }
 
 export default function SessionDetailPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -50,6 +51,11 @@ export default function SessionDetailPage() {
   const [editingNote, setEditingNote] = useState(false);
   const [savingNote, setSavingNote] = useState(false);
 
+  const [rooms, setRooms] = useState<RoomOption[]>([]);
+  const [editingRoom, setEditingRoom] = useState(false);
+  const [roomChoice, setRoomChoice] = useState<string>('');
+  const [savingRoom, setSavingRoom] = useState(false);
+
   const [title, setTitle] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -75,11 +81,13 @@ export default function SessionDetailPage() {
       const s = { id: sessionSnap.id, ...sessionSnap.data() } as SessionData;
       setSession(s);
       setNoteText(s.programNote ?? '');
+      setRoomChoice(s.roomId ?? '');
 
-      const [courseSnap, settingsSnap, mediaSnap] = await Promise.all([
+      const [courseSnap, settingsSnap, mediaSnap, roomsSnap] = await Promise.all([
         getDoc(doc(db, 'courses', s.courseId)),
         getDoc(doc(db, 'appSettings', 'main')),
         getDocs(query(collection(db, 'media'), where('sessionId', '==', s.id))),
+        getDocs(collection(db, 'rooms')),
       ]);
 
       setUploadRoles(settingsSnap.data()?.sessionVideoUploadRoles ?? []);
@@ -87,14 +95,16 @@ export default function SessionDetailPage() {
       setNoteViewRoles(settingsSnap.data()?.sessionNoteViewRoles ?? []);
       setNoteEditRoles(settingsSnap.data()?.sessionNoteEditRoles ?? []);
       setVideos(mediaSnap.docs.map(d => ({ id: d.id, ...d.data() } as Media)));
+      setRooms(roomsSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '' })));
 
       if (courseSnap.exists()) {
         const c = { id: courseSnap.id, ...courseSnap.data() } as CourseData;
         setCourse(c);
+        const effectiveRoomId = s.roomId || c.roomId;
         const [styleSnap, levelSnap, roomSnap] = await Promise.all([
           c.danceStyleId ? getDoc(doc(db, 'danceStyles', c.danceStyleId)) : null,
           c.levelId ? getDoc(doc(db, 'levels', c.levelId)) : null,
-          c.roomId ? getDoc(doc(db, 'rooms', c.roomId)) : null,
+          effectiveRoomId ? getDoc(doc(db, 'rooms', effectiveRoomId)) : null,
         ]);
         if (styleSnap?.exists()) {
           setStyleName(styleSnap.data().name ?? '');
@@ -109,6 +119,18 @@ export default function SessionDetailPage() {
   };
 
   useEffect(() => { load(); }, [sessionId]);
+
+  const handleSaveRoom = async () => {
+    if (!session) return;
+    setSavingRoom(true);
+    try {
+      await updateDoc(doc(db, 'sessions', session.id), { roomId: roomChoice || null });
+      setEditingRoom(false);
+      await load(); // recharge pour recalculer la salle effective affichée (celle de la séance ou, à défaut, celle du cours)
+    } finally {
+      setSavingRoom(false);
+    }
+  };
 
   const handleSaveNote = async () => {
     if (!session) return;
@@ -215,6 +237,39 @@ export default function SessionDetailPage() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pb-5 -mt-4 relative">
+
+        {/* Salle (admin uniquement, exception ponctuelle pour cette séance) */}
+        {isAdmin && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-5">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Salle</h2>
+          {editingRoom ? (
+            <>
+              <select value={roomChoice} onChange={e => setRoomChoice(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50">
+                <option value="">Salle du cours par défaut{course?.roomId ? '' : ' (non définie)'}</option>
+                {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+              <div className="flex justify-end gap-2 mt-2">
+                <button onClick={() => { setEditingRoom(false); setRoomChoice(session.roomId ?? ''); }}
+                  className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5">Annuler</button>
+                <button onClick={handleSaveRoom} disabled={savingRoom}
+                  className="bg-blue-600 text-white text-sm font-medium rounded-lg px-4 py-1.5 hover:bg-blue-700 disabled:opacity-50">
+                  {savingRoom ? 'Enregistrement…' : 'Enregistrer'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div onClick={() => setEditingRoom(true)}
+              className="text-sm cursor-pointer hover:bg-gray-50 rounded-lg px-3 py-2 -mx-3 flex items-center justify-between">
+              <span className="text-gray-700">
+                {roomName || 'Aucune salle définie'}
+                {session.roomId && <span className="ml-2 text-xs font-medium text-orange-600">Salle exceptionnelle</span>}
+              </span>
+              <span className="text-blue-600 text-xs font-medium">Modifier</span>
+            </div>
+          )}
+        </div>
+        )}
 
         {/* Programme */}
         {canViewNote && (

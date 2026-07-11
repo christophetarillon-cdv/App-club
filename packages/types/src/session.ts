@@ -12,4 +12,7 @@ export interface Session {
   // Note de programme du jour (change à chaque séance) — éditable par les
   // rôles configurés dans appSettings.sessionNoteEditRoles.
   programNote?: string;
+  // Salle exceptionnelle pour cette séance uniquement (remplace celle du
+  // cours) — ex: changement ponctuel de salle un jour donné.
+  roomId?: string;
 }
