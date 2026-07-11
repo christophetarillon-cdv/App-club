@@ -17,7 +17,6 @@ export function RichTextEditor({ value, onChange }: { value: string; onChange: (
 
   const exec = (command: string, arg?: string) => {
     document.execCommand(command, false, arg);
-    ref.current?.focus();
     onChange(ref.current?.innerHTML ?? '');
   };
 
@@ -26,18 +25,28 @@ export function RichTextEditor({ value, onChange }: { value: string; onChange: (
     if (url) exec('createLink', url);
   };
 
+  // onMouseDown + preventDefault : évite que le clic sur un bouton de la
+  // barre d'outils ne fasse perdre le focus/la sélection de la zone
+  // d'édition avant l'exécution de la commande (sinon les listes, par
+  // exemple, s'appliquent à une sélection vide et ne font rien).
+  const toolbarProps = (command: string, arg?: string) => ({
+    type: 'button' as const,
+    onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
+    onClick: () => exec(command, arg),
+  });
+
   return (
     <div className="border border-gray-300 rounded-lg overflow-hidden">
       <div className="flex flex-wrap gap-0.5 border-b border-gray-200 bg-gray-50 px-1.5 py-1">
-        <button type="button" onClick={() => exec('bold')} className={`${BTN_CLS} font-bold`}>G</button>
-        <button type="button" onClick={() => exec('italic')} className={`${BTN_CLS} italic`}>I</button>
-        <button type="button" onClick={() => exec('underline')} className={`${BTN_CLS} underline`}>S</button>
+        <button {...toolbarProps('bold')} className={`${BTN_CLS} font-bold`}>G</button>
+        <button {...toolbarProps('italic')} className={`${BTN_CLS} italic`}>I</button>
+        <button {...toolbarProps('underline')} className={`${BTN_CLS} underline`}>S</button>
         <span className="w-px bg-gray-300 mx-1 my-1" />
-        <button type="button" onClick={() => exec('insertUnorderedList')} className={BTN_CLS}>• Liste</button>
-        <button type="button" onClick={() => exec('insertOrderedList')} className={BTN_CLS}>1. Liste</button>
+        <button {...toolbarProps('insertUnorderedList')} className={BTN_CLS}>• Liste</button>
+        <button {...toolbarProps('insertOrderedList')} className={BTN_CLS}>1. Liste</button>
         <span className="w-px bg-gray-300 mx-1 my-1" />
-        <button type="button" onClick={handleLink} className={BTN_CLS}>Lien</button>
-        <button type="button" onClick={() => exec('removeFormat')} className={BTN_CLS}>Effacer le style</button>
+        <button type="button" onMouseDown={e => e.preventDefault()} onClick={handleLink} className={BTN_CLS}>Lien</button>
+        <button {...toolbarProps('removeFormat')} className={BTN_CLS}>Effacer le style</button>
       </div>
       <div
         ref={ref}

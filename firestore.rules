@@ -287,6 +287,11 @@ service cloud.firestore {
       // trackEmailOpen) — lecture pour l'historique sur la page d'envoi.
       allow read: if hasPagePermission('/admin/emails');
       allow write: if false;
+
+      match /opens/{ipHash} {
+        // Déduplication des ouvertures par IP — jamais lu/écrit par le client.
+        allow read, write: if false;
+      }
     }
 
     match /interruptions/{id} {

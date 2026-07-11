@@ -11,6 +11,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { google } from 'googleapis';
+import { createHash } from 'crypto';
 
 const helloassoClientId = defineSecret('HELLOASSO_CLIENT_ID');
 const helloassoClientSecret = defineSecret('HELLOASSO_CLIENT_SECRET');
@@ -3100,9 +3101,24 @@ export const trackEmailOpen = onRequest(
     const campaignId = req.query.c as string | undefined;
     if (campaignId) {
       try {
-        await getDb().doc(`emailCampaigns/${campaignId}`).update({
-          opens: admin.firestore.FieldValue.increment(1),
-          lastOpenedAt: admin.firestore.FieldValue.serverTimestamp(),
+        // Ne compte qu'une seule ouverture par adresse IP distincte sur une
+        // campagne donnée (évite de compter plusieurs fois un même
+        // destinataire qui ouvre l'email sur plusieurs appareils/clients,
+        // ou le pré-chargement automatique de certains clients mail).
+        const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()
+          || req.socket.remoteAddress || 'unknown';
+        const ipHash = createHash('sha256').update(ip).digest('hex').slice(0, 24);
+        const db = getDb();
+        const openRef = db.doc(`emailCampaigns/${campaignId}/opens/${ipHash}`);
+
+        await db.runTransaction(async (tx) => {
+          const openSnap = await tx.get(openRef);
+          if (openSnap.exists) return; // déjà comptée pour cette IP
+          tx.set(openRef, { openedAt: admin.firestore.FieldValue.serverTimestamp() });
+          tx.update(db.doc(`emailCampaigns/${campaignId}`), {
+            opens: admin.firestore.FieldValue.increment(1),
+            lastOpenedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
         });
       } catch (err) {
         console.error(`trackEmailOpen failed for campaign ${campaignId}:`, err);
