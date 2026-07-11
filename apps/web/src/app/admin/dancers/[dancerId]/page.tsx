@@ -65,6 +65,7 @@ interface Dancer {
   medicalNotes?: string;
   healthCertificate?: boolean;
   customFields?: Record<string, unknown>;
+  googleContactOptOut?: boolean;
 }
 interface Account {
   id: string;
@@ -182,6 +183,7 @@ interface PendingInfo {
   healthCertificate: boolean;
   emergencyContactName: string;
   emergencyContactPhone: string;
+  googleContactOptOut: boolean;
 }
 
 function dancerToPendingInfo(d: Dancer): PendingInfo {
@@ -206,6 +208,7 @@ function dancerToPendingInfo(d: Dancer): PendingInfo {
     healthCertificate: d.healthCertificate ?? false,
     emergencyContactName: d.emergencyContact?.name ?? '',
     emergencyContactPhone: d.emergencyContact?.phone ?? '',
+    googleContactOptOut: d.googleContactOptOut ?? false,
   };
 }
 
@@ -260,6 +263,7 @@ export default function DancerDetailPage() {
         memberNumber: pendingInfo.memberNumber || null,
         isMinor: pendingInfo.isMinor,
         healthCertificate: pendingInfo.healthCertificate,
+        googleContactOptOut: pendingInfo.googleContactOptOut,
         emergencyContact: (pendingInfo.emergencyContactName || pendingInfo.emergencyContactPhone)
           ? { name: pendingInfo.emergencyContactName, phone: pendingInfo.emergencyContactPhone }
           : null,
@@ -277,6 +281,7 @@ export default function DancerDetailPage() {
         memberNumber: pendingInfo.memberNumber || undefined,
         isMinor: pendingInfo.isMinor,
         healthCertificate: pendingInfo.healthCertificate,
+        googleContactOptOut: pendingInfo.googleContactOptOut,
         emergencyContact: (pendingInfo.emergencyContactName || pendingInfo.emergencyContactPhone)
           ? { name: pendingInfo.emergencyContactName, phone: pendingInfo.emergencyContactPhone }
           : undefined,
@@ -748,6 +753,12 @@ export default function DancerDetailPage() {
                 onChange={e => setPendingInfo(p => p && { ...p, healthCertificate: e.target.checked })}
                 className="w-4 h-4 rounded" />
               <span className="text-sm text-gray-700">Certificat médical fourni</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={pendingInfo.googleContactOptOut}
+                onChange={e => setPendingInfo(p => p && { ...p, googleContactOptOut: e.target.checked })}
+                className="w-4 h-4 rounded" />
+              <span className="text-sm text-gray-700">Retiré des listes de diffusion Google</span>
             </label>
           </div>
         </div>

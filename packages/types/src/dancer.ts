@@ -39,4 +39,9 @@ export interface Dancer extends WithTimestamps {
   // autre compte) qui n'avait pas les droits pour la compléter à sa place —
   // complétion à faire obligatoirement à la prochaine connexion du titulaire.
   profileCompletionRequired?: boolean;
+  // Synchronisation contacts Google (voir functions/src/index.ts)
+  googleContactResourceName?: string;
+  googleContactGroupIds?: string[];
+  // Danseur ayant demandé à être retiré des listes de diffusion Google.
+  googleContactOptOut?: boolean;
 }

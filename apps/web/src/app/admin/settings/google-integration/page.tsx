@@ -8,12 +8,14 @@ import { db, functions } from '@/lib/firebase';
 
 const DEFAULT_GROUP_GLOBAL = 'Tous les danseurs';
 const DEFAULT_GROUP_SEASON_TEMPLATE = 'Danseurs {season}';
+const DEFAULT_GROUP_TRIAL = 'Essais';
 
 interface GoogleIntegrationSettings {
   connected: boolean;
   connectedEmail: string | null;
   groupNameGlobal: string;
   groupNameSeasonTemplate: string;
+  groupNameTrial: string;
   autoSyncEnabled: boolean;
   senderDisplayName: string;
   defaultReplyTo: string;
@@ -26,6 +28,7 @@ function GoogleIntegrationPageInner() {
     connectedEmail: null,
     groupNameGlobal: DEFAULT_GROUP_GLOBAL,
     groupNameSeasonTemplate: DEFAULT_GROUP_SEASON_TEMPLATE,
+    groupNameTrial: DEFAULT_GROUP_TRIAL,
     autoSyncEnabled: false,
     senderDisplayName: '',
     defaultReplyTo: '',
@@ -48,6 +51,7 @@ function GoogleIntegrationPageInner() {
         connectedEmail: data.connectedEmail ?? null,
         groupNameGlobal: data.groupNameGlobal ?? DEFAULT_GROUP_GLOBAL,
         groupNameSeasonTemplate: data.groupNameSeasonTemplate ?? DEFAULT_GROUP_SEASON_TEMPLATE,
+        groupNameTrial: data.groupNameTrial ?? DEFAULT_GROUP_TRIAL,
         autoSyncEnabled: data.autoSyncEnabled ?? false,
         senderDisplayName: data.senderDisplayName ?? '',
         defaultReplyTo: data.defaultReplyTo ?? '',
@@ -110,6 +114,7 @@ function GoogleIntegrationPageInner() {
     await setDoc(doc(db, 'appSettings', 'googleIntegration'), {
       groupNameGlobal: settings.groupNameGlobal,
       groupNameSeasonTemplate: settings.groupNameSeasonTemplate,
+      groupNameTrial: settings.groupNameTrial,
       autoSyncEnabled: settings.autoSyncEnabled,
       senderDisplayName: settings.senderDisplayName,
       defaultReplyTo: settings.defaultReplyTo,
@@ -183,6 +188,14 @@ function GoogleIntegrationPageInner() {
                 onChange={e => setSettings(s => ({ ...s, groupNameSeasonTemplate: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
               <p className="text-xs text-gray-400 mt-1">{'{season}'} est remplacé par le libellé de la saison (ex. "2026-2027").</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-800 mb-1">Nom du groupe essai</label>
+              <input type="text" value={settings.groupNameTrial}
+                onChange={e => setSettings(s => ({ ...s, groupNameTrial: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+              <p className="text-xs text-gray-400 mt-1">Danseurs en essai (sans saison validée) : basculent automatiquement vers le groupe de saison dès qu'ils deviennent membres.</p>
             </div>
 
             <label className="flex items-center gap-2 text-sm text-gray-700">

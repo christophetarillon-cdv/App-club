@@ -2726,6 +2726,19 @@ async function getGoogleAccessToken(clientSecret: string): Promise<string | null
   return data.accessToken ?? null;
 }
 
+async function removeGoogleContact(resourceName: string, clientSecret: string): Promise<void> {
+  const accessToken = await getGoogleAccessToken(clientSecret);
+  if (!accessToken) return;
+  const oauth2Client = getGoogleOAuthClient(clientSecret);
+  oauth2Client.setCredentials({ access_token: accessToken });
+  const peopleClient = google.people({ version: 'v1', auth: oauth2Client });
+  try {
+    await peopleClient.people.deleteContact({ resourceName });
+  } catch (err) {
+    console.error(`removeGoogleContact failed for ${resourceName}:`, err);
+  }
+}
+
 async function getOrCreateContactGroup(
   peopleClient: ReturnType<typeof google.people>,
   groupName: string,
@@ -2771,6 +2784,7 @@ async function syncOneDancerToGoogle(
   groupCache: Map<string, string>,
   groupNameGlobal: string,
   groupNameSeasonTemplate: string,
+  groupNameTrial: string,
   seasonsById: Map<string, { label: string; startDateMs: number }>,
   etagByResourceName: Map<string, string>,
 ): Promise<void> {
@@ -2779,17 +2793,40 @@ async function syncOneDancerToGoogle(
   if (!dancerSnap.exists) return;
   const dancer = dancerSnap.data()!;
 
+  // Danseur ayant demandé à être retiré des listes de diffusion Google —
+  // on supprime le contact s'il existe et on ne le recrée pas.
+  if (dancer.googleContactOptOut === true) {
+    if (dancer.googleContactResourceName) {
+      try {
+        await peopleClient.people.deleteContact({ resourceName: dancer.googleContactResourceName });
+      } catch (err) {
+        console.error(`syncOneDancerToGoogle opt-out delete failed for ${dancerId}:`, err);
+      }
+      await db.doc(`dancers/${dancerId}`).update({
+        googleContactResourceName: admin.firestore.FieldValue.delete(),
+        googleContactGroupIds: admin.firestore.FieldValue.delete(),
+      });
+    }
+    return;
+  }
+
   const accountSnap = await db.doc(`accounts/${dancer.accountId}`).get();
   const account = accountSnap.data() ?? {};
 
   const globalGroupResourceName = await getOrCreateContactGroup(peopleClient, groupNameGlobal, groupCache);
 
   const mostRecentSeason = resolveMostRecentSeason(dancer.validatedSeasonIds, seasonsById);
-  const seasonGroupResourceName = mostRecentSeason
-    ? await getOrCreateContactGroup(peopleClient, groupNameSeasonTemplate.replace('{season}', mostRecentSeason.label), groupCache)
-    : null;
+  const dancerRoles: string[] = dancer.roles ?? [];
+  let secondaryGroupResourceName: string | null = null;
+  if (mostRecentSeason) {
+    secondaryGroupResourceName = await getOrCreateContactGroup(
+      peopleClient, groupNameSeasonTemplate.replace('{season}', mostRecentSeason.label), groupCache,
+    );
+  } else if (dancerRoles.includes('trial')) {
+    secondaryGroupResourceName = await getOrCreateContactGroup(peopleClient, groupNameTrial, groupCache);
+  }
 
-  const desiredGroupIds = [globalGroupResourceName, ...(seasonGroupResourceName ? [seasonGroupResourceName] : [])];
+  const desiredGroupIds = [globalGroupResourceName, ...(secondaryGroupResourceName ? [secondaryGroupResourceName] : [])];
 
   const names = [{ givenName: dancer.firstName, familyName: dancer.lastName }];
   const emailAddresses = account.email ? [{ value: account.email }] : [];
@@ -2864,6 +2901,7 @@ async function runGoogleContactsSync(dancerIds: string[]): Promise<{ synced: num
 
   const groupNameGlobal: string = settings.groupNameGlobal ?? DEFAULT_GOOGLE_GROUP_GLOBAL;
   const groupNameSeasonTemplate: string = settings.groupNameSeasonTemplate ?? DEFAULT_GOOGLE_GROUP_SEASON_TEMPLATE;
+  const groupNameTrial: string = settings.groupNameTrial ?? DEFAULT_GOOGLE_GROUP_TRIAL;
   const groupCache = new Map<string, string>();
 
   const seasonsSnap = await db.collection('seasons').get();
@@ -2895,7 +2933,7 @@ async function runGoogleContactsSync(dancerIds: string[]): Promise<{ synced: num
   let synced = 0, errors = 0;
   for (const dancerId of dancerIds) {
     try {
-      await syncOneDancerToGoogle(dancerId, peopleClient, groupCache, groupNameGlobal, groupNameSeasonTemplate, seasonsById, etagByResourceName);
+      await syncOneDancerToGoogle(dancerId, peopleClient, groupCache, groupNameGlobal, groupNameSeasonTemplate, groupNameTrial, seasonsById, etagByResourceName);
       synced++;
     } catch (err) {
       console.error(`runGoogleContactsSync failed for dancer ${dancerId}:`, err);
@@ -2913,18 +2951,38 @@ async function runGoogleContactsSync(dancerIds: string[]): Promise<{ synced: num
 
 const DEFAULT_GOOGLE_GROUP_GLOBAL = 'Tous les danseurs';
 const DEFAULT_GOOGLE_GROUP_SEASON_TEMPLATE = 'Danseurs {season}';
+const DEFAULT_GOOGLE_GROUP_TRIAL = 'Essais';
 
 export const syncDancerGoogleContact = onDocumentWritten(
   { document: 'dancers/{dancerId}', region: 'europe-west3', secrets: [googleOAuthClientSecret] },
   async (event) => {
+    const before = event.data?.before?.data();
     const after = event.data?.after?.data();
-    if (!after) return; // suppression — pas de sync (le contact reste dans Google, à gérer manuellement)
+    const dancerId = event.params.dancerId;
 
     const settingsSnap = await getDb().doc('appSettings/googleIntegration').get();
     const settings = settingsSnap.data() ?? {};
     if (!settings.connected || !settings.autoSyncEnabled) return;
 
-    await runGoogleContactsSync([event.params.dancerId]);
+    // Suppression franche du danseur, ou anonymisation suite à une demande
+    // de suppression de compte (isDeleted) : on retire le contact Google.
+    const wasDeleted = !after || (after.isDeleted === true && before?.isDeleted !== true);
+    if (wasDeleted) {
+      const resourceName = before?.googleContactResourceName as string | undefined;
+      if (resourceName) {
+        await removeGoogleContact(resourceName, googleOAuthClientSecret.value());
+        if (after) {
+          await getDb().doc(`dancers/${dancerId}`).update({
+            googleContactResourceName: admin.firestore.FieldValue.delete(),
+            googleContactGroupIds: admin.firestore.FieldValue.delete(),
+          });
+        }
+      }
+      return;
+    }
+    if (!after) return;
+
+    await runGoogleContactsSync([dancerId]);
   },
 );
 
@@ -2937,7 +2995,7 @@ export const resyncAllGoogleContacts = onCall(
 
     const db = getDb();
     const dancersSnap = await db.collection('dancers').get();
-    const dancerIds = dancersSnap.docs.map(d => d.id);
+    const dancerIds = dancersSnap.docs.filter(d => d.data().isDeleted !== true).map(d => d.id);
 
     const result = await runGoogleContactsSync(dancerIds);
     return result;
