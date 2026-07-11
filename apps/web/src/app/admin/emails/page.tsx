@@ -278,7 +278,7 @@ export default function EmailsPage() {
               <p className="text-xs text-gray-400 mb-1">Sujet</p>
               <p className="text-sm font-medium text-gray-900 mb-4">{subject}</p>
               <p className="text-xs text-gray-400 mb-1">Message</p>
-              <div className="text-sm text-gray-800" dangerouslySetInnerHTML={{ __html: body }} />
+              <div className="text-sm text-gray-800 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:underline" dangerouslySetInnerHTML={{ __html: body }} />
             </div>
           </div>
         </div>

@@ -52,7 +52,7 @@ export function RichTextEditor({ value, onChange }: { value: string; onChange: (
         ref={ref}
         contentEditable
         onInput={() => onChange(ref.current?.innerHTML ?? '')}
-        className="w-full min-h-[220px] px-3 py-2 text-sm focus:outline-none"
+        className="w-full min-h-[220px] px-3 py-2 text-sm focus:outline-none [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:underline"
         suppressContentEditableWarning
       />
     </div>
