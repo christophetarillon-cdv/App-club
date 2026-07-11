@@ -30,6 +30,7 @@ interface SessionData {
   endTime: string;
   status: string;
   programNote?: string;
+  roomId?: string;
 }
 interface CourseData { id: string; name: string; danceStyleId: string; levelId: string; roomId: string; seasonId: string; }
 
@@ -108,10 +109,11 @@ export default function SessionDetailScreen() {
       if (courseSnap.exists()) {
         const c = { id: courseSnap.id, ...courseSnap.data() } as CourseData;
         setCourse(c);
+        const effectiveRoomId = s.roomId || c.roomId;
         const [styleSnap, levelSnap, roomSnap] = await Promise.all([
           c.danceStyleId ? getDoc(doc(db, 'danceStyles', c.danceStyleId)) : null,
           c.levelId ? getDoc(doc(db, 'levels', c.levelId)) : null,
-          c.roomId ? getDoc(doc(db, 'rooms', c.roomId)) : null,
+          effectiveRoomId ? getDoc(doc(db, 'rooms', effectiveRoomId)) : null,
         ]);
         if (styleSnap?.exists()) {
           setStyleName(styleSnap.data().name ?? '');

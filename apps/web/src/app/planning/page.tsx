@@ -72,11 +72,12 @@ export default function PlanningPage() {
       const levelMap  = new Map(levels.map(l => [l.id, l]));
       setSessions(snap.docs.map(d => {
         const data = d.data(); const course = courseMap.get(data.courseId);
+        const effectiveRoomId = data.roomId || course?.roomId;
         return { id: d.id, courseId: data.courseId, date: data.date, startTime: data.startTime,
           endTime: data.endTime, status: data.status, cancellationReason: data.cancellationReason,
           course, style: course ? styleMap.get(course.danceStyleId) : undefined,
           level: course ? levelMap.get(course.levelId) : undefined,
-          room: course ? roomMap.get(course.roomId) : undefined };
+          room: effectiveRoomId ? roomMap.get(effectiveRoomId) : undefined };
       }));
     } catch (e: unknown) { setError(e instanceof Error ? e.message : String(e)); }
     setLoading(false);

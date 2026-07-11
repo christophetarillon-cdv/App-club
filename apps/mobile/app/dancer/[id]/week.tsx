@@ -131,7 +131,7 @@ export default function WeekScreen() {
           status: s.status,
           style: course ? styles.get(course.danceStyleId) : undefined,
           level: course ? levels.get(course.levelId) : undefined,
-          room: course ? rooms.get(course.roomId) : undefined,
+          room: (s.roomId || course?.roomId) ? rooms.get(s.roomId || course!.roomId) : undefined,
         });
         map.set(s.date, existing);
       }
