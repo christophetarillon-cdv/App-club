@@ -3027,9 +3027,10 @@ function base64UrlEncode(input: string): string {
   return Buffer.from(input, 'utf-8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+const EMAIL_TRACK_BASE_URL = 'https://europe-west3-clubvoiron-dev.cloudfunctions.net/trackEmailOpen';
+
+// GIF transparent 1x1, servi par trackEmailOpen.
+const TRANSPARENT_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7', 'base64');
 
 export const sendClubEmail = onCall(
   { region: 'europe-west3', secrets: [googleOAuthClientSecret] },
@@ -3038,11 +3039,11 @@ export const sendClubEmail = onCall(
     const hasAccess = await callerHasEmailsPageAccess(request.auth.uid);
     if (!hasAccess) throw new HttpsError('permission-denied', "Vous n'avez pas accès à cette action");
 
-    const { subject, body, recipientEmails } = request.data as {
-      subject: string; body: string; recipientEmails: string[];
+    const { subject, bodyHtml, recipientEmails, recipientDescription } = request.data as {
+      subject: string; bodyHtml: string; recipientEmails: string[]; recipientDescription?: string;
     };
     if (!subject?.trim()) throw new HttpsError('invalid-argument', 'Sujet requis');
-    if (!body?.trim()) throw new HttpsError('invalid-argument', 'Message requis');
+    if (!bodyHtml?.trim()) throw new HttpsError('invalid-argument', 'Message requis');
     const cleanRecipients = [...new Set((recipientEmails ?? []).filter(e => e?.includes('@')))];
     if (cleanRecipients.length === 0) throw new HttpsError('invalid-argument', 'Aucun destinataire valide');
 
@@ -3062,6 +3063,9 @@ export const sendClubEmail = onCall(
     const fromAddress: string = settings.connectedEmail;
     const replyTo: string | undefined = settings.defaultReplyTo || undefined;
 
+    const campaignRef = db.collection('emailCampaigns').doc();
+    const trackingPixel = `<img src="${EMAIL_TRACK_BASE_URL}?c=${campaignRef.id}" width="1" height="1" style="display:none" alt="" />`;
+
     // Bcc pour que les destinataires ne voient pas les adresses des autres.
     const headers = [
       `From: "${senderName}" <${fromAddress}>`,
@@ -3073,11 +3077,39 @@ export const sendClubEmail = onCall(
       'Content-Type: text/html; charset="UTF-8"',
     ].filter(Boolean).join('\r\n');
 
-    const htmlBody = escapeHtml(body).replace(/\n/g, '<br>');
-    const raw = base64UrlEncode(`${headers}\r\n\r\n${htmlBody}`);
+    const raw = base64UrlEncode(`${headers}\r\n\r\n${bodyHtml}${trackingPixel}`);
 
     await gmailClient.users.messages.send({ userId: 'me', requestBody: { raw } });
 
-    return { sent: cleanRecipients.length };
+    await campaignRef.set({
+      subject,
+      recipientCount: cleanRecipients.length,
+      recipientDescription: recipientDescription ?? '',
+      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      sentBy: request.auth.uid,
+      opens: 0,
+    });
+
+    return { sent: cleanRecipients.length, campaignId: campaignRef.id };
+  },
+);
+
+export const trackEmailOpen = onRequest(
+  { region: 'europe-west3' },
+  async (req, res) => {
+    const campaignId = req.query.c as string | undefined;
+    if (campaignId) {
+      try {
+        await getDb().doc(`emailCampaigns/${campaignId}`).update({
+          opens: admin.firestore.FieldValue.increment(1),
+          lastOpenedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (err) {
+        console.error(`trackEmailOpen failed for campaign ${campaignId}:`, err);
+      }
+    }
+    res.set('Content-Type', 'image/gif');
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.status(200).send(TRANSPARENT_GIF);
   },
 );

@@ -282,6 +282,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /emailCampaigns/{id} {
+      // Créé/mis à jour uniquement par les Cloud Functions (sendClubEmail,
+      // trackEmailOpen) — lecture pour l'historique sur la page d'envoi.
+      allow read: if hasPagePermission('/admin/emails');
+      allow write: if false;
+    }
+
     match /interruptions/{id} {
       allow read: if isAuth();
       allow write: if hasPagePermission('/admin/interruptions');
