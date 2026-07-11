@@ -17,7 +17,6 @@ interface Campaign {
   subject: string;
   recipientCount: number;
   recipientDescription: string;
-  opens: number;
   sentAt?: { toDate: () => Date };
 }
 
@@ -258,7 +257,7 @@ export default function EmailsPage() {
                   <p className="text-xs text-gray-500">{c.recipientDescription}</p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {c.sentAt?.toDate?.().toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    {' · '}{c.recipientCount} destinataire(s){' · '}{c.opens} ouverture(s)
+                    {' · '}{c.recipientCount} destinataire(s)
                   </p>
                 </li>
               ))}
