@@ -202,25 +202,24 @@ export default function KioskSearchPage() {
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 bg-gray-800 border-b border-gray-700">
-        <Link
-          href={`/kiosk/${kioskSessionId}/scan`}
-          className="flex items-center gap-2 px-3.5 py-2 bg-gray-700 hover:bg-gray-600 rounded-xl text-sm font-medium text-gray-200 hover:text-white transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-          </svg>
-          Retour scan
-        </Link>
+      <div className="flex items-center justify-center px-5 py-4 bg-gray-800 border-b border-gray-700">
         <h1 className="font-semibold text-white">Recherche manuelle</h1>
-        <div className="w-24" />
       </div>
 
       {/* Infos séance */}
       <div className="text-center px-6 pt-5 pb-3 bg-gray-900">
         {sessionDate && <p className="text-3xl font-bold text-white">{sessionDate}</p>}
         <p className="text-2xl font-semibold text-white mt-1">{courseName || '…'}</p>
-        <div className="flex items-center justify-center gap-3 mt-1 flex-wrap">
+        <div className="relative flex items-center justify-center gap-3 mt-1 flex-wrap">
+          <Link
+            href={`/kiosk/${kioskSessionId}/scan`}
+            className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-2 px-3.5 py-2 bg-gray-700 hover:bg-gray-600 rounded-xl text-sm font-medium text-gray-200 hover:text-white transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            Retour scan
+          </Link>
           {danceStyle && <p className="text-xl text-blue-300 font-medium">{danceStyle}</p>}
           {danceStyle && level && <span className="text-gray-500">·</span>}
           {level && <p className="text-xl text-blue-300 font-medium">{level}</p>}
