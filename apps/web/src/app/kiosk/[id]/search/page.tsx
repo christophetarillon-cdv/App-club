@@ -203,14 +203,17 @@ export default function KioskSearchPage() {
     <div className="min-h-screen flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 bg-gray-800 border-b border-gray-700">
-        <Link href={`/kiosk/${kioskSessionId}/scan`} className="flex items-center gap-2 text-gray-400 hover:text-white">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <Link
+          href={`/kiosk/${kioskSessionId}/scan`}
+          className="flex items-center gap-2 px-3.5 py-2 bg-gray-700 hover:bg-gray-600 rounded-xl text-sm font-medium text-gray-200 hover:text-white transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
-          Scan QR
+          Retour scan
         </Link>
         <h1 className="font-semibold text-white">Recherche manuelle</h1>
-        <div className="w-16" />
+        <div className="w-24" />
       </div>
 
       {/* Infos séance */}
