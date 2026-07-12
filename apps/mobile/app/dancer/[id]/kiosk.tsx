@@ -15,9 +15,10 @@ export default function KioskScreen() {
   const insets = useSafeAreaInsets();
   const webviewRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
-  // Masque le bouton retour pendant qu'une session de scan est active
-  // (URL /kiosk/{id}/scan), pour empêcher de quitter facilement le kiosque
-  // en plein pointage. Reste visible sur l'écran de configuration/recherche.
+  // Masque le bouton retour pendant qu'une session de kiosque est active
+  // (scan ou recherche manuelle), pour empêcher de quitter facilement le
+  // kiosque en plein pointage. Reste visible seulement sur l'écran de
+  // configuration initiale (choix de la séance).
   const [scanActive, setScanActive] = useState(false);
 
   const [exitCode, setExitCode] = useState<string | null>(null);
@@ -53,7 +54,7 @@ export default function KioskScreen() {
         style={styles.webview}
         onLoadEnd={() => setLoading(false)}
         onNavigationStateChange={(navState) => {
-          setScanActive(/\/kiosk\/[^/]+\/scan(\?|$)/.test(navState.url));
+          setScanActive(/\/kiosk\/[^/]+\/(scan|search)(\?|$)/.test(navState.url));
         }}
         // Le kiosque scanne des QR codes via la caméra du navigateur (getUserMedia).
         mediaCapturePermissionGrantType="grant"
