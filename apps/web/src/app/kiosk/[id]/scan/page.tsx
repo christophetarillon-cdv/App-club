@@ -105,9 +105,12 @@ export default function KioskScanPage() {
   const [mirrored, setMirrored] = useState(false);
   const cameraKey = `kiosk_camera_${kioskSessionId}`;
   const [cameraFacing, setCameraFacingState] = useState<'user' | 'environment' | null>(() => {
-    if (typeof window === 'undefined') return null;
+    if (typeof window === 'undefined') return 'user';
     const saved = sessionStorage.getItem(`kiosk_camera_${kioskSessionId}`);
-    return (saved === 'user' || saved === 'environment') ? saved : null;
+    // Caméra frontale par défaut (usage habituel du kiosque, face aux
+    // danseurs) — l'écran de choix n'apparaît plus, mais on garde le bouton
+    // de bascule vers la caméra arrière pour les cas particuliers.
+    return (saved === 'user' || saved === 'environment') ? saved : 'user';
   });
 
   const setCameraFacing = (val: 'user' | 'environment' | null | ((prev: 'user' | 'environment' | null) => 'user' | 'environment' | null)) => {
