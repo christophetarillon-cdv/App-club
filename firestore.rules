@@ -164,7 +164,8 @@ service cloud.firestore {
         roles.hasAny(perms.get('/admin/settings/session-detail', ['admin'])) ||
         roles.hasAny(perms.get('/admin/settings/calendar-sync', ['admin'])) ||
         roles.hasAny(perms.get('/admin/settings/payment-info', ['admin'])) ||
-        roles.hasAny(perms.get('/admin/settings/google-integration', ['admin']));
+        roles.hasAny(perms.get('/admin/settings/google-integration', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/settings/kiosk', ['admin']));
     }
 
     // ── clubProfile ────────────────────────────────────────────────────────────
