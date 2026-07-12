@@ -280,42 +280,37 @@ export default function KioskScanPage() {
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-5 py-3.5 bg-gray-900 border-b border-gray-800 shrink-0">
-        <div className="flex items-center gap-3">
-          {/* Pill séance */}
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />
-            <span className="text-white font-semibold text-sm">{courseName || '…'}</span>
-          </div>
-          {(danceStyle || level || sessionTime) && (
-            <div className="hidden sm:flex items-center gap-1.5">
-              {danceStyle && <span className="text-xs text-gray-400 bg-gray-800 px-2.5 py-1 rounded-full">{danceStyle}</span>}
-              {level && <span className="text-xs text-gray-400 bg-gray-800 px-2.5 py-1 rounded-full">{level}</span>}
-              {sessionTime && <span className="text-xs text-gray-500">{sessionTime}</span>}
-            </div>
-          )}
-        </div>
         <div className="flex items-center gap-2">
-          <Link
-            href={`/kiosk/${kioskSessionId}/search`}
-            className="px-3.5 py-2 bg-gray-800 hover:bg-gray-700 rounded-xl text-sm font-medium text-gray-300 hover:text-white transition-colors"
-          >
-            Recherche manuelle
-          </Link>
-          <button
-            onClick={handleClose}
-            className="px-3.5 py-2 bg-red-950/60 hover:bg-red-900/60 border border-red-900/50 rounded-xl text-sm font-medium text-red-400 hover:text-red-300 transition-colors"
-          >
-            Fermer
-          </button>
+          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />
+          <span className="text-white font-semibold text-sm">{courseName || '…'}</span>
         </div>
+        <button
+          onClick={handleClose}
+          className="px-3.5 py-2 bg-red-950/60 hover:bg-red-900/60 border border-red-900/50 rounded-xl text-sm font-medium text-red-400 hover:text-red-300 transition-colors"
+        >
+          Fermer
+        </button>
       </div>
 
       {/* ── Infos séance ── */}
       <div className="text-center px-6 pt-5 pb-3">
         {sessionDate && (
-          <p className="text-gray-400 text-sm font-medium capitalize">{sessionDate}</p>
+          <p className="text-3xl font-bold text-white capitalize">{sessionDate}</p>
         )}
-        <p className="text-2xl font-bold text-white mt-1">{courseName || '…'}</p>
+        <p className="text-2xl font-semibold text-white mt-1">{courseName || '…'}</p>
+        <div className="relative flex items-center justify-center gap-3 mt-1 flex-wrap">
+          <Link
+            href={`/kiosk/${kioskSessionId}/search`}
+            className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2 px-3.5 py-2 bg-gray-800 hover:bg-gray-700 rounded-xl text-sm font-medium text-gray-300 hover:text-white transition-colors"
+          >
+            Recherche manuelle
+          </Link>
+          {danceStyle && <p className="text-xl text-blue-300 font-medium">{danceStyle}</p>}
+          {danceStyle && level && <span className="text-gray-500">·</span>}
+          {level && <p className="text-xl text-blue-300 font-medium">{level}</p>}
+          {sessionTime && <span className="text-gray-500">·</span>}
+          {sessionTime && <p className="text-xl text-gray-300">{sessionTime}</p>}
+        </div>
         <div className="flex items-center justify-center gap-3 mt-3">
           <div className="flex items-center gap-1.5">
             <span className="text-3xl font-bold text-white tabular-nums">{scanCount}</span>
