@@ -1,5 +1,5 @@
 // Ligne ajoutée intentionnellement pour forcer un nouveau build Vercel via git
-// après un échec de build transitoire côté Vercel (rien à voir avec le code)
+// après correction du lockfile pnpm (rien à voir avec le code applicatif)
 // — à retirer librement plus tard.
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
