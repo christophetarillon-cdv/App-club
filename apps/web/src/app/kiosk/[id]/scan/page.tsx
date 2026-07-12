@@ -297,14 +297,16 @@ export default function KioskScanPage() {
         {sessionDate && (
           <p className="text-3xl font-bold text-white capitalize">{sessionDate}</p>
         )}
-        <p className="text-2xl font-semibold text-white mt-1">{courseName || '…'}</p>
-        <div className="relative flex items-center justify-center gap-3 mt-1 flex-wrap">
+        <div className="relative flex items-center justify-center">
+          <p className="text-2xl font-semibold text-white mt-1">{courseName || '…'}</p>
           <Link
             href={`/kiosk/${kioskSessionId}/search`}
             className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2 px-3.5 py-2 bg-gray-800 hover:bg-gray-700 rounded-xl text-sm font-medium text-gray-300 hover:text-white transition-colors"
           >
             Recherche manuelle
           </Link>
+        </div>
+        <div className="flex items-center justify-center gap-3 mt-1 flex-wrap">
           {danceStyle && <p className="text-xl text-blue-300 font-medium">{danceStyle}</p>}
           {danceStyle && level && <span className="text-gray-500">·</span>}
           {level && <p className="text-xl text-blue-300 font-medium">{level}</p>}
