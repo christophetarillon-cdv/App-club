@@ -1,10 +1,10 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity,
   StyleSheet, TextInput, KeyboardAvoidingView, Platform,
   Alert, Keyboard, ActivityIndicator,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
   collection, query, orderBy, limit, getDocs,
   addDoc, deleteDoc, doc, serverTimestamp,
@@ -96,7 +96,7 @@ export default function DancerHomeScreen() {
     }).catch(() => {});
   };
 
-  useEffect(() => { loadAnnouncements(); }, []);
+  useFocusEffect(useCallback(() => { loadAnnouncements(); }, []));
 
   const nav = (screen: string) => router.push(`/dancer/${id}/${screen}` as any);
 
