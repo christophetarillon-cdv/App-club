@@ -1657,6 +1657,7 @@ export const sendNotification = onCall(
       result.responses.forEach((resp, idx) => {
         if (!resp.success) {
           const code = resp.error?.code ?? '';
+          console.error(`sendNotification token failed [${idx}] code=${code} message=${resp.error?.message}`);
           if (
             code === 'messaging/invalid-registration-token' ||
             code === 'messaging/registration-token-not-registered'
