@@ -1661,8 +1661,12 @@ async function sendPushToTokens(
   tokens: string[],
   payload: { title: string; body: string; data: Record<string, string>; link?: string },
 ): Promise<{ successCount: number; invalidTokens: string[] }> {
-  const expoTokens = tokens.filter(t => Expo.isExpoPushToken(t));
-  const fcmTokens = tokens.filter(t => !Expo.isExpoPushToken(t));
+  // Un même appareil (token) peut être enregistré sur plusieurs comptes
+  // (plusieurs danseurs d'une même famille connectés sur le même téléphone) :
+  // on déduplique pour éviter d'envoyer la même notification plusieurs fois.
+  const uniqueTokens = [...new Set(tokens)];
+  const expoTokens = uniqueTokens.filter(t => Expo.isExpoPushToken(t));
+  const fcmTokens = uniqueTokens.filter(t => !Expo.isExpoPushToken(t));
   let successCount = 0;
   const invalidTokens: string[] = [];
 
