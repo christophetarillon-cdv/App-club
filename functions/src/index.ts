@@ -583,6 +583,50 @@ export const notifySessionCancellation = onDocumentUpdated(
   },
 );
 
+// ── notifyNewPaymentPlan — notifie admin/bureau à la proposition d'un plan ────
+async function getStaffAccountIds(db: admin.firestore.Firestore): Promise<string[]> {
+  const [accountsSnap, dancersSnap] = await Promise.all([
+    db.collection('accounts').where('roles', 'array-contains-any', ['admin', 'bureau']).get(),
+    db.collection('dancers').where('roles', 'array-contains-any', ['admin', 'bureau']).get(),
+  ]);
+  const ids = new Set<string>();
+  accountsSnap.docs.forEach(d => ids.add(d.id));
+  dancersSnap.docs.forEach(d => {
+    const accountId = d.data().accountId as string | undefined;
+    if (accountId) ids.add(accountId);
+  });
+  return [...ids];
+}
+
+export const notifyNewPaymentPlan = onDocumentCreated(
+  { document: 'memberships/{membershipId}', region: 'europe-west3' },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data || data.paymentPlanStatus !== 'pending') return;
+
+    const db = getDb();
+    const [dancerSnap, staffAccountIds] = await Promise.all([
+      data.dancerId ? db.doc(`dancers/${data.dancerId}`).get() : Promise.resolve(null),
+      getStaffAccountIds(db),
+    ]);
+    if (staffAccountIds.length === 0) return;
+
+    const dancerName = dancerSnap?.exists
+      ? `${dancerSnap.data()!.firstName ?? ''} ${dancerSnap.data()!.lastName ?? ''}`.trim()
+      : 'Un danseur';
+
+    const staffSnaps = await Promise.all(staffAccountIds.map(id => db.doc(`accounts/${id}`).get()));
+    const tokens = staffSnaps.flatMap(s => (Array.isArray(s.data()?.fcmTokens) ? s.data()!.fcmTokens as string[] : []));
+    if (tokens.length === 0) return;
+
+    await sendPushToTokens(tokens, {
+      title: 'Nouveau plan de paiement',
+      body: `${dancerName} a proposé un plan de paiement en attente de validation.`,
+      data: { type: 'payment_plan_pending', membershipId: event.params.membershipId },
+    });
+  },
+);
+
 // ── processChequeOcr — OCR via Vision API REST ────────────────────────────────
 export const processChequeOcr = onObjectFinalized(
   { region: 'europe-west3', bucket: `${process.env.GCLOUD_PROJECT}.firebasestorage.app` },
