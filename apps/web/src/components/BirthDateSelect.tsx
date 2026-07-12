@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+
 const MONTHS = [
   'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
   'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
@@ -7,19 +9,40 @@ const MONTHS = [
 
 const SELECT_CLS = 'border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 bg-white';
 
+function splitValue(value: string): [string, string, string] {
+  if (!value) return ['', '', ''];
+  const [y, m, d] = value.split('-');
+  return [d ?? '', m ?? '', y ?? ''];
+}
+
 export function BirthDateSelect({ value, onChange, required }: {
   value: string; // 'YYYY-MM-DD' ou ''
   onChange: (value: string) => void;
   required?: boolean;
 }) {
-  const [year, month, day] = value ? value.split('-') : ['', '', ''];
+  // Jour/mois/année sont gérés en état local : tant que les 3 ne sont pas
+  // renseignés, `value` (côté parent) reste une chaîne vide, donc on ne peut
+  // pas la reconstruire depuis `value` sans perdre la sélection partielle
+  // à chaque re-rendu.
+  const [day, setDay] = useState('');
+  const [month, setMonth] = useState('');
+  const [year, setYear] = useState('');
+
+  useEffect(() => {
+    const [d, m, y] = splitValue(value);
+    setDay(d); setMonth(m); setYear(y);
+    // On ne veut resynchroniser depuis l'extérieur que quand `value` change
+    // "de l'extérieur" (ex: chargement initial) — pas à chaque frappe locale.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 100 }, (_, i) => currentYear - i);
   const days = Array.from({ length: 31 }, (_, i) => i + 1);
 
   const emit = (d: string, m: string, y: string) => {
+    setDay(d); setMonth(m); setYear(y);
     if (d && m && y) onChange(`${y}-${m}-${d}`);
-    else onChange('');
   };
 
   return (
