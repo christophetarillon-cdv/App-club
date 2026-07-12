@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { DancerProvider } from '@/contexts/DancerContext';
 import { PagePermissionsProvider } from '@/contexts/PagePermissionsContext';
 import { Colors } from '@/constants/Colors';
+import { registerForPushNotificationsAsync } from '@/lib/pushNotifications';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -18,6 +19,10 @@ function Gate() {
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (user) registerForPushNotificationsAsync(user.uid);
+  }, [user]);
 
   // Verrou permanent (pas juste au login) : un danseur peut être marqué
   // "profil à compléter" pendant que l'app est déjà ouverte (cotisation

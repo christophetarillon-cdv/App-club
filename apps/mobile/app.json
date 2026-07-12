@@ -11,12 +11,14 @@
     "ios": {
       "bundleIdentifier": "fr.clubdansecoublevievoiron.app",
       "supportsTablet": true,
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSCameraUsageDescription": "CDCV accède à la caméra pour scanner les QR codes du kiosque de pointage."
       }
     },
     "android": {
       "package": "fr.clubdansecoublevievoiron.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -62,7 +64,14 @@
           "isAccessMediaLocationEnabled": false
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#2F86C0"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

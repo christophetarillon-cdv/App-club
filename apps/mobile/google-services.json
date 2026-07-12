@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "959510245510",
+    "project_id": "clubvoiron-dev",
+    "storage_bucket": "clubvoiron-dev.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:959510245510:android:939e803629644b756aa107",
+        "android_client_info": {
+          "package_name": "fr.clubdansecoublevievoiron.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "959510245510-4b704r0q3d16paged9pt9cuj2ucugnrd.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxSd7hPC3BrRddBG68tP8YWoRgDkfJh84"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "959510245510-0av0cahoc0n0jk4622accc5o90md0h8d.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "959510245510-pd0rajnicsrggjvdtl19g9n3gumt6jk8.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "fr.clubdansecoublevievoiron.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
