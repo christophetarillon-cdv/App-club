@@ -11,6 +11,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { google } from 'googleapis';
+import { Expo } from 'expo-server-sdk';
 
 const helloassoClientId = defineSecret('HELLOASSO_CLIENT_ID');
 const helloassoClientSecret = defineSecret('HELLOASSO_CLIENT_SECRET');
@@ -564,26 +565,19 @@ export const notifySessionCancellation = onDocumentUpdated(
       }
     }
 
-    // Envoie les notifications FCM
+    // Envoie les notifications push
     if (fcmTokens.length > 0) {
       try {
         const dateFormatted = new Date(after.date).toLocaleDateString('fr-FR', {
           weekday: 'long', day: 'numeric', month: 'long',
         });
-        await admin.messaging().sendEachForMulticast({
-          tokens: fcmTokens.slice(0, 500),
-          notification: {
-            title: 'Séance annulée',
-            body: `${course.name} du ${dateFormatted} est annulé`,
-          },
-          data: {
-            type: 'session_cancelled',
-            sessionId,
-            courseId: after.courseId,
-          },
+        await sendPushToTokens(fcmTokens, {
+          title: 'Séance annulée',
+          body: `${course.name} du ${dateFormatted} est annulé`,
+          data: { type: 'session_cancelled', sessionId, courseId: after.courseId },
         });
       } catch (_) {
-        // Ne pas faire échouer la fonction si FCM rate
+        // Ne pas faire échouer la fonction si l'envoi push rate
       }
     }
   },
@@ -1591,6 +1585,72 @@ export const previewNotificationRecipients = onCall(
   },
 );
 
+// ── Envoi push mixte (FCM natif "web" + service Push Expo "mobile") ─────────
+// accounts.fcmTokens contient un mélange de vrais tokens FCM (enregistrés par
+// le web via firebase/messaging) et de tokens Expo (enregistrés par le
+// mobile via expo-notifications, format "ExponentPushToken[...]") — un token
+// Expo n'est PAS un token FCM valide et admin.messaging() le rejette. On
+// route chaque token vers le bon service.
+const expoClient = new Expo();
+
+async function sendPushToTokens(
+  tokens: string[],
+  payload: { title: string; body: string; data: Record<string, string>; link?: string },
+): Promise<{ successCount: number; invalidTokens: string[] }> {
+  const expoTokens = tokens.filter(t => Expo.isExpoPushToken(t));
+  const fcmTokens = tokens.filter(t => !Expo.isExpoPushToken(t));
+  let successCount = 0;
+  const invalidTokens: string[] = [];
+
+  if (fcmTokens.length > 0) {
+    for (let i = 0; i < fcmTokens.length; i += 500) {
+      const chunk = fcmTokens.slice(i, i + 500);
+      const result = await admin.messaging().sendEachForMulticast({
+        tokens: chunk,
+        notification: { title: payload.title, body: payload.body },
+        data: payload.data,
+        ...(payload.link ? { webpush: { fcmOptions: { link: payload.link } } } : {}),
+      });
+      successCount += result.successCount;
+      result.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          const code = resp.error?.code ?? '';
+          console.error(`sendPushToTokens FCM failed code=${code} message=${resp.error?.message}`);
+          if (code === 'messaging/invalid-registration-token' || code === 'messaging/registration-token-not-registered') {
+            invalidTokens.push(chunk[idx]!);
+          }
+        }
+      });
+    }
+  }
+
+  if (expoTokens.length > 0) {
+    const messages = expoTokens.map(to => ({
+      to, title: payload.title, body: payload.body, data: payload.data,
+    }));
+    const chunks = expoClient.chunkPushNotifications(messages);
+    for (const chunk of chunks) {
+      try {
+        const tickets = await expoClient.sendPushNotificationsAsync(chunk);
+        tickets.forEach((ticket, idx) => {
+          if (ticket.status === 'ok') {
+            successCount++;
+          } else {
+            console.error(`sendPushToTokens Expo failed: ${ticket.message}`);
+            if (ticket.details?.error === 'DeviceNotRegistered') {
+              invalidTokens.push(chunk[idx]!.to as string);
+            }
+          }
+        });
+      } catch (err) {
+        console.error('sendPushToTokens Expo chunk failed:', err);
+      }
+    }
+  }
+
+  return { successCount, invalidTokens };
+}
+
 // ── sendNotification ──────────────────────────────────────────────────────────
 export const sendNotification = onCall(
   { region: 'europe-west3' },
@@ -1644,29 +1704,9 @@ export const sendNotification = onCall(
       if (Array.isArray(data.fcmTokens)) fcmTokens.push(...data.fcmTokens);
     }
 
-    let fcmSuccessCount = 0;
-    const invalidTokens: string[] = [];
-
-    if (fcmTokens.length > 0) {
-      const result = await admin.messaging().sendEachForMulticast({
-        tokens: fcmTokens.slice(0, 500),
-        notification: { title, body },
-        data: { channelId, type: 'announcement' },
-      });
-      fcmSuccessCount = result.successCount;
-      result.responses.forEach((resp, idx) => {
-        if (!resp.success) {
-          const code = resp.error?.code ?? '';
-          console.error(`sendNotification token failed [${idx}] code=${code} message=${resp.error?.message}`);
-          if (
-            code === 'messaging/invalid-registration-token' ||
-            code === 'messaging/registration-token-not-registered'
-          ) {
-            invalidTokens.push(fcmTokens[idx]!);
-          }
-        }
-      });
-    }
+    const { successCount: fcmSuccessCount, invalidTokens } = await sendPushToTokens(fcmTokens, {
+      title, body, data: { channelId, type: 'announcement' },
+    });
 
     await db.collection('notifications').add({
       channelId,
@@ -1728,34 +1768,18 @@ export const onChatMessageCreated = onDocumentCreated(
 
     if (tokens.length === 0) return;
 
-    // Envoie FCM par lots de 500
-    const chunks = [];
-    for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
-    for (const chunk of chunks) {
-      const res = await admin.messaging().sendEachForMulticast({
-        tokens: chunk,
-        notification: { title: authorName, body: text },
-        data: { type: 'chat', channelId },
-        webpush: { fcmOptions: { link: `/chat/${channelId}` } },
-      });
-      // Nettoie les tokens invalides
-      const invalidTokens: string[] = [];
-      res.responses.forEach((r, i) => {
-        if (!r.success && (r.error?.code === 'messaging/invalid-registration-token' ||
-          r.error?.code === 'messaging/registration-token-not-registered')) {
-          invalidTokens.push(chunk[i]!);
+    const { invalidTokens } = await sendPushToTokens(tokens, {
+      title: authorName, body: text, data: { type: 'chat', channelId }, link: `/chat/${channelId}`,
+    });
+    if (invalidTokens.length > 0) {
+      const batch = db.batch();
+      accountsSnap.docs.forEach(d => {
+        const toRemove = invalidTokens.filter(t => (d.data().fcmTokens ?? []).includes(t));
+        if (toRemove.length > 0) {
+          batch.update(d.ref, { fcmTokens: admin.firestore.FieldValue.arrayRemove(...toRemove) });
         }
       });
-      if (invalidTokens.length > 0) {
-        const batch = db.batch();
-        accountsSnap.docs.forEach(d => {
-          const toRemove = invalidTokens.filter(t => (d.data().fcmTokens ?? []).includes(t));
-          if (toRemove.length > 0) {
-            batch.update(d.ref, { fcmTokens: admin.firestore.FieldValue.arrayRemove(...toRemove) });
-          }
-        });
-        await batch.commit();
-      }
+      await batch.commit();
     }
   },
 );
