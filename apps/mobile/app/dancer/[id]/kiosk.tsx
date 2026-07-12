@@ -13,6 +13,10 @@ export default function KioskScreen() {
   const insets = useSafeAreaInsets();
   const webviewRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
+  // Masque le bouton retour pendant qu'une session de scan est active
+  // (URL /kiosk/{id}/scan), pour empêcher de quitter facilement le kiosque
+  // en plein pointage. Reste visible sur l'écran de configuration/recherche.
+  const [scanActive, setScanActive] = useState(false);
 
   return (
     <View style={styles.root}>
@@ -21,6 +25,9 @@ export default function KioskScreen() {
         source={{ uri: KIOSK_URL }}
         style={styles.webview}
         onLoadEnd={() => setLoading(false)}
+        onNavigationStateChange={(navState) => {
+          setScanActive(/\/kiosk\/[^/]+\/scan(\?|$)/.test(navState.url));
+        }}
         // Le kiosque scanne des QR codes via la caméra du navigateur (getUserMedia).
         mediaCapturePermissionGrantType="grant"
         allowsInlineMediaPlayback
@@ -32,15 +39,17 @@ export default function KioskScreen() {
           <ActivityIndicator color={Colors.primary} size="large" />
         </View>
       )}
-      <TouchableOpacity
-        style={[styles.backBtn, { top: insets.top + 12 }]}
-        onPress={() => router.back()}
-        activeOpacity={0.8}
-      >
-        <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-          <Path d="M15 18l-6-6 6-6" stroke={Colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-        </Svg>
-      </TouchableOpacity>
+      {!scanActive && (
+        <TouchableOpacity
+          style={[styles.backBtn, { top: insets.top + 12 }]}
+          onPress={() => router.back()}
+          activeOpacity={0.8}
+        >
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+            <Path d="M15 18l-6-6 6-6" stroke={Colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
