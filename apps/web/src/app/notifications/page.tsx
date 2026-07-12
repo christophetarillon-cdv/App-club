@@ -42,17 +42,32 @@ export default function NotificationsPage() {
       });
       setChannels(channelMap);
 
-      if (visibleChannelIds.length === 0) { setLoading(false); return; }
+      const promises: Promise<Announcement[]>[] = [
+        // Actualités publiées depuis Admin → Actualités (pas liées à un canal).
+        getDocs(query(collection(db, 'announcements'), orderBy('sentAt', 'desc')))
+          .then(s => s.docs.map(d => ({ id: d.id, ...d.data() } as Announcement))),
+      ];
 
-      // Firestore limite les `in` à 30 éléments — on prend les 30 premiers
-      const snap = await getDocs(
-        query(
-          collection(db, 'notifications'),
-          where('channelId', 'in', visibleChannelIds.slice(0, 30)),
-          orderBy('sentAt', 'desc'),
-        ),
-      );
-      setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Announcement)));
+      if (visibleChannelIds.length > 0) {
+        // Firestore limite les `in` à 30 éléments — on prend les 30 premiers
+        promises.push(
+          getDocs(
+            query(
+              collection(db, 'notifications'),
+              where('channelId', 'in', visibleChannelIds.slice(0, 30)),
+              orderBy('sentAt', 'desc'),
+            ),
+          ).then(s => s.docs.map(d => ({ id: d.id, ...d.data() } as Announcement))),
+        );
+      }
+
+      const [fromAnnouncements, fromChannels] = await Promise.all(promises);
+      const merged = [...fromAnnouncements, ...(fromChannels ?? [])].sort((a, b) => {
+        const aMs = (a.sentAt as any)?.toMillis?.() ?? 0;
+        const bMs = (b.sentAt as any)?.toMillis?.() ?? 0;
+        return bMs - aMs;
+      });
+      setAnnouncements(merged);
     }).finally(() => setLoading(false));
   }, [user, account]);
 

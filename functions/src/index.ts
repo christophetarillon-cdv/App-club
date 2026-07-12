@@ -627,6 +627,26 @@ export const notifyNewPaymentPlan = onDocumentCreated(
   },
 );
 
+// ── notifyNewAnnouncement — notifie tout le monde à la publication d'une actu ─
+export const notifyNewAnnouncement = onDocumentCreated(
+  { document: 'announcements/{announcementId}', region: 'europe-west3' },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data) return;
+
+    const db = getDb();
+    const accountsSnap = await db.collection('accounts').get();
+    const tokens = accountsSnap.docs.flatMap(d => (Array.isArray(d.data().fcmTokens) ? d.data().fcmTokens as string[] : []));
+    if (tokens.length === 0) return;
+
+    await sendPushToTokens(tokens, {
+      title: data.title ?? 'Nouvelle actualité',
+      body: data.body ?? '',
+      data: { type: 'announcement', announcementId: event.params.announcementId },
+    });
+  },
+);
+
 // ── processChequeOcr — OCR via Vision API REST ────────────────────────────────
 export const processChequeOcr = onObjectFinalized(
   { region: 'europe-west3', bucket: `${process.env.GCLOUD_PROJECT}.firebasestorage.app` },
