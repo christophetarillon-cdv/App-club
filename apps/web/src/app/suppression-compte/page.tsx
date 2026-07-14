@@ -13,16 +13,23 @@ export default function SuppressionComptePage() {
           l&apos;application CDCV.
         </p>
 
-        <h2>Comment demander la suppression</h2>
+        <h2>Suppression directement depuis l&apos;application</h2>
         <p>
-          Envoyez une demande par email à{' '}
-          <a href="mailto:contact@clubdedanse.net">contact@clubdedanse.net</a> en précisant :
+          La suppression est disponible en libre-service, directement dans l&apos;application :
         </p>
-        <ul>
-          <li>Votre nom et prénom (ainsi que ceux du ou des danseurs rattachés à votre compte, le cas échéant)</li>
-          <li>L&apos;adresse email associée à votre compte CDCV</li>
-        </ul>
-        <p>Votre demande sera traitée sous 30 jours maximum.</p>
+        <ol>
+          <li>Ouvrez l&apos;application CDCV et connectez-vous</li>
+          <li>Allez dans <strong>Mon profil</strong></li>
+          <li>Dans la section <strong>Zone de danger</strong>, appuyez sur <strong>« Supprimer mon compte »</strong></li>
+          <li>Confirmez la suppression</li>
+        </ol>
+        <p>La suppression est effective immédiatement.</p>
+
+        <h2>Alternative par email</h2>
+        <p>
+          Si vous n&apos;avez plus accès à l&apos;application, vous pouvez également envoyer une demande par email à{' '}
+          <a href="mailto:contact@clubdedanse.net">contact@clubdedanse.net</a> en précisant votre nom, prénom et
+          l&apos;adresse email associée à votre compte CDCV. Votre demande sera traitée sous 30 jours maximum.</p>
 
         <h2>Données supprimées</h2>
         <p>À réception de votre demande, sont supprimés :</p>
