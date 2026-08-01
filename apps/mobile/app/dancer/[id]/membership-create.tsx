@@ -262,11 +262,15 @@ export default function MembershipCreateScreen() {
   const myDancersAvailable = myDancers.filter(d => !enrolledIds.has(d.id));
 
   const allSelected: Dancer[] = useMemo(() => {
-    if (payScope === 'me') return myDancers.slice(0, 1).filter(d => !enrolledIds.has(d.id));
+    // "Pour moi seul(e)" doit viser le danseur dont on consulte l'espace,
+    // pas systématiquement le premier danseur du compte.
+    if (payScope === 'me') {
+      return selectedDancer && !enrolledIds.has(selectedDancer.id) ? [selectedDancer] : [];
+    }
     const mySelected = myDancers.filter(d => selectedIds.has(d.id));
     const otherSelected = selectedOthers;
     return [...mySelected, ...otherSelected].filter(d => !enrolledIds.has(d.id));
-  }, [payScope, myDancers, selectedIds, selectedOthers, enrolledIds]);
+  }, [payScope, myDancers, selectedIds, selectedOthers, enrolledIds, selectedDancer]);
 
   const otherResults = useMemo(() => {
     if (!otherSearch.trim() || otherSearch.length < 2) return [];
@@ -737,7 +741,9 @@ export default function MembershipCreateScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      // tuned on-device, same fix as app/(auth)/login.tsx
+      keyboardVerticalOffset={Platform.OS === 'android' ? 120 : 0}
     >
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
@@ -1021,7 +1027,7 @@ export default function MembershipCreateScreen() {
             <Text style={styles.selectionText}>{allSelected.length} danseur{allSelected.length > 1 ? 's' : ''} sélectionné{allSelected.length > 1 ? 's' : ''}</Text>
           </View>
         )}
-        {payScope === 'me' && allSelected.length === 0 && myDancers[0] && (
+        {payScope === 'me' && allSelected.length === 0 && selectedDancer && (
           <Text style={styles.emptySmall}>Vous avez déjà une cotisation en cours pour cette saison.</Text>
         )}
 

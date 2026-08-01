@@ -42,7 +42,9 @@ function AudioMessage({ url, mine }: { url: string; mine: boolean }) {
   const toggle = async () => {
     if (!soundRef.current) {
       setLoading(true);
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {});
+      // staysActiveInBackground cohérent avec AudioPlayerSheet — sinon ce
+      // réglage global écraserait celui du lecteur principal.
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, staysActiveInBackground: true }).catch(() => {});
       const { sound } = await Audio.Sound.createAsync({ uri: url }, { shouldPlay: true }, st => {
         if ('isLoaded' in st && st.isLoaded) { setPlaying(st.isPlaying ?? false); if (st.didJustFinish) setPlaying(false); }
       });

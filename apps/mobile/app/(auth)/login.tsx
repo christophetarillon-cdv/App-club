@@ -4,7 +4,7 @@ import {
   KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
 } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { auth, functionsBaseUrl } from '@/lib/firebase';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -16,11 +16,14 @@ export default function LoginScreen() {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [resetLoading, setResetLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!email.trim() || !password) return;
     setLoading(true);
     setError(null);
+    setInfo(null);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch {
@@ -30,10 +33,42 @@ export default function LoginScreen() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      setInfo(null);
+      setError('Renseignez votre email ci-dessus pour recevoir le lien de réinitialisation.');
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    setResetLoading(true);
+    try {
+      const res = await fetch(`${functionsBaseUrl}/sendPasswordReset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setInfo('Email envoyé — vérifiez votre boîte de réception.');
+      } else if (data.error === 'user_not_found') {
+        setError("Aucun compte n'est associé à cet email.");
+      } else {
+        setError("Impossible d'envoyer l'email pour le moment. Réessayez plus tard.");
+      }
+    } catch {
+      setError('Erreur réseau — vérifiez votre connexion.');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       style={[styles.container, { paddingTop: insets.top }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      // 120: tuned on-device, native resize alone doesn't lift enough under Android edge-to-edge (SDK 54+)
+      keyboardVerticalOffset={Platform.OS === 'android' ? 120 : 0}
     >
       <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
@@ -87,6 +122,18 @@ export default function LoginScreen() {
             </View>
           </View>
 
+          <TouchableOpacity
+            onPress={handleForgotPassword}
+            disabled={resetLoading}
+            style={styles.forgotLink}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.forgotLinkText}>
+              {resetLoading ? 'Envoi en cours…' : 'Mot de passe oublié ?'}
+            </Text>
+          </TouchableOpacity>
+
+          {info && <Text style={styles.info}>{info}</Text>}
           {error && <Text style={styles.error}>{error}</Text>}
 
           <TouchableOpacity
@@ -178,9 +225,23 @@ const styles = StyleSheet.create({
   inputPwToggle: {
     paddingRight: 14,
   },
+  forgotLink: {
+    alignSelf: 'flex-end',
+    marginTop: -8,
+  },
+  forgotLinkText: {
+    fontSize: 13,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
   error: {
     fontSize: 13,
     color: Colors.danger,
+    textAlign: 'center',
+  },
+  info: {
+    fontSize: 13,
+    color: Colors.success,
     textAlign: 'center',
   },
   button: {

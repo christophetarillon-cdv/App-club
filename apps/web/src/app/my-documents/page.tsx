@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDancer } from '@/contexts/DancerContext';
 import type { PersonalDocument } from '@cdv/types';
 import { AppShell } from '@/components/AppShell';
 
@@ -35,6 +36,7 @@ function formatAmount(cents: number): string {
 
 export default function MyDocumentsPage() {
   const { user } = useAuth();
+  const { selectedDancer } = useDancer();
 
   const [allDocuments, setAllDocuments]         = useState<PersonalDocument[]>([]);
   const [validatedSeasons, setValidatedSeasons] = useState<Season[]>([]);
@@ -42,16 +44,23 @@ export default function MyDocumentsPage() {
   const [loading, setLoading]                   = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !selectedDancer) return;
     Promise.all([
       getDocs(query(collection(db, 'documents'), where('userId', '==', user.uid), orderBy('generatedAt', 'desc'))),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
       getDocs(collection(db, 'seasons')),
     ]).then(([docsSnap, membershipSnap, seasonSnap]) => {
-      setAllDocuments(docsSnap.docs.map(d => ({ id: d.id, ...d.data() } as PersonalDocument)));
+      // Ne garder que les documents de CE danseur — éviter d'exposer les
+      // documents d'un autre danseur du même compte (ex : fratrie).
+      setAllDocuments(
+        docsSnap.docs
+          .map(d => ({ id: d.id, ...d.data() } as PersonalDocument))
+          .filter(d => d.dancerId === selectedDancer.id),
+      );
 
       const paidIds = new Set(
         membershipSnap.docs
+          .filter(d => d.data().dancerId === selectedDancer.id)
           .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
           .map(d => d.data().seasonId as string).filter(Boolean),
       );
@@ -71,7 +80,7 @@ export default function MyDocumentsPage() {
       if (defaultSeason) setSelectedSeasonId(defaultSeason.id);
       setLoading(false);
     });
-  }, [user]);
+  }, [user, selectedDancer]);
 
   const selectedSeason = validatedSeasons.find(s => s.id === selectedSeasonId);
   const showSeasonSelector = validatedSeasons.length > 1;

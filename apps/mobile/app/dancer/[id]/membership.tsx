@@ -307,7 +307,9 @@ export default function MembershipScreen() {
         });
       }
 
-      const soloMemberships  = memberships.filter(m => !m.paymentGroupId);
+      // Ne garder que ce qui concerne CE danseur — éviter d'exposer les
+      // cotisations d'un autre danseur du même compte (ex : fratrie).
+      const soloMemberships  = memberships.filter(m => !m.paymentGroupId && m.dancerId === id);
       const groupedMemberIds = new Set(groups.flatMap(g => g.membershipIds));
       const allInstIds = [
         ...new Set([
@@ -337,6 +339,8 @@ export default function MembershipScreen() {
       }
       for (const g of groups) {
         const gMemberships = memberships.filter(m => g.membershipIds.includes(m.id));
+        // Idem : n'afficher le groupe que s'il inclut réellement ce danseur.
+        if (!gMemberships.some(m => m.dancerId === id)) continue;
         result.push({
           kind: 'group',
           group: g,
@@ -410,7 +414,7 @@ export default function MembershipScreen() {
             onPress={() => router.push(`/dancer/${id}/membership-create` as any)}
             activeOpacity={0.8}
           >
-            <Text style={styles.addBtnText}>+ Créer</Text>
+            <Text style={styles.addBtnText}>Payer ma cotisation</Text>
           </TouchableOpacity>
         </View>
         {availableSeasons.length > 1 ? (
@@ -460,6 +464,13 @@ export default function MembershipScreen() {
               <Text style={styles.emptySub}>
                 Aucune cotisation trouvée pour la saison en cours.
               </Text>
+              <TouchableOpacity
+                style={styles.emptyPayBtn}
+                onPress={() => router.push(`/dancer/${id}/membership-create` as any)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.emptyPayBtnText}>Payer ma cotisation</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             entries.map((entry, i) =>
@@ -573,4 +584,13 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingTop: 60, gap: 12 },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
   emptySub: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: 24 },
+  emptyPayBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  emptyPayBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });

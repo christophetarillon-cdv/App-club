@@ -35,3 +35,8 @@ export const auth = _auth;
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app, 'europe-west3');
+
+// Base URL des Cloud Functions HTTP (onRequest) — pour celles non appelées
+// via httpsCallable, ex. sendPasswordReset. Même logique dev/prod que
+// firebaseConfig ci-dessus : rien à changer au code lors du bascule.
+export const functionsBaseUrl = `https://europe-west3-${firebaseConfig.projectId}.cloudfunctions.net`;

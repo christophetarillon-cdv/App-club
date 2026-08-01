@@ -80,7 +80,7 @@ export default function AudioPlayerSheet({
 
   // Init audio + 1er morceau
   useEffect(() => {
-    Audio.setAudioModeAsync({ playsInSilentModeIOS: true, staysActiveInBackground: false }).catch(() => {});
+    Audio.setAudioModeAsync({ playsInSilentModeIOS: true, staysActiveInBackground: true }).catch(() => {});
     loadTrack(startIndex);
     Animated.parallel([
       Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }),

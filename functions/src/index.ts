@@ -1859,29 +1859,44 @@ async function generateReceipt(installmentId: string, data: admin.firestore.Docu
 
     const userId: string = data.userId;
     const amountCents: number = data.amount ?? 0;
+    const membershipId: string | undefined = data.membershipId;
 
-    // Récupère les infos
-    const [accountSnap, dancersSnap] = await Promise.all([
+    const [accountSnap, membershipSnap] = await Promise.all([
       db.doc(`accounts/${userId}`).get(),
-      db.collection('dancers').where('accountId', '==', userId).where('isActive', '==', true).limit(1).get(),
+      membershipId ? db.doc(`memberships/${membershipId}`).get() : Promise.resolve(null),
     ]);
-
     const accountData = accountSnap.data() ?? {};
-    const dancerData = dancersSnap.docs[0]?.data() ?? {};
-    const memberName = dancerData.firstName && dancerData.lastName
-      ? `${dancerData.firstName} ${dancerData.lastName}`
-      : (accountData.displayName ?? accountData.email ?? 'Membre');
 
     // Saison
     let seasonLabel = '';
-    const membershipId: string | undefined = data.membershipId;
-    if (membershipId) {
-      const memberSnap = await db.doc(`memberships/${membershipId}`).get();
-      if (memberSnap.exists) {
-        const seasonSnap = await db.doc(`seasons/${memberSnap.data()!.seasonId}`).get();
-        seasonLabel = (seasonSnap.data()?.label as string | undefined) ?? '';
+    const dancerIdFromMembership: string | null = (membershipSnap?.data()?.dancerId as string | undefined) ?? null;
+    if (membershipSnap?.exists) {
+      const seasonSnap = await db.doc(`seasons/${membershipSnap.data()!.seasonId}`).get();
+      seasonLabel = (seasonSnap.data()?.label as string | undefined) ?? '';
+    }
+
+    // Danseur : utilise dancerId du membership si disponible — sinon le reçu
+    // peut être attribué à n'importe quel danseur actif du compte (fratrie).
+    let dancerData: Record<string, unknown> = {};
+    let dancerId: string | null = null;
+    if (dancerIdFromMembership) {
+      const dSnap = await db.doc(`dancers/${dancerIdFromMembership}`).get();
+      dancerData = dSnap.data() ?? {};
+      dancerId = dancerIdFromMembership;
+    } else {
+      const dQuery = await db.collection('dancers')
+        .where('accountId', '==', userId)
+        .where('isActive', '==', true)
+        .limit(1)
+        .get();
+      if (dQuery.docs[0]) {
+        dancerData = dQuery.docs[0].data();
+        dancerId = dQuery.docs[0].id;
       }
     }
+    const memberName = dancerData.firstName && dancerData.lastName
+      ? `${dancerData.firstName} ${dancerData.lastName}`
+      : (accountData.displayName ?? accountData.email ?? 'Membre');
 
     // Numéro de reçu unique
     const counterRef = db.doc('config/receiptCounter');
@@ -1993,7 +2008,7 @@ async function generateReceipt(installmentId: string, data: admin.firestore.Docu
     // Crée le doc Firestore
     await db.collection('documents').add({
       userId,
-      dancerId: dancersSnap.docs[0]?.id ?? null,
+      dancerId,
       type: 'receipt',
       fileUrl,
       fileName,

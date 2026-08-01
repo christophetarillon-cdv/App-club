@@ -13,7 +13,8 @@
       "supportsTablet": true,
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "NSCameraUsageDescription": "CDCV accède à la caméra pour scanner les QR codes du kiosque de pointage."
+        "NSCameraUsageDescription": "CDCV accède à la caméra pour scanner les QR codes du kiosque de pointage.",
+        "UIBackgroundModes": ["audio"]
       }
     },
     "android": {

@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
   ActivityIndicator, Linking, ScrollView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -97,6 +97,7 @@ export default function MyDocumentsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { id } = useLocalSearchParams<{ id: string }>();
 
   const [allDocs, setAllDocs]             = useState<PersonalDocument[]>([]);
   const [validatedSeasons, setValidatedSeasons] = useState<Season[]>([]);
@@ -104,16 +105,23 @@ export default function MyDocumentsScreen() {
   const [loading, setLoading]             = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !id) return;
     Promise.all([
       getDocs(query(collection(db, 'documents'), where('userId', '==', user.uid), orderBy('generatedAt', 'desc'))),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
       getDocs(collection(db, 'seasons')),
     ]).then(([docsSnap, membershipSnap, seasonSnap]) => {
-      setAllDocs(docsSnap.docs.map(d => ({ id: d.id, ...d.data() } as PersonalDocument)));
+      // Ne garder que les documents de CE danseur — éviter d'exposer les
+      // documents d'un autre danseur du même compte (ex : fratrie).
+      setAllDocs(
+        docsSnap.docs
+          .map(d => ({ id: d.id, ...d.data() } as PersonalDocument))
+          .filter(d => d.dancerId === id),
+      );
 
       const paidIds = new Set(
         membershipSnap.docs
+          .filter(d => d.data().dancerId === id)
           .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
           .map(d => d.data().seasonId as string).filter(Boolean),
       );
@@ -135,7 +143,7 @@ export default function MyDocumentsScreen() {
     })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [user]);
+  }, [user, id]);
 
   const selectedSeason = validatedSeasons.find(s => s.id === selectedSeasonId);
 
