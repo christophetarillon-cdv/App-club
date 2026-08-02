@@ -15,7 +15,7 @@ import AudioPlayerSheet from '@/components/AudioPlayerSheet';
 import type { Media } from '@cdv/types';
 
 interface Season { id: string; label: string; isActive: boolean; }
-interface DanceStyle { id: string; name: string; color: string; }
+interface DanceStyle { id: string; name: string; color: string; usedInMedia: boolean; }
 
 const FALLBACK_COLOR = '#7F77DD';
 
@@ -90,7 +90,10 @@ export default function AudiosScreen() {
       setSeasons(seasonSnap.docs.map(d => ({
         id: d.id, label: d.data().label ?? d.id, isActive: d.data().isActive === true,
       })));
-      setStyleList(styleSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '', color: d.data().color ?? FALLBACK_COLOR })));
+      setStyleList(styleSnap.docs.map(d => ({
+        id: d.id, name: d.data().name ?? '', color: d.data().color ?? FALLBACK_COLOR,
+        usedInMedia: d.data().usedInMedia !== false,
+      })));
       const paid = membershipSnap.docs
         .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
         .map(d => d.data().seasonId as string).filter(Boolean);
@@ -105,7 +108,7 @@ export default function AudiosScreen() {
     [seasons]);
 
   const sortedStyles = useMemo(() =>
-    [...styleList].sort((a, b) => a.name.localeCompare(b.name)),
+    styleList.filter(s => s.usedInMedia).sort((a, b) => a.name.localeCompare(b.name)),
     [styleList]);
 
   useEffect(() => {
@@ -155,7 +158,7 @@ export default function AudiosScreen() {
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(s => ({ style: s, audios: byStyle.get(s.id)! }));
     if (byStyle.has('__none__')) {
-      ordered.push({ style: { id: '__none__', name: 'Autres', color: FALLBACK_COLOR }, audios: byStyle.get('__none__')! });
+      ordered.push({ style: { id: '__none__', name: 'Autres', color: FALLBACK_COLOR, usedInMedia: true }, audios: byStyle.get('__none__')! });
     }
     return ordered;
   }, [visible, styleList]);
@@ -267,7 +270,26 @@ export default function AudiosScreen() {
               : 'Aucun audio disponible.'}
           </Text>
         ) : (
-          sections.map(({ style, audios }) => (
+          <>
+            {/* Dossier "Tous" — uniquement quand aucune danse spécifique n'est filtrée,
+                pour ne pas dupliquer une section déjà identique à un style unique. */}
+            {selectedStyle === 'toutes' && visible.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Tous</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionRow}>
+                  {visible.map((a, i) => (
+                    <AudioThumb
+                      key={a.id}
+                      audio={a}
+                      color={FALLBACK_COLOR}
+                      seasonBadge={seasonBadge(a.seasonId)}
+                      onPress={() => setQueue({ list: visible, index: i, color: FALLBACK_COLOR })}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+            {sections.map(({ style, audios }) => (
             <View key={style.id} style={styles.section}>
               <Text style={styles.sectionTitle}>{style.name}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionRow}>
@@ -282,7 +304,8 @@ export default function AudiosScreen() {
                 ))}
               </ScrollView>
             </View>
-          ))
+          ))}
+          </>
         )}
       </ScrollView>
 

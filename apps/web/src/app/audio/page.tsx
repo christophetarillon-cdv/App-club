@@ -8,7 +8,7 @@ import { AppShell } from '@/components/AppShell';
 import type { Media } from '@cdv/types';
 
 interface Season   { id: string; label: string; isActive: boolean; }
-interface DanceStyle { id: string; name: string; color?: string; }
+interface DanceStyle { id: string; name: string; color?: string; usedInMedia: boolean; }
 interface Course   { id: string; name: string; danceStyleId: string; levelId: string; }
 interface Level    { id: string; name: string; }
 
@@ -81,7 +81,10 @@ export default function AudioPage() {
       const active = s.find(s2 => s2.isActive);
       setFilterSeason(active?.id ?? s[0]?.id ?? '');
 
-      setStyles(styleSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '', color: d.data().color })));
+      setStyles(styleSnap.docs.map(d => ({
+        id: d.id, name: d.data().name ?? '', color: d.data().color,
+        usedInMedia: d.data().usedInMedia !== false,
+      })));
       setCourses(courseSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '', danceStyleId: d.data().danceStyleId ?? '', levelId: d.data().levelId ?? '' })));
       setLevels(levelSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '' })));
 
@@ -100,6 +103,7 @@ export default function AudioPage() {
   };
 
   const styleMap  = new Map(styles.map(s => [s.id, s]));
+  const filterableStyles = styles.filter(s => s.usedInMedia);
   const courseMap = new Map(courses.map(c => [c.id, c]));
   const levelMap  = new Map(levels.map(l => [l.id, l]));
 
@@ -140,7 +144,7 @@ export default function AudioPage() {
               className={`text-xs px-3 py-1.5 rounded-full font-medium border whitespace-nowrap transition-colors ${
                 !filterStyle ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
               }`}>Tous</button>
-            {styles.map(s => (
+            {filterableStyles.map(s => (
               <button key={s.id} onClick={() => setFilterStyle(filterStyle === s.id ? '' : s.id)}
                 className={`text-xs px-3 py-1.5 rounded-full font-medium border whitespace-nowrap transition-colors ${
                   filterStyle === s.id ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'

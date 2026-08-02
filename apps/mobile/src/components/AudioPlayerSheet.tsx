@@ -39,6 +39,9 @@ export default function AudioPlayerSheet({
   const indexRef = useRef(startIndex);
   const [speed, setSpeed] = useState(1);
   const speedRef = useRef(1);
+  const [shuffle, setShuffle] = useState(false);
+  const shuffleRef = useRef(false);
+  useEffect(() => { shuffleRef.current = shuffle; }, [shuffle]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -54,7 +57,18 @@ export default function AudioPlayerSheet({
     if (!seekingRef.current) setPosition(st.positionMillis ?? 0);
     setDuration(st.durationMillis ?? 0);
     setIsPlaying(st.isPlaying ?? false);
-    if (st.didJustFinish) goTo((indexRef.current + 1) % queue.length); // boucle
+    if (st.didJustFinish) goTo(pickNextIndex(indexRef.current)); // boucle (ou aléatoire)
+  };
+
+  // En mode aléatoire, tire une piste différente de la piste courante dans le
+  // même dossier/queue ; sinon avance dans l'ordre et reboucle sur la première.
+  const pickNextIndex = (from: number): number => {
+    if (shuffleRef.current && queue.length > 1) {
+      let r = from;
+      while (r === from) r = Math.floor(Math.random() * queue.length);
+      return r;
+    }
+    return (from + 1) % queue.length;
   };
 
   const loadTrack = async (i: number) => {
@@ -119,7 +133,7 @@ export default function AudioPlayerSheet({
     if (position > 3000) { soundRef.current?.setPositionAsync(0); return; }
     goTo((index - 1 + queue.length) % queue.length);
   };
-  const nextTrack = () => goTo((index + 1) % queue.length);
+  const nextTrack = () => goTo(pickNextIndex(index));
 
   const changeSpeed = (v: number) => {
     const r = Math.max(0.25, Math.min(2, Math.round(v * 100) / 100));
@@ -200,7 +214,20 @@ export default function AudioPlayerSheet({
           </View>
 
           {queue.length > 1 && (
-            <Text style={styles.upNext} numberOfLines={1}>À suivre : {next?.title}</Text>
+            <>
+              <TouchableOpacity
+                style={[styles.shuffleBtn, shuffle && { backgroundColor: styleColor, borderColor: styleColor }]}
+                onPress={() => setShuffle(s => !s)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.shuffleBtnText, shuffle && styles.shuffleBtnTextActive]}>
+                  🔀  Lecture aléatoire{shuffle ? ' activée' : ''}
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.upNext} numberOfLines={1}>
+                {shuffle ? 'Ordre aléatoire' : `À suivre : ${next?.title}`}
+              </Text>
+            </>
           )}
 
           {/* Vitesse */}
@@ -251,7 +278,13 @@ const styles = StyleSheet.create({
   transport: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 36, marginTop: 8 },
   playBtn: { width: 68, height: 68, borderRadius: 34, alignItems: 'center', justifyContent: 'center' },
   playTriangle: { width: 0, height: 0, borderLeftWidth: 22, borderTopWidth: 14, borderBottomWidth: 14, borderLeftColor: '#fff', borderTopColor: 'transparent', borderBottomColor: 'transparent', marginLeft: 5 },
-  upNext: { fontSize: 12, color: Colors.textSecondary, marginTop: 16, maxWidth: '90%' },
+  upNext: { fontSize: 12, color: Colors.textSecondary, marginTop: 8, maxWidth: '90%' },
+  shuffleBtn: {
+    marginTop: 16, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)',
+  },
+  shuffleBtnText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  shuffleBtnTextActive: { color: '#fff' },
 
   speedCard: { width: '100%', backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(0,0,0,0.07)', borderRadius: 16, padding: 14, marginTop: 18 },
   speedHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

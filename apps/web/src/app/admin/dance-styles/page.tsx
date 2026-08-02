@@ -8,9 +8,10 @@ interface DanceStyle {
   id: string;
   name: string;
   color: string;
+  usedInMedia: boolean;
 }
 
-const emptyForm = { name: '', color: '#3B82F6' };
+const emptyForm = { name: '', color: '#3B82F6', usedInMedia: true };
 
 export default function DanceStylesPage() {
   const [styles, setStyles] = useState<DanceStyle[]>([]);
@@ -22,7 +23,10 @@ export default function DanceStylesPage() {
   const load = async () => {
     const q = query(collection(db, 'danceStyles'), orderBy('name'));
     const snap = await getDocs(q);
-    setStyles(snap.docs.map(d => ({ id: d.id, name: d.data().name, color: d.data().color ?? '#3B82F6' })));
+    setStyles(snap.docs.map(d => ({
+      id: d.id, name: d.data().name, color: d.data().color ?? '#3B82F6',
+      usedInMedia: d.data().usedInMedia !== false,
+    })));
     setLoading(false);
   };
 
@@ -31,7 +35,7 @@ export default function DanceStylesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const payload = { name: form.name, color: form.color, updatedAt: serverTimestamp() };
+    const payload = { name: form.name, color: form.color, usedInMedia: form.usedInMedia, updatedAt: serverTimestamp() };
     if (editId) {
       await updateDoc(doc(db, 'danceStyles', editId), payload);
     } else {
@@ -42,7 +46,7 @@ export default function DanceStylesPage() {
   };
 
   const startEdit = (s: DanceStyle) => {
-    setForm({ name: s.name, color: s.color });
+    setForm({ name: s.name, color: s.color, usedInMedia: s.usedInMedia });
     setEditId(s.id);
   };
 
@@ -85,6 +89,18 @@ export default function DanceStylesPage() {
             </div>
           </div>
         </div>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={form.usedInMedia}
+            onChange={e => setForm(p => ({ ...p, usedInMedia: e.target.checked }))}
+            className="rounded border-gray-300"
+          />
+          Utilisé pour les vidéos et audios
+        </label>
+        <p className="text-xs text-gray-400 -mt-2">
+          À décocher pour un style réservé au planning des cours (n&apos;apparaîtra plus dans les filtres de la médiathèque).
+        </p>
         <div className="flex gap-3">
           <button type="submit" disabled={saving}
             className="bg-blue-600 text-white font-semibold px-5 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm">
@@ -107,6 +123,9 @@ export default function DanceStylesPage() {
               <div className="flex items-center gap-3">
                 <span className="w-5 h-5 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: s.color }} />
                 <span className="font-semibold text-gray-900">{s.name}</span>
+                {!s.usedInMedia && (
+                  <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">Cours uniquement</span>
+                )}
               </div>
               <div className="flex gap-2">
                 <button onClick={() => startEdit(s)} className="text-sm text-blue-600 hover:underline">Modifier</button>
