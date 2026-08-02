@@ -10,8 +10,9 @@ import Link from 'next/link';
 import type { Media } from '@cdv/types';
 
 interface Season { id: string; label: string; isActive: boolean; }
-interface Course { id: string; name: string; danceStyleId: string; }
-interface DanceStyle { id: string; name: string; color?: string; }
+interface Course { id: string; name: string; danceStyleId: string; levelId: string; }
+interface DanceStyle { id: string; name: string; color?: string; usedInMedia: boolean; }
+interface Level { id: string; name: string; }
 
 const registerMediaFn = httpsCallable<object, { id: string }>(functions, 'registerMedia');
 
@@ -33,6 +34,7 @@ export default function AdminMediaPage() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [styles, setStyles] = useState<DanceStyle[]>([]);
+  const [levels, setLevels] = useState<Level[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -62,17 +64,19 @@ export default function AdminMediaPage() {
       getDocs(collection(db, 'seasons')),
       getDocs(collection(db, 'courses')),
       getDocs(collection(db, 'danceStyles')),
-    ]).then(([mediaSnap, seasonSnap, courseSnap, styleSnap]) => {
+      getDocs(collection(db, 'levels')),
+    ]).then(([mediaSnap, seasonSnap, courseSnap, styleSnap, levelSnap]) => {
       setMedia(mediaSnap.docs.map(d => ({ id: d.id, ...d.data() } as Media)));
       setSeasons(seasonSnap.docs.map(d => ({
         id: d.id, label: d.data().label ?? d.id, isActive: d.data().isActive === true,
       })).sort((a, b) => (b.label > a.label ? 1 : -1)));
       setCourses(courseSnap.docs.map(d => ({
-        id: d.id, name: d.data().name ?? '', danceStyleId: d.data().danceStyleId ?? '',
+        id: d.id, name: d.data().name ?? '', danceStyleId: d.data().danceStyleId ?? '', levelId: d.data().levelId ?? '',
       })).sort((a, b) => a.name.localeCompare(b.name, 'fr')));
       setStyles(styleSnap.docs.map(d => ({
-        id: d.id, name: d.data().name ?? '', color: d.data().color,
+        id: d.id, name: d.data().name ?? '', color: d.data().color, usedInMedia: d.data().usedInMedia !== false,
       })));
+      setLevels(levelSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '' })));
     }).finally(() => setLoading(false));
   }, []);
 
@@ -142,6 +146,7 @@ export default function AdminMediaPage() {
         uploadedBy: user.uid,
         attachedTo: form.attachedTo || null,
         courseId: form.attachedTo?.startsWith('course:') ? form.attachedTo.replace('course:', '') : null,
+        danceStyleId: form.attachedTo?.startsWith('style:') ? form.attachedTo.replace('style:', '') : null,
         mimeType: file.type,
         sizeBytes: file.size,
         durationSeconds,
@@ -177,6 +182,18 @@ export default function AdminMediaPage() {
     if (!id) return null;
     return courses.find(c => c.id === id)?.name ?? id;
   };
+  const styleLabel = (id: string | null | undefined) => {
+    if (!id) return null;
+    return styles.find(s => s.id === id)?.name ?? null;
+  };
+  // Styles proposés pour un audio : ceux marqués "utilisés pour les vidéos et
+  // audios" (les autres sont réservés au planning des cours).
+  const audioStyles = styles.filter(s => s.usedInMedia);
+  const levelName = (id: string) => levels.find(l => l.id === id)?.name;
+  // Libellé "Style · Niveau" pour les vidéos — plus lisible que le nom brut
+  // du cours (souvent identique au style seul, en double pour chaque niveau).
+  const courseLabelWithLevel = (c: Course) =>
+    [styleLabel(c.danceStyleId), levelName(c.levelId)].filter(Boolean).join(' · ') || c.name;
 
   return (
     <div>
@@ -212,7 +229,7 @@ export default function AdminMediaPage() {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Type</label>
-              <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value as 'audio' | 'video' }))}
+              <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value as 'audio' | 'video', attachedTo: '' }))}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50">
                 <option value="audio">Audio</option>
                 <option value="video">Vidéo</option>
@@ -227,12 +244,20 @@ export default function AdminMediaPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Rattachement cours</label>
-              <select value={form.attachedTo} onChange={e => setForm(p => ({ ...p, attachedTo: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50">
-                <option value="">Général (club)</option>
-                {courses.map(c => <option key={c.id} value={`course:${c.id}`}>{c.name}</option>)}
-              </select>
+              <label className="block text-xs text-gray-500 mb-1">{form.type === 'audio' ? 'Danse' : 'Rattachement cours'}</label>
+              {form.type === 'audio' ? (
+                <select value={form.attachedTo} onChange={e => setForm(p => ({ ...p, attachedTo: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50">
+                  <option value="">Général (club)</option>
+                  {audioStyles.map(s => <option key={s.id} value={`style:${s.id}`}>{s.name}</option>)}
+                </select>
+              ) : (
+                <select value={form.attachedTo} onChange={e => setForm(p => ({ ...p, attachedTo: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50">
+                  <option value="">Général (club)</option>
+                  {courses.map(c => <option key={c.id} value={`course:${c.id}`}>{courseLabelWithLevel(c)}</option>)}
+                </select>
+              )}
             </div>
             <div className="flex items-center gap-2 pt-5">
               <input type="checkbox" id="isPublic" checked={form.isPublic}
@@ -321,7 +346,9 @@ export default function AdminMediaPage() {
                       {m.type === 'audio' ? 'Audio' : 'Vidéo'}
                     </span>
                     <span className="text-xs text-gray-400">{seasonLabel(m.seasonId)}</span>
-                    {courseLabel(m.courseId) && <span className="text-xs text-gray-400">· {courseLabel(m.courseId)}</span>}
+                    {(courseLabel(m.courseId) ?? styleLabel(m.danceStyleId)) && (
+                      <span className="text-xs text-gray-400">· {courseLabel(m.courseId) ?? styleLabel(m.danceStyleId)}</span>
+                    )}
                     {m.durationSeconds && <span className="text-xs text-gray-400">· {formatDuration(m.durationSeconds)}</span>}
                     <span className="text-xs text-gray-300">{formatSize(m.sizeBytes)}</span>
                     {(m.encodingStatus === 'pending' || m.encodingStatus === 'encoding') && (

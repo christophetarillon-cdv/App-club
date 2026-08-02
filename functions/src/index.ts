@@ -1283,6 +1283,11 @@ export const registerMedia = onCall(
           throw new HttpsError('permission-denied', 'Accès refusé');
         }
       }
+    } else if (attachedTo?.startsWith('style:')) {
+      // Rattachement direct à un style de danse (audios de la médiathèque
+      // admin, hors cours/séance précis) — réservé aux admins.
+      if (!isAdmin) throw new HttpsError('permission-denied', 'Accès refusé');
+      danceStyleId = attachedTo.replace('style:', '');
     } else if (!isAdmin) {
       throw new HttpsError('permission-denied', 'Seuls les administrateurs peuvent ajouter des médias généraux');
     }
