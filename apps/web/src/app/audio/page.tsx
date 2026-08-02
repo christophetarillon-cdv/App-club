@@ -33,9 +33,14 @@ export default function AudioPage() {
   const [filterSeason, setFilterSeason]   = useState('');
   const [filterStyle, setFilterStyle]     = useState('');
   const [expanded, setExpanded]           = useState<string | null>(null);
+  const [shuffle, setShuffle]             = useState(false);
   const [speeds, setSpeeds]               = useState<Map<string, number>>(new Map());
   const [downloading, setDownloading]     = useState<string | null>(null);
   const audioEls = useRef<Map<string, HTMLAudioElement>>(new Map());
+  // Signale au callback ref du prochain <audio> monté qu'il doit démarrer
+  // tout seul — uniquement pour un enchaînement automatique, jamais pour
+  // une ouverture manuelle d'une piste.
+  const autoAdvanceRef = useRef(false);
 
   const handleDownload = useCallback(async (m: { id: string; title: string; sourceUrl: string }) => {
     setDownloading(m.id);
@@ -114,6 +119,30 @@ export default function AudioPage() {
     if (filterSeason) return m.seasonId === filterSeason;
     return true;
   });
+
+  // Piste suivante dans la file affichée (dossier filtré, ou tout si aucun
+  // style choisi) — en aléatoire, tire une piste différente de la piste
+  // courante ; sinon avance dans l'ordre et reboucle sur la première.
+  const playNext = () => {
+    if (visible.length === 0) return;
+    const idx = visible.findIndex(m => m.id === expanded);
+    let next: Media;
+    if (shuffle && visible.length > 1) {
+      const candidates = visible.filter(m => m.id !== expanded);
+      next = candidates[Math.floor(Math.random() * candidates.length)]!;
+    } else {
+      next = visible[idx >= 0 ? (idx + 1) % visible.length : 0]!;
+    }
+    if (next.id === expanded) return; // une seule piste dans la file
+    autoAdvanceRef.current = true;
+    setExpanded(next.id);
+  };
+
+  const nextUp = (() => {
+    if (shuffle || visible.length < 2 || !expanded) return null;
+    const idx = visible.findIndex(m => m.id === expanded);
+    return idx >= 0 ? visible[(idx + 1) % visible.length] : null;
+  })();
 
   const locked = allMedia.filter(m => {
     if (canAccess(m)) return false;
@@ -219,8 +248,24 @@ export default function AudioPage() {
                     {isOpen && (
                       <div className="px-4 pb-4 space-y-2.5 border-t border-gray-100 pt-3">
                         {m.description && <p className="text-xs text-gray-500">{m.description}</p>}
-                        <audio controls src={m.sourceUrl} className="w-full"
-                          ref={el => { if (el) audioEls.current.set(m.id, el as HTMLAudioElement); else audioEls.current.delete(m.id); }} />
+                        <audio controls src={m.sourceUrl} className="w-full" onEnded={playNext}
+                          ref={el => {
+                            if (el) {
+                              audioEls.current.set(m.id, el as HTMLAudioElement);
+                              if (autoAdvanceRef.current) { autoAdvanceRef.current = false; el.play().catch(() => {}); }
+                            } else audioEls.current.delete(m.id);
+                          }} />
+                        {visible.length > 1 && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button onClick={() => setShuffle(v => !v)}
+                              className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-colors ${
+                                shuffle ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                              }`}>
+                              🔀 Lecture aléatoire{shuffle ? ' activée' : ''}
+                            </button>
+                            {nextUp && <span className="text-[11px] text-gray-400 truncate">À suivre : {nextUp.title}</span>}
+                          </div>
+                        )}
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-gray-400 shrink-0">Vitesse</span>
                           <input type="range" min="0.5" max="2" step="0.01" value={speeds.get(m.id) ?? 1}
