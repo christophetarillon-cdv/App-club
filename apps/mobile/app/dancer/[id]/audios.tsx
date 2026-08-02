@@ -270,26 +270,7 @@ export default function AudiosScreen() {
               : 'Aucun audio disponible.'}
           </Text>
         ) : (
-          <>
-            {/* Dossier "Tous" — uniquement quand aucune danse spécifique n'est filtrée,
-                pour ne pas dupliquer une section déjà identique à un style unique. */}
-            {selectedStyle === 'toutes' && visible.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Tous</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionRow}>
-                  {visible.map((a, i) => (
-                    <AudioThumb
-                      key={a.id}
-                      audio={a}
-                      color={FALLBACK_COLOR}
-                      seasonBadge={seasonBadge(a.seasonId)}
-                      onPress={() => setQueue({ list: visible, index: i, color: FALLBACK_COLOR })}
-                    />
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-            {sections.map(({ style, audios }) => (
+          sections.map(({ style, audios }) => (
             <View key={style.id} style={styles.section}>
               <Text style={styles.sectionTitle}>{style.name}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionRow}>
@@ -299,13 +280,21 @@ export default function AudiosScreen() {
                     audio={a}
                     color={style.color}
                     seasonBadge={seasonBadge(a.seasonId)}
-                    onPress={() => setQueue({ list: audios, index: i, color: style.color })}
+                    onPress={() => {
+                      // "Toutes les danses" : la file couvre tous les styles pour
+                      // permettre lecture continue / aléatoire au-delà du dossier tapé.
+                      if (selectedStyle === 'toutes') {
+                        const flatIndex = visible.findIndex(m => m.id === a.id);
+                        setQueue({ list: visible, index: flatIndex, color: style.color });
+                      } else {
+                        setQueue({ list: audios, index: i, color: style.color });
+                      }
+                    }}
                   />
                 ))}
               </ScrollView>
             </View>
-          ))}
-          </>
+          ))
         )}
       </ScrollView>
 
