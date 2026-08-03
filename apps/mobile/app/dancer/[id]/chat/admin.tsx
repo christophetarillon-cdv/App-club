@@ -82,8 +82,7 @@ export default function AdminConversationScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'android' ? 120 : 0}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity style={styles.headerRow} onPress={() => router.back()} activeOpacity={0.7}>
@@ -103,12 +102,14 @@ export default function AdminConversationScreen() {
             Envoyez un message à l'administration du club, vous recevrez sa réponse ici.
           </Text>
         ) : messages.map(m => (
-          <View key={m.id} style={[styles.msgRow, { alignItems: m.fromAdmin ? 'flex-start' : 'flex-end' }]}>
-            <Text style={[styles.msgMeta, !m.fromAdmin && { textAlign: 'right' }]}>
-              {m.fromAdmin ? 'Administration' : 'Moi'} · {timeAgo(m.sentAt)}
-            </Text>
-            <View style={[styles.bubble, !m.fromAdmin ? styles.bubbleMine : styles.bubbleOther]}>
-              <Text style={[styles.msgText, !m.fromAdmin && { color: '#fff' }]}>{m.text}</Text>
+          <View key={m.id} style={[styles.msgRow, !m.fromAdmin && { flexDirection: 'row-reverse' }]}>
+            <View style={styles.msgWrap}>
+              <Text style={[styles.msgMeta, !m.fromAdmin && { textAlign: 'right' }]}>
+                {m.fromAdmin ? 'Administration' : 'Moi'} · {timeAgo(m.sentAt)}
+              </Text>
+              <View style={[styles.bubble, !m.fromAdmin ? styles.bubbleMine : styles.bubbleOther]}>
+                <Text style={[styles.msgText, !m.fromAdmin && { color: '#fff' }]}>{m.text}</Text>
+              </View>
             </View>
           </View>
         ))}
@@ -146,12 +147,13 @@ const styles = StyleSheet.create({
 
   empty: { textAlign: 'center', color: Colors.textSecondary, fontSize: 14, paddingVertical: 40, paddingHorizontal: 16 },
 
-  msgRow: { marginBottom: 12, width: '100%' },
+  msgRow: { flexDirection: 'row', marginBottom: 12 },
+  msgWrap: { maxWidth: '80%' },
   msgMeta: { fontSize: 11, color: Colors.textSecondary, marginBottom: 3 },
-  bubble: { borderRadius: 14, padding: 10, maxWidth: '80%', flexShrink: 1 },
+  bubble: { borderRadius: 14, padding: 10 },
   bubbleMine: { backgroundColor: '#2F86C0', borderTopRightRadius: 4 },
   bubbleOther: { backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', borderTopLeftRadius: 4 },
-  msgText: { fontSize: 14, color: Colors.text, flexShrink: 1 },
+  msgText: { fontSize: 14, color: Colors.text },
 
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 12, paddingTop: 8, backgroundColor: Colors.background, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.06)' },
   input: { flex: 1, minHeight: 42, maxHeight: 120, borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 21, backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 11, fontSize: 14, color: Colors.text },
