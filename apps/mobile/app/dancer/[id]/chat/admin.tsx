@@ -82,7 +82,10 @@ export default function AdminConversationScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      // meme reglage que login.tsx / membership-create.tsx : le resize natif
+      // seul ne suffit pas sous Android edge-to-edge (SDK 54+).
+      keyboardVerticalOffset={Platform.OS === 'android' ? 120 : 0}
     >
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity style={styles.headerRow} onPress={() => router.back()} activeOpacity={0.7}>

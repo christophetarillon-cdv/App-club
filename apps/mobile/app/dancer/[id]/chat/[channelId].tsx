@@ -271,7 +271,14 @@ export default function ChatChannelScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      // meme reglage que login.tsx / membership-create.tsx / chat/admin.tsx :
+      // le resize natif seul ne suffit pas sous Android edge-to-edge (SDK 54+),
+      // le clavier cachait la zone de saisie.
+      keyboardVerticalOffset={Platform.OS === 'android' ? 120 : 0}
+    >
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerRow}>
