@@ -28,6 +28,10 @@ export interface ChatMessage {
   sentAt: FirestoreTimestamp;
 }
 
+// Conversation danseur <-> admin. fromDancerId/fromDancerName/fromAccountId
+// identifient toujours le danseur concerne par la conversation, meme pour
+// une reponse admin (fromAdmin: true) — ce ne sont pas des champs
+// "expediteur" a proprement parler, mais "a qui appartient ce fil".
 export interface PrivateMessage {
   id: string;
   fromDancerId: string;
@@ -35,5 +39,7 @@ export interface PrivateMessage {
   fromAccountId: string;
   text: string;
   sentAt: FirestoreTimestamp;
-  readAt?: FirestoreTimestamp;
+  fromAdmin?: boolean;       // true = reponse admin -> danseur
+  readAt?: FirestoreTimestamp;         // lu par l'admin (message danseur)
+  readByDancerAt?: FirestoreTimestamp; // lu par le danseur (reponse admin)
 }

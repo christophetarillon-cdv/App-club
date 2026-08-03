@@ -421,7 +421,10 @@ service cloud.firestore {
 
     match /privateMessages/{id} {
       allow read: if (isAuth() && resource.data.fromAccountId == request.auth.uid) || hasPagePermission('/admin/private-messages');
-      allow create: if isAuth() && request.auth.uid == request.resource.data.fromAccountId;
+      allow create: if isAuth() && (
+        request.auth.uid == request.resource.data.fromAccountId ||
+        hasPagePermission('/admin/private-messages')
+      );
       allow update, delete: if hasPagePermission('/admin/private-messages');
     }
 

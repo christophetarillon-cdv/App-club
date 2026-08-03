@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { collection, query, orderBy, onSnapshot, updateDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import type { PrivateMessage } from '@cdv/types';
@@ -16,13 +16,32 @@ function timeAgo(ts: any): string {
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
 }
 
+function fmtTime(ts: any): string {
+  if (!ts) return '';
+  const d = ts.toDate?.() ?? new Date(ts);
+  return d.toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+interface Conversation {
+  accountId: string;
+  dancerId: string;
+  dancerName: string;
+  messages: PrivateMessage[];
+  lastMessage: PrivateMessage;
+  unreadCount: number;
+}
+
 export default function AdminPrivateMessagesPage() {
   const [messages, setMessages] = useState<PrivateMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openAccountId, setOpenAccountId] = useState<string | null>(null);
+  const [reply, setReply] = useState('');
+  const [sending, setSending] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const unsub = onSnapshot(
-      query(collection(db, 'privateMessages'), orderBy('sentAt', 'desc')),
+      query(collection(db, 'privateMessages'), orderBy('sentAt', 'asc')),
       snap => {
         setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as PrivateMessage)));
         setLoading(false);
@@ -31,11 +50,101 @@ export default function AdminPrivateMessagesPage() {
     return unsub;
   }, []);
 
-  const markRead = async (id: string) => {
-    await updateDoc(doc(db, 'privateMessages', id), { readAt: serverTimestamp() });
+  const conversations = useMemo(() => {
+    const byAccount = new Map<string, PrivateMessage[]>();
+    for (const m of messages) {
+      const list = byAccount.get(m.fromAccountId) ?? [];
+      list.push(m);
+      byAccount.set(m.fromAccountId, list);
+    }
+    const convs: Conversation[] = [...byAccount.entries()].map(([accountId, msgs]) => ({
+      accountId,
+      dancerId: msgs[msgs.length - 1].fromDancerId,
+      dancerName: msgs[msgs.length - 1].fromDancerName,
+      messages: msgs,
+      lastMessage: msgs[msgs.length - 1],
+      unreadCount: msgs.filter(m => !m.fromAdmin && !m.readAt).length,
+    }));
+    return convs.sort((a, b) => {
+      const at = a.lastMessage.sentAt?.toMillis?.() ?? 0;
+      const bt = b.lastMessage.sentAt?.toMillis?.() ?? 0;
+      return bt - at;
+    });
+  }, [messages]);
+
+  const openConversation = conversations.find(c => c.accountId === openAccountId) ?? null;
+  const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
+
+  useEffect(() => {
+    if (!openConversation) return;
+    const unread = openConversation.messages.filter(m => !m.fromAdmin && !m.readAt);
+    unread.forEach(m => updateDoc(doc(db, 'privateMessages', m.id), { readAt: serverTimestamp() }));
+  }, [openConversation]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [openConversation?.messages.length]);
+
+  const handleReply = async () => {
+    if (!openConversation || !reply.trim() || sending) return;
+    setSending(true);
+    try {
+      await addDoc(collection(db, 'privateMessages'), {
+        fromAccountId: openConversation.accountId,
+        fromDancerId: openConversation.dancerId,
+        fromDancerName: openConversation.dancerName,
+        text: reply.trim(),
+        fromAdmin: true,
+        sentAt: serverTimestamp(),
+      });
+      setReply('');
+    } finally {
+      setSending(false);
+    }
   };
 
-  const unreadCount = messages.filter(m => !m.readAt).length;
+  if (openConversation) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <div className="max-w-2xl mx-auto w-full px-4 py-6 flex flex-col flex-1">
+          <div className="flex items-center gap-3 mb-4">
+            <button onClick={() => setOpenAccountId(null)} className="text-sm text-gray-400 hover:text-gray-700">← Conversations</button>
+            <h1 className="text-lg font-bold text-gray-900">{openConversation.dancerName}</h1>
+          </div>
+
+          <div className="flex-1 space-y-3 overflow-y-auto bg-white rounded-2xl border border-gray-200 shadow-sm px-4 py-4 mb-4">
+            {openConversation.messages.map(m => (
+              <div key={m.id} className={`flex ${m.fromAdmin ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${m.fromAdmin ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'}`}>
+                  <p className="text-sm whitespace-pre-line">{m.text}</p>
+                  <p className={`text-[10px] mt-1 ${m.fromAdmin ? 'text-blue-100' : 'text-gray-400'}`}>{fmtTime(m.sentAt)}</p>
+                </div>
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+
+          <div className="flex items-end gap-2">
+            <textarea
+              value={reply}
+              onChange={e => setReply(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); } }}
+              placeholder="Répondre…"
+              rows={2}
+              className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none"
+            />
+            <button
+              onClick={handleReply}
+              disabled={!reply.trim() || sending}
+              className="bg-blue-600 text-white font-semibold px-4 py-2.5 rounded-xl hover:bg-blue-700 disabled:opacity-50 text-sm shrink-0"
+            >
+              Envoyer
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -43,33 +152,38 @@ export default function AdminPrivateMessagesPage() {
         <div className="flex items-center gap-3 mb-6">
           <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-700">← Admin</Link>
           <h1 className="text-2xl font-bold text-gray-900">Messages privés</h1>
-          {unreadCount > 0 && (
-            <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unreadCount}</span>
+          {totalUnread > 0 && (
+            <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{totalUnread}</span>
           )}
         </div>
 
         {loading ? (
           <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>
-        ) : messages.length === 0 ? (
+        ) : conversations.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-12 text-center">
             <p className="text-gray-400">Aucun message privé.</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {messages.map(m => (
-              <div key={m.id} onClick={() => !m.readAt && markRead(m.id)}
-                className={`bg-white rounded-2xl border shadow-sm px-5 py-4 cursor-pointer transition-colors ${!m.readAt ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'}`}>
+            {conversations.map(c => (
+              <button key={c.accountId} onClick={() => setOpenAccountId(c.accountId)}
+                className={`w-full text-left bg-white rounded-2xl border shadow-sm px-5 py-4 transition-colors hover:border-blue-300 ${c.unreadCount > 0 ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      {!m.readAt && <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0" />}
-                      <span className="text-sm font-semibold text-gray-900">{m.fromDancerName}</span>
-                      <span className="text-xs text-gray-400">{timeAgo(m.sentAt)}</span>
+                      {c.unreadCount > 0 && <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0" />}
+                      <span className="text-sm font-semibold text-gray-900">{c.dancerName}</span>
+                      <span className="text-xs text-gray-400">{timeAgo(c.lastMessage.sentAt)}</span>
                     </div>
-                    <p className="text-sm text-gray-700 whitespace-pre-line">{m.text}</p>
+                    <p className="text-sm text-gray-700 truncate">
+                      {c.lastMessage.fromAdmin ? 'Vous : ' : ''}{c.lastMessage.text}
+                    </p>
                   </div>
+                  {c.unreadCount > 0 && (
+                    <span className="bg-blue-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shrink-0">{c.unreadCount}</span>
+                  )}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}

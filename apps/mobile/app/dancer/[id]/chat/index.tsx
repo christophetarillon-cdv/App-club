@@ -1,10 +1,10 @@
 import { useCallback, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, TextInput, Alert, ActivityIndicator,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
-  collection, getDocs, getDoc, query, where, orderBy, limit, doc, updateDoc, addDoc, serverTimestamp,
+  collection, getDocs, getDoc, query, where, orderBy, limit, doc, updateDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -43,17 +43,17 @@ export default function ChatListScreen() {
 
   const [rows, setRows] = useState<ChannelRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [adminOpen, setAdminOpen] = useState(false);
-  const [adminText, setAdminText] = useState('');
-  const [sendingAdmin, setSendingAdmin] = useState(false);
+  const [adminUnread, setAdminUnread] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedDancer || !user) return;
-    const [chSnap, membershipSnap, seasonSnap] = await Promise.all([
+    const [chSnap, membershipSnap, seasonSnap, adminMsgSnap] = await Promise.all([
       getDocs(query(collection(db, 'chatChannels'), where('isActive', '==', true), orderBy('createdAt', 'asc'))),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
       getDocs(collection(db, 'seasons')),
+      getDocs(query(collection(db, 'privateMessages'), where('fromAccountId', '==', user.uid), where('fromAdmin', '==', true))),
     ]);
+    setAdminUnread(adminMsgSnap.docs.some(d => !d.data().readByDancerAt));
 
     const isAdminOrInstructor = selectedDancer.roles.includes('admin') || selectedDancer.roles.includes('instructor');
     const paidIds = new Set(
@@ -91,22 +91,6 @@ export default function ChatListScreen() {
     if (!selectedDancer) return;
     const enabled = selectedDancer.notificationPreferences?.[notifKey(ch.id)] !== false;
     await updateDoc(doc(db, 'dancers', selectedDancer.id), { [`notificationPreferences.${notifKey(ch.id)}`]: !enabled });
-  };
-
-  const sendAdmin = async () => {
-    if (!user || !selectedDancer || !adminText.trim()) return;
-    setSendingAdmin(true);
-    try {
-      await addDoc(collection(db, 'privateMessages'), {
-        fromDancerId: selectedDancer.id,
-        fromDancerName: `${selectedDancer.firstName} ${selectedDancer.lastName}`,
-        fromAccountId: user.uid,
-        text: adminText.trim(),
-        sentAt: serverTimestamp(),
-      });
-      setAdminText(''); setAdminOpen(false);
-      Alert.alert('Envoyé', "Message transmis à l'administration.");
-    } finally { setSendingAdmin(false); }
   };
 
   const notifEnabled = (ch: ChatChannel) => selectedDancer?.notificationPreferences?.[notifKey(ch.id)] !== false;
@@ -164,29 +148,16 @@ export default function ChatListScreen() {
           </View>
         )}
 
-        <TouchableOpacity style={styles.adminBtn} onPress={() => setAdminOpen(true)} activeOpacity={0.8}>
-          <Svg width={17} height={17} viewBox="0 0 24 24" fill="none"><Path d="M3 8l9 6 9-6M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="#5A5A6A" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+        <TouchableOpacity style={styles.adminBtn} onPress={() => router.push(`/dancer/${id}/chat/admin` as any)} activeOpacity={0.8}>
+          <View>
+            <Svg width={17} height={17} viewBox="0 0 24 24" fill="none"><Path d="M3 8l9 6 9-6M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="#5A5A6A" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+            {adminUnread && <View style={styles.adminUnreadDot} />}
+          </View>
           <Text style={styles.adminBtnText}>Message à l'administration</Text>
         </TouchableOpacity>
       </ScrollView>
 
       <BottomTabBar dancerId={id} qrValue={id} active="chat" bottomInset={insets.bottom} />
-
-      <Modal visible={adminOpen} transparent animationType="fade" onRequestClose={() => setAdminOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Message à l'administration</Text>
-            <TextInput value={adminText} onChangeText={setAdminText} multiline placeholder="Votre message…"
-              placeholderTextColor={Colors.textLight} style={styles.modalInput} />
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setAdminOpen(false)}><Text style={styles.modalCancelText}>Annuler</Text></TouchableOpacity>
-              <TouchableOpacity style={[styles.modalSend, (!adminText.trim() || sendingAdmin) && { opacity: 0.5 }]} disabled={!adminText.trim() || sendingAdmin} onPress={sendAdmin}>
-                {sendingAdmin ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalSendText}>Envoyer</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -211,16 +182,7 @@ const styles = StyleSheet.create({
 
   adminBtn: { marginHorizontal: 16, marginTop: 14, borderWidth: 1, borderColor: 'rgba(0,0,0,0.1)', backgroundColor: '#fff', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   adminBtnText: { color: '#5A5A6A', fontSize: 14, fontWeight: '500' },
+  adminUnreadDot: { position: 'absolute', top: -3, right: -3, width: 9, height: 9, borderRadius: 5, backgroundColor: Colors.orange, borderWidth: 1.5, borderColor: '#fff' },
 
   empty: { textAlign: 'center', color: Colors.textSecondary, fontSize: 14, paddingVertical: 40 },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
-  modalBox: { backgroundColor: '#fff', borderRadius: 18, padding: 18 },
-  modalTitle: { fontSize: 15, fontWeight: '600', color: Colors.text, marginBottom: 12 },
-  modalInput: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, fontSize: 14, color: Colors.text, minHeight: 96, textAlignVertical: 'top' },
-  modalActions: { flexDirection: 'row', gap: 10, marginTop: 14 },
-  modalCancel: { flex: 1, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  modalCancelText: { color: Colors.textSecondary, fontWeight: '500' },
-  modalSend: { flex: 1, backgroundColor: '#2F86C0', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  modalSendText: { color: '#fff', fontWeight: '600' },
 });

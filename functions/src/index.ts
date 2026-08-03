@@ -1857,6 +1857,41 @@ export const onChatMessageCreated = onDocumentCreated(
   },
 );
 
+// ── onPrivateMessageCreated — notifie l'autre partie de la conversation ───────
+export const onPrivateMessageCreated = onDocumentCreated(
+  { document: 'privateMessages/{messageId}', region: 'europe-west3' },
+  async (event) => {
+    const msg = event.data?.data();
+    if (!msg) return;
+    const db = getDb();
+    const text: string = msg.text ?? '';
+    const dancerName: string = msg.fromDancerName ?? 'Un danseur';
+
+    let tokens: string[];
+    let title: string;
+    if (msg.fromAdmin === true) {
+      // Reponse admin -> danseur : notifie uniquement le compte concerne.
+      const accountSnap = await db.doc(`accounts/${msg.fromAccountId}`).get();
+      tokens = Array.isArray(accountSnap.data()?.fcmTokens) ? accountSnap.data()!.fcmTokens as string[] : [];
+      title = 'Réponse de l\'administration';
+    } else {
+      const staffAccountIds = await getStaffAccountIds(db);
+      if (staffAccountIds.length === 0) return;
+      const staffSnaps = await Promise.all(staffAccountIds.map(id => db.doc(`accounts/${id}`).get()));
+      tokens = staffSnaps.flatMap(s => (Array.isArray(s.data()?.fcmTokens) ? s.data()!.fcmTokens as string[] : []));
+      title = dancerName;
+    }
+    if (tokens.length === 0) return;
+
+    await sendPushToTokens(tokens, {
+      title,
+      body: text,
+      data: { type: 'private_message', accountId: msg.fromAccountId },
+      link: '/admin/private-messages',
+    });
+  },
+);
+
 // ── generateReceipt — logique partagée de génération de reçu PDF ─────────────
 async function generateReceipt(installmentId: string, data: admin.firestore.DocumentData) {
     const db = getDb();
