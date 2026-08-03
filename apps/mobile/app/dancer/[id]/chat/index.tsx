@@ -1,10 +1,10 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
-  collection, getDocs, getDoc, query, where, orderBy, limit, doc, updateDoc,
+  collection, getDocs, getDoc, query, where, orderBy, limit, doc, updateDoc, onSnapshot,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -45,15 +45,29 @@ export default function ChatListScreen() {
   const [loading, setLoading] = useState(true);
   const [adminUnread, setAdminUnread] = useState(false);
 
+  // En direct (pas juste au focus) pour que la pastille se mette a jour des
+  // que le danseur a lu la reponse, meme s'il revient tres vite de l'ecran
+  // de conversation. Scope par danseur : chacun a sa propre conversation.
+  useEffect(() => {
+    if (!selectedDancer) return;
+    const q = query(
+      collection(db, 'privateMessages'),
+      where('fromDancerId', '==', selectedDancer.id),
+      where('fromAdmin', '==', true),
+    );
+    const unsub = onSnapshot(q, snap => {
+      setAdminUnread(snap.docs.some(d => !d.data().readByDancerAt));
+    });
+    return unsub;
+  }, [selectedDancer?.id]);
+
   const load = useCallback(async () => {
     if (!selectedDancer || !user) return;
-    const [chSnap, membershipSnap, seasonSnap, adminMsgSnap] = await Promise.all([
+    const [chSnap, membershipSnap, seasonSnap] = await Promise.all([
       getDocs(query(collection(db, 'chatChannels'), where('isActive', '==', true), orderBy('createdAt', 'asc'))),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
       getDocs(collection(db, 'seasons')),
-      getDocs(query(collection(db, 'privateMessages'), where('fromAccountId', '==', user.uid), where('fromAdmin', '==', true))),
     ]);
-    setAdminUnread(adminMsgSnap.docs.some(d => !d.data().readByDancerAt));
 
     const isAdminOrInstructor = selectedDancer.roles.includes('admin') || selectedDancer.roles.includes('instructor');
     const paidIds = new Set(

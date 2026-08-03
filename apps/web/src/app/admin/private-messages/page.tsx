@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { collection, query, orderBy, onSnapshot, updateDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, updateDoc, doc, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import type { PrivateMessage } from '@cdv/types';
@@ -34,7 +34,7 @@ interface Conversation {
 export default function AdminPrivateMessagesPage() {
   const [messages, setMessages] = useState<PrivateMessage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [openAccountId, setOpenAccountId] = useState<string | null>(null);
+  const [openDancerId, setOpenDancerId] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -50,16 +50,18 @@ export default function AdminPrivateMessagesPage() {
     return unsub;
   }, []);
 
+  // Regroupe par danseur (pas par compte) : sur un compte famille avec
+  // plusieurs danseurs, chacun a sa propre conversation avec l'admin.
   const conversations = useMemo(() => {
-    const byAccount = new Map<string, PrivateMessage[]>();
+    const byDancer = new Map<string, PrivateMessage[]>();
     for (const m of messages) {
-      const list = byAccount.get(m.fromAccountId) ?? [];
+      const list = byDancer.get(m.fromDancerId) ?? [];
       list.push(m);
-      byAccount.set(m.fromAccountId, list);
+      byDancer.set(m.fromDancerId, list);
     }
-    const convs: Conversation[] = [...byAccount.entries()].map(([accountId, msgs]) => ({
-      accountId,
-      dancerId: msgs[msgs.length - 1].fromDancerId,
+    const convs: Conversation[] = [...byDancer.entries()].map(([dancerId, msgs]) => ({
+      dancerId,
+      accountId: msgs[msgs.length - 1].fromAccountId,
       dancerName: msgs[msgs.length - 1].fromDancerName,
       messages: msgs,
       lastMessage: msgs[msgs.length - 1],
@@ -72,7 +74,7 @@ export default function AdminPrivateMessagesPage() {
     });
   }, [messages]);
 
-  const openConversation = conversations.find(c => c.accountId === openAccountId) ?? null;
+  const openConversation = conversations.find(c => c.dancerId === openDancerId) ?? null;
   const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
 
   useEffect(() => {
@@ -95,7 +97,9 @@ export default function AdminPrivateMessagesPage() {
         fromDancerName: openConversation.dancerName,
         text: reply.trim(),
         fromAdmin: true,
-        sentAt: serverTimestamp(),
+        // Timestamp client : evite le placeholder null pendant l'ecriture
+        // optimiste, qui retardait l'apparition du message dans le fil.
+        sentAt: Timestamp.now(),
       });
       setReply('');
     } finally {
@@ -108,7 +112,7 @@ export default function AdminPrivateMessagesPage() {
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <div className="max-w-2xl mx-auto w-full px-4 py-6 flex flex-col flex-1">
           <div className="flex items-center gap-3 mb-4">
-            <button onClick={() => setOpenAccountId(null)} className="text-sm text-gray-400 hover:text-gray-700">← Conversations</button>
+            <button onClick={() => setOpenDancerId(null)} className="text-sm text-gray-400 hover:text-gray-700">← Conversations</button>
             <h1 className="text-lg font-bold text-gray-900">{openConversation.dancerName}</h1>
           </div>
 
@@ -166,7 +170,7 @@ export default function AdminPrivateMessagesPage() {
         ) : (
           <div className="space-y-3">
             {conversations.map(c => (
-              <button key={c.accountId} onClick={() => setOpenAccountId(c.accountId)}
+              <button key={c.dancerId} onClick={() => setOpenDancerId(c.dancerId)}
                 className={`w-full text-left bg-white rounded-2xl border shadow-sm px-5 py-4 transition-colors hover:border-blue-300 ${c.unreadCount > 0 ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">

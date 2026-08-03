@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
-  collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, doc, serverTimestamp,
+  collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,23 +38,25 @@ export default function AdminConversationScreen() {
   const bottomRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    if (!user) return;
+    // Scope par danseur (pas juste par compte) : sur un compte famille avec
+    // plusieurs danseurs, chacun ne doit voir que sa propre conversation.
+    if (!user || !selectedDancer) return;
     const q = query(
       collection(db, 'privateMessages'),
-      where('fromAccountId', '==', user.uid),
+      where('fromDancerId', '==', selectedDancer.id),
       orderBy('sentAt', 'asc'),
     );
     const unsub = onSnapshot(q, snap => {
       setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as PrivateMessage)));
     });
     return unsub;
-  }, [user?.uid]);
+  }, [user?.uid, selectedDancer?.id]);
 
   // Marque comme lues les reponses admin non encore vues par le danseur.
   useEffect(() => {
-    messages
-      .filter(m => m.fromAdmin && !m.readByDancerAt)
-      .forEach(m => updateDoc(doc(db, 'privateMessages', m.id), { readByDancerAt: serverTimestamp() }));
+    const unread = messages.filter(m => m.fromAdmin && !m.readByDancerAt);
+    if (unread.length === 0) return;
+    Promise.all(unread.map(m => updateDoc(doc(db, 'privateMessages', m.id), { readByDancerAt: serverTimestamp() })));
   }, [messages]);
 
   const send = async () => {
@@ -66,7 +68,10 @@ export default function AdminConversationScreen() {
         fromDancerName: `${selectedDancer.firstName} ${selectedDancer.lastName}`,
         fromAccountId: user.uid,
         text: text.trim(),
-        sentAt: serverTimestamp(),
+        // Timestamp client (pas serverTimestamp) : evite le placeholder null
+        // pendant l'ecriture optimiste, qui retardait l'affichage du message
+        // dans la liste triee par sentAt.
+        sentAt: Timestamp.now(),
       });
       setText('');
     } finally {
@@ -98,7 +103,7 @@ export default function AdminConversationScreen() {
             Envoyez un message à l'administration du club, vous recevrez sa réponse ici.
           </Text>
         ) : messages.map(m => (
-          <View key={m.id} style={[styles.msgRow, !m.fromAdmin && { alignItems: 'flex-end' }]}>
+          <View key={m.id} style={[styles.msgRow, { alignItems: m.fromAdmin ? 'flex-start' : 'flex-end' }]}>
             <Text style={[styles.msgMeta, !m.fromAdmin && { textAlign: 'right' }]}>
               {m.fromAdmin ? 'Administration' : 'Moi'} · {timeAgo(m.sentAt)}
             </Text>
@@ -141,12 +146,12 @@ const styles = StyleSheet.create({
 
   empty: { textAlign: 'center', color: Colors.textSecondary, fontSize: 14, paddingVertical: 40, paddingHorizontal: 16 },
 
-  msgRow: { marginBottom: 12 },
+  msgRow: { marginBottom: 12, width: '100%' },
   msgMeta: { fontSize: 11, color: Colors.textSecondary, marginBottom: 3 },
-  bubble: { borderRadius: 14, padding: 10, maxWidth: '80%', alignSelf: 'flex-start' },
-  bubbleMine: { backgroundColor: '#2F86C0', borderTopRightRadius: 4, alignSelf: 'flex-end' },
+  bubble: { borderRadius: 14, padding: 10, maxWidth: '80%', flexShrink: 1 },
+  bubbleMine: { backgroundColor: '#2F86C0', borderTopRightRadius: 4 },
   bubbleOther: { backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', borderTopLeftRadius: 4 },
-  msgText: { fontSize: 14, color: Colors.text },
+  msgText: { fontSize: 14, color: Colors.text, flexShrink: 1 },
 
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 12, paddingTop: 8, backgroundColor: Colors.background, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.06)' },
   input: { flex: 1, minHeight: 42, maxHeight: 120, borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 21, backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 11, fontSize: 14, color: Colors.text },
