@@ -583,6 +583,11 @@ export default function MembershipPage() {
           paymentPlanStatus: 'pending',
           installmentIds: [],
           status: 'pending',
+          // Identité figée au moment du paiement : une pièce comptable doit
+          // rester lisible même après anonymisation du compte ou de la fiche.
+          payerEmail: user.email ?? '',
+          payerName: account?.displayName ?? '',
+          dancerName: `${dancer.firstName} ${dancer.lastName}`,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -614,6 +619,10 @@ export default function MembershipPage() {
             installmentIds: [],
             status: 'pending',
             paymentGroupId: groupRef.id,
+            // Identité figée — voir le commentaire de la branche mono-danseur.
+            payerEmail: user.email ?? '',
+            payerName: account?.displayName ?? '',
+            dancerName: `${dancer.firstName} ${dancer.lastName}`,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });

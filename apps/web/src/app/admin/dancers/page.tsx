@@ -1,10 +1,30 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import {
+  collection, getDocs, query, where, orderBy,
+  doc, getDoc, updateDoc, writeBatch, arrayRemove, serverTimestamp,
+} from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
+
+interface RemovalRequest {
+  id: string;
+  dancerId: string;
+  dancerName: string;
+  accountId: string;
+  accountEmail: string;
+  status?: string;
+  reason?: string;
+  reviewedAt?: { seconds: number };
+}
+
+const REMOVAL_STATUS_LABEL: Record<string, string> = {
+  approved: 'Retrait validé',
+  rejected: 'Refusé',
+  'auto-approved': 'Compte supprimé par l’adhérent',
+};
 
 interface Season { id: string; label: string; startDate: string; isActive: boolean; }
 interface Account { id: string; dancerIds: string[]; }
@@ -25,6 +45,7 @@ interface DancerRow {
   photoUrl?: string;
   roles: string[];
   isActive: boolean;
+  isDeleted: boolean;
   info?: MembershipInfo;
 }
 
@@ -44,6 +65,12 @@ const METHOD_LABEL: Record<string, string> = {
 export default function AdminDancersPage() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState('');
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [removalRequests, setRemovalRequests] = useState<RemovalRequest[]>([]);
+  const [removalHistory, setRemovalHistory] = useState<RemovalRequest[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState('');
   const [rows, setRows] = useState<DancerRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -139,6 +166,7 @@ export default function AdminDancersPage() {
         photoUrl: d.data().photoUrl,
         roles: d.data().roles ?? [],
         isActive: d.data().isActive !== false,
+        isDeleted: d.data().isDeleted === true,
         info: infoByDancer.get(d.id),
       }));
       dancers.sort((a, b) =>
@@ -149,7 +177,12 @@ export default function AdminDancersPage() {
     }).finally(() => setLoading(false));
   }, [selectedSeasonId]);
 
+  const deletedCount = rows.filter(r => r.isDeleted).length;
+
   const filtered = rows
+    // Les fiches supprimées (anonymisées) sont conservées pour la comptabilité
+    // mais polluent la liste courante : masquées par défaut.
+    .filter(r => showDeleted || !r.isDeleted)
     .filter(r => {
       if (search.trim().length < 1) return true;
       const q = search.toLowerCase();
@@ -157,6 +190,86 @@ export default function AdminDancersPage() {
     })
     .filter(r => !selectedRole || r.roles.includes(selectedRole))
     .filter(r => !selectedStatus || (selectedStatus === 'none' ? !r.info : r.info?.status === selectedStatus));
+
+  // Demandes de retrait deposees depuis l'app mobile. Le titulaire ne detache
+  // pas lui-meme : le detachement n'a lieu qu'ici, a la validation.
+  const loadRemovalRequests = async () => {
+    // Une seule lecture pour les deux usages : le bandeau à valider (pending)
+    // et l'historique des départs (tout le reste, y compris les suppressions
+    // de compte journalisées par la Cloud Function en 'auto-approved').
+    const snap = await getDocs(collection(db, 'dancerRemovalRequests'));
+    const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as RemovalRequest));
+    setRemovalRequests(all.filter(r => r.status === 'pending'));
+    setRemovalHistory(
+      all
+        .filter(r => r.status && r.status !== 'pending')
+        .sort((a, b) => (b.reviewedAt?.seconds ?? 0) - (a.reviewedAt?.seconds ?? 0)),
+    );
+  };
+
+  useEffect(() => {
+    loadRemovalRequests().catch(e => console.error('removal requests load failed', e));
+  }, []);
+
+  const handleApproveRemoval = async (req: RemovalRequest) => {
+    if (processingRequestId) return;
+    // Relecture du compte au moment de la validation : la composition a pu
+    // changer depuis le dépôt de la demande (danseur ajouté ou déjà retiré).
+    const accSnap = await getDoc(doc(db, 'accounts', req.accountId));
+    const accDancerIds: string[] = accSnap.data()?.dancerIds ?? [];
+    if (accDancerIds.length <= 1) {
+      setRequestError(`${req.dancerName} est le seul danseur du compte ${req.accountEmail} : le compte n'aurait plus aucun danseur.`);
+      return;
+    }
+    if (!confirm(
+      `Valider le retrait de ${req.dancerName} du compte ${req.accountEmail} ?\n\n` +
+      `La fiche et tout l'historique sont conservés, seul le rattachement au compte est défait.`
+    )) return;
+
+    setProcessingRequestId(req.id);
+    setRequestError('');
+    try {
+      // writeBatch : les trois documents doivent bouger ensemble, sinon le
+      // compte resterait incohérent (rattachement à moitié défait).
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'accounts', req.accountId), { dancerIds: arrayRemove(req.dancerId) });
+      batch.update(doc(db, 'dancers', req.dancerId), {
+        accountId: '',
+        detachedAt: serverTimestamp(),
+        detachedFromAccountId: req.accountId,
+      });
+      batch.update(doc(db, 'dancerRemovalRequests', req.id), {
+        status: 'approved',
+        reviewedAt: serverTimestamp(),
+      });
+      await batch.commit();
+      await loadRemovalRequests();
+    } catch (error) {
+      console.error('approve removal failed', error);
+      setRequestError('La validation a échoué. Vérifiez votre connexion et réessayez.');
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
+  const handleRejectRemoval = async (req: RemovalRequest) => {
+    if (processingRequestId) return;
+    if (!confirm(`Refuser la demande de retrait de ${req.dancerName} ?`)) return;
+    setProcessingRequestId(req.id);
+    setRequestError('');
+    try {
+      await updateDoc(doc(db, 'dancerRemovalRequests', req.id), {
+        status: 'rejected',
+        reviewedAt: serverTimestamp(),
+      });
+      await loadRemovalRequests();
+    } catch (error) {
+      console.error('reject removal failed', error);
+      setRequestError('Le refus a échoué. Vérifiez votre connexion et réessayez.');
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
 
   const handleExport = () => {
     const seasonLabel = seasons.find(s => s.id === selectedSeasonId)?.label ?? selectedSeasonId;
@@ -199,6 +312,45 @@ export default function AdminDancersPage() {
         </button>
       </div>
 
+      {removalRequests.length > 0 && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-amber-900 mb-1">
+            Demandes de retrait à valider ({removalRequests.length})
+          </h2>
+          <p className="text-xs text-amber-800 mb-3">
+            Déposées depuis l&apos;application. Le danseur reste rattaché tant que la demande n&apos;est pas validée ;
+            son historique est conservé dans tous les cas.
+          </p>
+          <div className="space-y-2">
+            {removalRequests.map(req => (
+              <div key={req.id} className="flex items-center justify-between gap-3 bg-white rounded-lg border border-amber-200 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{req.dancerName}</p>
+                  <p className="text-xs text-gray-500 truncate">{req.accountEmail}</p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    onClick={() => handleRejectRemoval(req)}
+                    disabled={processingRequestId === req.id}
+                    className="text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                  >
+                    Refuser
+                  </button>
+                  <button
+                    onClick={() => handleApproveRemoval(req)}
+                    disabled={processingRequestId === req.id}
+                    className="text-sm font-medium bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {processingRequestId === req.id ? 'Traitement…' : 'Valider le retrait'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {requestError && <p className="mt-3 text-sm text-red-600" role="alert">{requestError}</p>}
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row gap-3 mb-3">
         <select
           value={selectedSeasonId}
@@ -237,6 +389,51 @@ export default function AdminDancersPage() {
         </select>
       </div>
 
+      {removalHistory.length > 0 && (
+        <div className="mb-3">
+          <button
+            onClick={() => setShowHistory(v => !v)}
+            className="text-sm text-gray-500 hover:text-gray-700"
+          >
+            {showHistory ? '▾' : '▸'} Historique des départs ({removalHistory.length})
+          </button>
+          {showHistory && (
+            <div className="mt-2 bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100">
+              {removalHistory.map(h => (
+                <div key={h.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm text-gray-900 truncate">{h.dancerName}</p>
+                    <p className="text-xs text-gray-500 truncate">{h.accountEmail}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-medium text-gray-600">
+                      {REMOVAL_STATUS_LABEL[h.status ?? ''] ?? h.status}
+                    </p>
+                    {h.reviewedAt && (
+                      <p className="text-xs text-gray-400">
+                        {new Date(h.reviewedAt.seconds * 1000).toLocaleDateString('fr-FR')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {deletedCount > 0 && (
+        <label className="flex items-center gap-2 mb-3 text-sm text-gray-500 cursor-pointer w-fit">
+          <input
+            type="checkbox"
+            checked={showDeleted}
+            onChange={e => setShowDeleted(e.target.checked)}
+            className="w-4 h-4 rounded"
+          />
+          Afficher les fiches supprimées ({deletedCount})
+        </label>
+      )}
+
       {loading ? (
         <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>
       ) : (
@@ -257,7 +454,7 @@ export default function AdminDancersPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.map(row => (
-                <tr key={row.id} className="hover:bg-gray-50/50">
+                <tr key={row.id} className={`hover:bg-gray-50/50 ${row.isDeleted ? 'opacity-50' : ''}`}>
                   <td className="px-3 py-2">
                     {row.photoUrl ? (
                       <img src={row.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
@@ -267,7 +464,12 @@ export default function AdminDancersPage() {
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-3 font-medium text-gray-900 whitespace-nowrap">{row.lastName}</td>
+                  <td className="px-3 py-3 font-medium text-gray-900 whitespace-nowrap">
+                    {row.lastName}
+                    {row.isDeleted && (
+                      <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded font-medium">Supprimé</span>
+                    )}
+                  </td>
                   <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{row.firstName}</td>
                   <td className="px-3 py-3 text-gray-600 hidden sm:table-cell max-w-[160px]">
                     {row.info ? (

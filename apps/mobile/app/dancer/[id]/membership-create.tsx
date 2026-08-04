@@ -503,6 +503,11 @@ export default function MembershipCreateScreen() {
           paymentPlanStatus: 'pending',
           installmentIds: [],
           status: 'pending',
+          // Identite figee au moment du paiement : une piece comptable doit
+          // rester lisible meme apres anonymisation du compte ou de la fiche.
+          payerEmail: user.email ?? '',
+          payerName: account?.displayName ?? '',
+          dancerName: `${dancer.firstName} ${dancer.lastName}`,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -529,6 +534,10 @@ export default function MembershipCreateScreen() {
             installmentIds: [],
             status: 'pending',
             paymentGroupId: groupRef.id,
+            // Identite figee — voir le commentaire de la branche solo.
+            payerEmail: user.email ?? '',
+            payerName: account?.displayName ?? '',
+            dancerName: `${dancer.firstName} ${dancer.lastName}`,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });

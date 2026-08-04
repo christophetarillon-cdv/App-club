@@ -398,6 +398,8 @@ export default function InfosScreen() {
   const [newFirstName, setNewFirstName]   = useState('');
   const [newLastName, setNewLastName]     = useState('');
   const [addingDancer, setAddingDancer]   = useState(false);
+  const [removingDancerId, setRemovingDancerId] = useState<string | null>(null);
+  const [pendingRemovalIds, setPendingRemovalIds] = useState<string[]>([]);
 
   // ── Mot de passe
   const [showPassword, setShowPassword] = useState(false);
@@ -448,6 +450,19 @@ export default function InfosScreen() {
     setMarketingConsent(account.marketingConsent ?? false);
     setImageRightsConsent(account.imageRightsConsent ?? false);
   }, [account?.uid]);
+
+  // Demandes de retrait deja en attente : evite d'en deposer deux pour le meme
+  // danseur et permet d'afficher l'etat a l'utilisateur.
+  useEffect(() => {
+    if (!user) return;
+    getDocs(query(
+      collection(db, 'dancerRemovalRequests'),
+      where('accountId', '==', user.uid),
+      where('status', '==', 'pending'),
+    ))
+      .then(snap => setPendingRemovalIds(snap.docs.map(d => d.data().dancerId as string)))
+      .catch(error => console.error('pending removal requests load failed', error));
+  }, [user?.uid]);
 
   // ── Chargement champs custom ──────────────────────────────────────────────
 
@@ -517,30 +532,54 @@ export default function InfosScreen() {
 
   // ── Photo ─────────────────────────────────────────────────────────────────
 
-  const handlePickPhoto = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  // Alert natif plutot qu'un Modal RN : un Modal dans la chaine UIKit empeche
+  // ImagePicker de s'ouvrir sur iOS.
+  const handlePickPhoto = () => {
+    Alert.alert('Photo de profil', undefined, [
+      { text: 'Prendre une photo', onPress: () => pickPhotoFrom('camera') },
+      { text: 'Choisir dans la galerie', onPress: () => pickPhotoFrom('library') },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
+
+  const pickPhotoFrom = async (source: 'camera' | 'library') => {
+    const perm = source === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission requise', "Autorisez l'accès à la photothèque dans les réglages.");
+      Alert.alert(
+        'Permission requise',
+        source === 'camera'
+          ? "Autorisez l'accès à l'appareil photo dans les réglages."
+          : "Autorisez l'accès à la photothèque dans les réglages.",
+      );
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
+    const options: ImagePicker.ImagePickerOptions = {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
-    });
+    };
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync(options)
+      : await ImagePicker.launchImageLibraryAsync(options);
     if (result.canceled || !result.assets[0]) return;
     const uri = result.assets[0].uri;
     setUploadingPhoto(true);
     try {
       const res = await fetch(uri);
       const blob = await res.blob();
-      const storageRef = ref(storage, `dancers/${selectedDancer!.id}/photo.jpg`);
+      // profile-photos/ et pas dancers/ : c'est le chemin autorise par
+      // storage.rules (et celui qu'utilise deja le site web). Sous dancers/,
+      // aucune regle ne correspondait et l'envoi etait refuse.
+      const storageRef = ref(storage, `profile-photos/${selectedDancer!.id}/photo.jpg`);
       await uploadBytes(storageRef, blob);
       const url = await getDownloadURL(storageRef);
       await updateDoc(doc(db, 'dancers', selectedDancer!.id), { photoUrl: url, updatedAt: serverTimestamp() });
       setPhotoUrl(url);
-    } catch {
+    } catch (error) {
+      console.error('photo upload failed', error);
       Alert.alert('Erreur', "Impossible d'enregistrer la photo.");
     } finally {
       setUploadingPhoto(false);
@@ -675,6 +714,53 @@ export default function InfosScreen() {
     } finally {
       setAddingDancer(false);
     }
+  };
+
+  // Le titulaire ne detache pas lui-meme un danseur : il depose une demande
+  // que l'administration valide. Rien n'est modifie sur le compte ni sur la
+  // fiche tant que la demande n'est pas approuvee.
+  const handleRequestRemoval = (dancerId: string, name: string) => {
+    if (dancers.length <= 1) {
+      Alert.alert(
+        'Impossible',
+        "C'est le seul danseur du compte. Un compte doit conserver au moins un danseur.",
+      );
+      return;
+    }
+    Alert.alert(
+      'Demander le retrait',
+      `Demander le retrait de ${name} de ce compte ?\n\nLa demande est transmise à l'administration du club, qui la validera. ${name} reste visible tant que la demande n'est pas acceptée. Son historique est conservé dans tous les cas.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Envoyer la demande',
+          onPress: async () => {
+            if (!user) return;
+            setRemovingDancerId(dancerId);
+            try {
+              await addDoc(collection(db, 'dancerRemovalRequests'), {
+                dancerId,
+                dancerName: name,
+                accountId: user.uid,
+                accountEmail: account?.email ?? '',
+                status: 'pending',
+                requestedAt: serverTimestamp(),
+              });
+              setPendingRemovalIds(prev => [...prev, dancerId]);
+              Alert.alert(
+                'Demande envoyée',
+                "L'administration du club a été prévenue. Vous serez informé une fois la demande traitée.",
+              );
+            } catch (error) {
+              console.error('removal request failed', error);
+              Alert.alert('Erreur', "Impossible d'envoyer la demande.");
+            } finally {
+              setRemovingDancerId(null);
+            }
+          },
+        },
+      ],
+    );
   };
 
   // ── Mot de passe ──────────────────────────────────────────────────────────
@@ -1004,6 +1090,43 @@ export default function InfosScreen() {
             </View>
           ))}
 
+          {dancers.length > 1 && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.cardBody}>
+                <Text style={styles.dancersListLabel}>Danseurs de ce compte</Text>
+                {dancers.map(d => {
+                  const pending = pendingRemovalIds.includes(d.id);
+                  return (
+                    <View key={d.id} style={styles.dancerRow}>
+                      <Text style={styles.dancerRowName} numberOfLines={1}>
+                        {d.firstName} {d.lastName}
+                      </Text>
+                      {pending ? (
+                        <Text style={styles.dancerRowPending}>Retrait demandé</Text>
+                      ) : (
+                        <TouchableOpacity
+                          onPress={() => handleRequestRemoval(d.id, `${d.firstName} ${d.lastName}`)}
+                          disabled={removingDancerId === d.id}
+                          hitSlop={8}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.dancerRowRemove}>
+                            {removingDancerId === d.id ? 'Envoi…' : 'Demander le retrait'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
+                <Text style={styles.dancersListHint}>
+                  Le retrait d&apos;un danseur est validé par l&apos;administration du club.
+                  Son historique est conservé dans tous les cas.
+                </Text>
+              </View>
+            </>
+          )}
+
           <View style={styles.divider} />
 
           <TouchableOpacity
@@ -1257,6 +1380,16 @@ const styles = StyleSheet.create({
   // Toggle rows
   toggleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },
   toggleLabel: { flex: 1, fontSize: 14, color: Colors.text },
+
+  dancersListLabel: { fontSize: 12, color: Colors.textSecondary, marginBottom: 8 },
+  dancerRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: 12, paddingVertical: 8,
+  },
+  dancerRowName: { flex: 1, fontSize: 14, color: Colors.text },
+  dancerRowRemove: { fontSize: 14, color: '#C0392B', fontWeight: '500' },
+  dancerRowPending: { fontSize: 13, color: Colors.textSecondary, fontStyle: 'italic' },
+  dancersListHint: { fontSize: 12, color: Colors.textLight, marginTop: 4, lineHeight: 17 },
 
   // Danseurs
   dancerListRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingHorizontal: 14 },

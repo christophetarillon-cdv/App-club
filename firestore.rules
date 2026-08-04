@@ -211,6 +211,33 @@ service cloud.firestore {
       ) || isAdmin();
     }
 
+    // ── archive comptable des identités supprimées ────────────────────────────
+    // Écrite par la Cloud Function au moment d'une suppression de compte, pour
+    // qu'un paiement reste rattachable à une personne après anonymisation.
+    // Contient des données personnelles : lecture réservée à l'administration,
+    // écriture interdite depuis le client (Cloud Function uniquement, qui passe
+    // outre les règles). Conservation bornée par le champ purgeAfter (10 ans).
+    match /accountingIdentities/{id} {
+      allow read: if hasPagePermission('/admin/payments');
+      allow write: if false;
+    }
+
+    // ── demandes de retrait d'un danseur ──────────────────────────────────────
+    // Le titulaire ne detache pas lui-meme un danseur : il depose une demande,
+    // que l'administration valide ou refuse. Le detachement effectif n'a lieu
+    // qu'a la validation, cote admin.
+    match /dancerRemovalRequests/{id} {
+      allow read: if (isAuth() && resource.data.accountId == request.auth.uid)
+        || hasPagePermission('/admin/dancers');
+      // Le titulaire ne peut deposer une demande que pour SON compte, et
+      // uniquement a l'etat "pending" (pas d'auto-validation).
+      allow create: if isAuth()
+        && request.resource.data.accountId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      // Seule l'administration statue sur une demande.
+      allow update, delete: if hasPagePermission('/admin/dancers');
+    }
+
     // ── seasons ────────────────────────────────────────────────────────────────
     match /seasons/{id} {
       allow read: if true;

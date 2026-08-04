@@ -16,6 +16,13 @@ export interface Membership extends WithTimestamps {
   paymentPlanStatus: PaymentPlanStatus;
   installmentIds: string[];
   status: MembershipStatus;
+  // Identité figée à la création — une pièce comptable doit rester lisible
+  // après anonymisation du compte ou de la fiche danseur. Optionnels car
+  // absents des cotisations créées avant la mise en place (pas de migration
+  // des données historiques : celles-ci sont couvertes par accountingIdentities).
+  payerEmail?: string;
+  payerName?: string;
+  dancerName?: string;
   paidAt?: FirestoreTimestamp;
   // Annulation en cours de saison
   cancelledAt?: FirestoreTimestamp;

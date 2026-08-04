@@ -35,8 +35,13 @@ service firebase.storage {
       allow write: if isAdmin();
     }
 
+    // Reçus et attestations. La lecture était réservée au propriétaire : ni
+    // l'administration ne pouvait consulter une pièce comptable, ni personne
+    // après la suppression du compte. L'admin y a désormais accès — c'est la
+    // pièce justificative d'un paiement, elle doit rester consultable pendant
+    // toute la durée de conservation légale.
     match /documents/{userId}/{allPaths=**} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      allow read: if (request.auth != null && request.auth.uid == userId) || isAdmin();
       allow write: if isAdmin();
     }
 

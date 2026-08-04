@@ -1379,6 +1379,31 @@ export const deleteDancerAccount = onCall(
       throw new HttpsError('permission-denied', 'Danseur invalide');
     }
 
+    // ── Archive comptable (option C) ────────────────────────────────────────
+    // Les pièces financières (memberships, paymentInstallments, payments) ne
+    // stockent qu'un userId : sans cette archive, l'anonymisation rendrait un
+    // paiement impossible à rattacher à une personne. On fige donc l'identité
+    // AVANT d'anonymiser, dans une collection réservée aux admins financiers,
+    // avec une durée de conservation bornée (obligation comptable : 10 ans).
+    const dancerData = dancerSnap.data() ?? {};
+    const accountSnapBefore = await db.doc(`accounts/${uid}`).get();
+    const accountDataBefore = accountSnapBefore.data() ?? {};
+    const purgeAfter = new Date();
+    purgeAfter.setFullYear(purgeAfter.getFullYear() + 10);
+
+    await db.collection('accountingIdentities').add({
+      accountId: uid,
+      dancerId,
+      memberNumber: dancerData.memberNumber ?? null,
+      firstName: dancerData.firstName ?? null,
+      lastName: dancerData.lastName ?? null,
+      email: accountDataBefore.email ?? null,
+      displayName: accountDataBefore.displayName ?? null,
+      reason: 'account_deletion',
+      archivedAt: admin.firestore.FieldValue.serverTimestamp(),
+      purgeAfter: admin.firestore.Timestamp.fromDate(purgeAfter),
+    });
+
     // Anonymisation : les données personnelles sont effacées, mais le doc
     // danseur est conservé (memberNumber, id) car des paiements/adhésions
     // peuvent y faire référence pour les obligations comptables.
@@ -1407,11 +1432,20 @@ export const deleteDancerAccount = onCall(
       deletedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    // profile-photos/ et pas dancers/ : c'est le chemin reellement utilise
+    // (storage.rules n'autorise que celui-la). L'ancien chemin ne correspondait
+    // a rien, et la photo d'une personne supprimee restait donc en ligne.
     try {
-      await admin.storage().bucket().file(`dancers/${dancerId}/photo.jpg`).delete();
+      await admin.storage().bucket().file(`profile-photos/${dancerId}/photo.jpg`).delete();
     } catch {
       // pas de photo, ou déjà absente
     }
+
+    // Le tableau dancerIds du compte doit perdre le danseur supprime, sinon il
+    // fausse les comptages (dont le garde-fou "au moins un danseur").
+    await db.doc(`accounts/${uid}`).update({
+      dancerIds: admin.firestore.FieldValue.arrayRemove(dancerId),
+    });
 
     // Si c'était le dernier danseur actif du compte, on supprime aussi le
     // compte (login) — sinon le compte reste pour les autres danseurs.
@@ -1422,8 +1456,18 @@ export const deleteDancerAccount = onCall(
 
     let accountDeleted = false;
     if (!stillHasActiveDancer) {
+      // L'identite est desormais figee dans accountingIdentities : le compte
+      // peut donc etre reellement anonymise. Avant, l'e-mail restait en base
+      // indefiniment alors que la fiche danseur, elle, etait anonymisee.
       await db.doc(`accounts/${uid}`).set(
-        { isDeleted: true, deletedAt: admin.firestore.FieldValue.serverTimestamp() },
+        {
+          isDeleted: true,
+          deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+          email: admin.firestore.FieldValue.delete(),
+          displayName: 'Utilisateur supprimé',
+          phone: admin.firestore.FieldValue.delete(),
+          fcmTokens: admin.firestore.FieldValue.delete(),
+        },
         { merge: true },
       );
       try {
@@ -1433,6 +1477,24 @@ export const deleteDancerAccount = onCall(
       }
       accountDeleted = true;
     }
+
+    // Journalisation du depart dans la meme collection que les demandes de
+    // retrait, pour que l'administration dispose d'un historique unique de
+    // tous les departs. Statut 'auto-approved' : une suppression de compte
+    // n'est jamais soumise a validation (Apple 5.1.1(v) / RGPD), elle est
+    // seulement tracee. Le bandeau admin ne liste que les 'pending', ces
+    // entrees n'y apparaissent donc pas.
+    await db.collection('dancerRemovalRequests').add({
+      dancerId,
+      dancerName: `${dancerData.firstName ?? ''} ${dancerData.lastName ?? ''}`.trim() || 'Danseur',
+      accountId: uid,
+      accountEmail: accountDataBefore.email ?? '',
+      status: 'auto-approved',
+      reason: 'account_deletion',
+      accountDeleted,
+      requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
     return { accountDeleted };
   },

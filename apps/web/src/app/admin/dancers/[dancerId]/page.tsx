@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   collection, doc, getDoc, getDocs, limit, orderBy, query, updateDoc, where,
-  writeBatch, serverTimestamp,
+  writeBatch, serverTimestamp, arrayRemove,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { GENDER_OPTIONS, genderLabel } from '@/lib/gender-constants';
@@ -227,6 +227,8 @@ export default function DancerDetailPage() {
   const [pendingRoles, setPendingRoles] = useState<string[]>([]);
   const [pendingActive, setPendingActive] = useState(true);
   const [savingRoles, setSavingRoles] = useState(false);
+  const [detaching, setDetaching] = useState(false);
+  const [detachError, setDetachError] = useState('');
   const [allRoles, setAllRoles] = useState<RoleConfig[]>([]);
 
   const [editingInfo, setEditingInfo] = useState(false);
@@ -325,6 +327,48 @@ export default function DancerDetailPage() {
     setDancer(prev => prev ? { ...prev, roles: pendingRoles, isActive: pendingActive } : prev);
     setSavingRoles(false);
     setEditingRoles(false);
+  };
+
+  // Détache le danseur de son compte sans rien supprimer : la fiche et tout
+  // l'historique (présences, cotisations, documents) restent en base pour la
+  // comptabilité. Le danseur disparait simplement du compte — l'app mobile
+  // liste les danseurs par accountId, la disparition y est donc immédiate.
+  const handleDetach = async () => {
+    if (!dancerId || !dancer || !dancer.accountId || detaching) return;
+    if ((account?.dancerIds?.length ?? 0) <= 1) {
+      setDetachError("Impossible : c'est le seul danseur du compte, celui-ci n'aurait plus aucun danseur.");
+      return;
+    }
+    if (!confirm(
+      `Détacher ${dancer.firstName} ${dancer.lastName} du compte ${account?.email ?? ''} ?\n\n` +
+      `La fiche et tout son historique sont conservés. Le danseur n'apparaitra plus sur ce compte.`
+    )) return;
+
+    setDetaching(true);
+    setDetachError('');
+    const previousAccountId = dancer.accountId;
+    try {
+      // writeBatch : les deux documents doivent bouger ensemble, sinon le
+      // compte resterait incohérent (dancerIds vidé mais accountId encore
+      // renseigné, ou l'inverse).
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'accounts', previousAccountId), {
+        dancerIds: arrayRemove(dancerId),
+      });
+      batch.update(doc(db, 'dancers', dancerId), {
+        accountId: '',
+        detachedAt: serverTimestamp(),
+        detachedFromAccountId: previousAccountId,
+      });
+      await batch.commit();
+      setDancer(prev => prev ? { ...prev, accountId: '' } : prev);
+      setAccount(null);
+    } catch (error) {
+      console.error('detach dancer failed', error);
+      setDetachError("Le détachement a échoué. Vérifiez votre connexion et réessayez.");
+    } finally {
+      setDetaching(false);
+    }
   };
 
   const openCancelPanel = (entryId: string) => {
@@ -473,8 +517,12 @@ export default function DancerDetailPage() {
         };
         setDancer(dancerData);
 
-        const accountSnap = await getDoc(doc(db, 'accounts', dancerData.accountId));
-        const accountData: Account | null = accountSnap.exists() ? {
+        // accountId peut être vide sur un danseur détaché de son compte :
+        // doc(db, 'accounts', '') léverait une erreur de chemin invalide.
+        const accountSnap = dancerData.accountId
+          ? await getDoc(doc(db, 'accounts', dancerData.accountId))
+          : null;
+        const accountData: Account | null = accountSnap?.exists() ? {
           id: accountSnap.id,
           email: accountSnap.data().email ?? '',
           displayName: accountSnap.data().displayName ?? '',
@@ -836,6 +884,35 @@ export default function DancerDetailPage() {
               {!fieldConfig.healthCertificate.enabled && <DisabledBadge />}
             </p>
             <p className="text-sm text-green-700">Fourni</p>
+          </div>
+        )}
+
+        {/* Détacher du compte — proposé seulement si le compte garde au moins
+            un autre danseur, sinon il se retrouverait sans aucun danseur. */}
+        {!editingInfo && !editingRoles && account && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+              Rattachement au compte
+            </p>
+            {account.dancerIds.length > 1 ? (
+              <>
+                <button
+                  onClick={handleDetach}
+                  disabled={detaching}
+                  className="text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+                >
+                  {detaching ? 'Détachement…' : 'Détacher ce danseur du compte'}
+                </button>
+                <p className="mt-1 text-xs text-gray-400">
+                  La fiche et tout l&apos;historique (présences, cotisations, documents) sont conservés.
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-gray-400">
+                Seul danseur du compte : le détachement laisserait le compte sans aucun danseur.
+              </p>
+            )}
+            {detachError && <p className="mt-2 text-sm text-red-600" role="alert">{detachError}</p>}
           </div>
         )}
       </div>
