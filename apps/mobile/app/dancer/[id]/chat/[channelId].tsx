@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Image,
+  View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput, Image,
   KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Pressable,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -92,7 +92,13 @@ export default function ChatChannelScreen() {
   const [attachOpen, setAttachOpen] = useState(false);
   const [activeVideo, setActiveVideo] = useState<ChatMessage | null>(null);
   const [seasonFloorMs, setSeasonFloorMs] = useState<number | null>(null);
-  const bottomRef = useRef<ScrollView>(null);
+  const bottomRef = useRef<FlatList>(null);
+  // Miroir synchrone de `text` : sur Android, taper le dernier mot puis
+  // taper tres vite sur Envoyer peut faire lire a sendText() une valeur de
+  // state pas encore a jour (le dernier mot manque a l'envoi). Une ref est
+  // ecrite de facon synchrone dans onChangeText, donc toujours a jour.
+  const textRef = useRef('');
+  const updateText = (t: string) => { textRef.current = t; setText(t); };
 
   useEffect(() => {
     getDoc(doc(db, 'chatChannels', channelId)).then(s => { if (s.exists()) setChannel({ id: s.id, ...s.data() } as ChatChannel); });
@@ -190,15 +196,16 @@ export default function ChatChannelScreen() {
   };
 
   const sendText = async () => {
-    if (!selectedDancer || !text.trim()) return;
+    const value = textRef.current.trim();
+    if (!selectedDancer || !value) return;
     setSending(true);
     await addDoc(collection(db, 'chatMessages'), {
       channelId, authorId: selectedDancer.id,
       authorName: `${selectedDancer.firstName} ${selectedDancer.lastName}`,
       authorPhotoUrl: selectedDancer.photoUrl ?? null,
-      text: text.trim(), sentAt: serverTimestamp(),
+      text: value, sentAt: serverTimestamp(),
     });
-    setText(''); setSending(false);
+    updateText(''); setSending(false);
   };
 
   const uploadAndSend = async (uri: string, fileName: string, mediaType: 'image' | 'video' | 'audio' | undefined) => {
@@ -251,6 +258,55 @@ export default function ChatChannelScreen() {
     }
   };
 
+  const renderMessage = ({ item: m }: { item: ChatMessage }) => {
+    const mine = m.authorId === selectedDancer?.id;
+    const initials = m.authorName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    const isFile = !!m.mediaUrl && m.mediaType !== 'image' && m.mediaType !== 'video' && m.mediaType !== 'audio';
+    return (
+      <View style={[styles.msgRow, mine && { flexDirection: 'row-reverse' }]}>
+        <View style={[styles.avatar, { backgroundColor: mine ? '#2F86C0' : '#9CA3AF' }]}>
+          {m.authorPhotoUrl ? <Image source={{ uri: m.authorPhotoUrl }} style={styles.avatarImg} /> : <Text style={styles.avatarText}>{initials}</Text>}
+        </View>
+        <View style={{ maxWidth: '72%' }}>
+          <Text style={[styles.msgMeta, mine && { textAlign: 'right' }]}>{mine ? 'Moi' : m.authorName.split(' ')[0]} · {timeAgo(m.sentAt)}</Text>
+          <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
+            {m.text ? <Text style={[styles.msgText, mine && { color: '#fff' }]}>{m.text}</Text> : null}
+            {m.mediaType === 'image' && m.mediaUrl && (
+              <View>
+                <Image source={{ uri: m.mediaUrl }} style={styles.msgImage} resizeMode="cover" />
+                <DownloadButton mine={mine} onPress={() => downloadMedia(m)} />
+              </View>
+            )}
+            {m.mediaType === 'video' && m.mediaUrl && (
+              <View>
+                <TouchableOpacity style={styles.videoThumb} activeOpacity={0.9} onPress={() => setActiveVideo(m)}>
+                  <VideoThumbnail videoUrl={m.mediaUrl} fallbackColor="#1A1A2E" />
+                  <View style={styles.playOverlay} pointerEvents="none">
+                    <View style={styles.playCircle}><View style={styles.playTri} /></View>
+                  </View>
+                </TouchableOpacity>
+                <DownloadButton mine={mine} onPress={() => downloadMedia(m)} />
+              </View>
+            )}
+            {m.mediaType === 'audio' && m.mediaUrl && (
+              <View>
+                <AudioMessage url={m.mediaUrl} mine={mine} />
+                <DownloadButton mine={mine} onPress={() => downloadMedia(m)} />
+              </View>
+            )}
+            {isFile && (
+              <TouchableOpacity style={[styles.fileChip, { backgroundColor: mine ? 'rgba(255,255,255,0.16)' : '#F1EFE8' }]} onPress={() => downloadMedia(m)} activeOpacity={0.8}>
+                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none"><Path d="M9 12h6M9 16h6M9 8h3M6 2h9l5 5v13a1 1 0 01-1 1H6a1 1 0 01-1-1V3a1 1 0 011-1z" stroke={mine ? '#fff' : '#5A5A6A'} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+                <Text style={[styles.fileName, { color: mine ? '#fff' : Colors.text }]} numberOfLines={1}>{m.fileName ?? 'Fichier'}</Text>
+                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none"><Path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" stroke={mine ? '#fff' : '#5A5A6A'} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   const downloadMedia = async (m: ChatMessage) => {
     if (!m.mediaUrl) return;
     try {
@@ -297,58 +353,15 @@ export default function ChatChannelScreen() {
       </View>
 
       {/* Messages */}
-      <ScrollView ref={bottomRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 14, paddingBottom: 20 }}>
-        {messages.length === 0 ? (
-          <Text style={styles.empty}>Aucun message pour l'instant.</Text>
-        ) : messages.map(m => {
-          const mine = m.authorId === selectedDancer?.id;
-          const initials = m.authorName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-          const isFile = !!m.mediaUrl && m.mediaType !== 'image' && m.mediaType !== 'video' && m.mediaType !== 'audio';
-          return (
-            <View key={m.id} style={[styles.msgRow, mine && { flexDirection: 'row-reverse' }]}>
-              <View style={[styles.avatar, { backgroundColor: mine ? '#2F86C0' : '#9CA3AF' }]}>
-                {m.authorPhotoUrl ? <Image source={{ uri: m.authorPhotoUrl }} style={styles.avatarImg} /> : <Text style={styles.avatarText}>{initials}</Text>}
-              </View>
-              <View style={{ maxWidth: '76%' }}>
-                <Text style={[styles.msgMeta, mine && { textAlign: 'right' }]}>{mine ? 'Moi' : m.authorName.split(' ')[0]} · {timeAgo(m.sentAt)}</Text>
-                <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
-                  {m.text ? <Text style={[styles.msgText, mine && { color: '#fff' }]}>{m.text}</Text> : null}
-                  {m.mediaType === 'image' && m.mediaUrl && (
-                    <View>
-                      <Image source={{ uri: m.mediaUrl }} style={styles.msgImage} resizeMode="cover" />
-                      <DownloadButton mine={mine} onPress={() => downloadMedia(m)} />
-                    </View>
-                  )}
-                  {m.mediaType === 'video' && m.mediaUrl && (
-                    <View>
-                      <TouchableOpacity style={styles.videoThumb} activeOpacity={0.9} onPress={() => setActiveVideo(m)}>
-                        <VideoThumbnail videoUrl={m.mediaUrl} fallbackColor="#1A1A2E" />
-                        <View style={styles.playOverlay} pointerEvents="none">
-                          <View style={styles.playCircle}><View style={styles.playTri} /></View>
-                        </View>
-                      </TouchableOpacity>
-                      <DownloadButton mine={mine} onPress={() => downloadMedia(m)} />
-                    </View>
-                  )}
-                  {m.mediaType === 'audio' && m.mediaUrl && (
-                    <View>
-                      <AudioMessage url={m.mediaUrl} mine={mine} />
-                      <DownloadButton mine={mine} onPress={() => downloadMedia(m)} />
-                    </View>
-                  )}
-                  {isFile && (
-                    <TouchableOpacity style={[styles.fileChip, { backgroundColor: mine ? 'rgba(255,255,255,0.16)' : '#F1EFE8' }]} onPress={() => downloadMedia(m)} activeOpacity={0.8}>
-                      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none"><Path d="M9 12h6M9 16h6M9 8h3M6 2h9l5 5v13a1 1 0 01-1 1H6a1 1 0 01-1-1V3a1 1 0 011-1z" stroke={mine ? '#fff' : '#5A5A6A'} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-                      <Text style={[styles.fileName, { color: mine ? '#fff' : Colors.text }]} numberOfLines={1}>{m.fileName ?? 'Fichier'}</Text>
-                      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none"><Path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" stroke={mine ? '#fff' : '#5A5A6A'} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            </View>
-          );
-        })}
-      </ScrollView>
+      <FlatList
+        ref={bottomRef}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 14, paddingBottom: 20 }}
+        data={messages}
+        keyExtractor={m => m.id}
+        ListEmptyComponent={<Text style={styles.empty}>Aucun message pour l'instant.</Text>}
+        renderItem={renderMessage}
+      />
 
       {/* Composer */}
       {canPublish ? (
@@ -358,7 +371,7 @@ export default function ChatChannelScreen() {
               <Svg width={22} height={22} viewBox="0 0 24 24" fill="none"><Path d="M21.4 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3.5 3.5 0 014.95 4.95l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="#5A5A6A" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></Svg>
             )}
           </TouchableOpacity>
-          <TextInput style={styles.input} value={text} onChangeText={setText} placeholder="Message…" placeholderTextColor={Colors.textLight} multiline />
+          <TextInput style={styles.input} value={text} onChangeText={updateText} placeholder="Message…" placeholderTextColor={Colors.textLight} multiline />
           <TouchableOpacity style={[styles.sendBtn, (!text.trim() || sending) && { opacity: 0.5 }]} disabled={!text.trim() || sending} onPress={sendText}>
             <Svg width={20} height={20} viewBox="0 0 24 24" fill="none"><Path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
           </TouchableOpacity>
@@ -413,15 +426,20 @@ const styles = StyleSheet.create({
 
   empty: { textAlign: 'center', color: Colors.textSecondary, fontSize: 14, paddingVertical: 40 },
 
-  msgRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 12 },
-  avatar: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  // Structure alignee sur kdanse-app (ChannelScreen), seule version dont on
+  // ait la preuve qu'elle s'affiche correctement sur le Samsung concerne :
+  // alignItems flex-end, pas de `gap` (marge sur l'avatar a la place),
+  // maxWidth 72%, padding H/V distincts, fontSize 15 / lineHeight 22.
+  // Ne pas revenir a des valeurs "equivalentes" sans retester sur cet appareil.
+  msgRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 12 },
+  avatar: { width: 30, height: 30, borderRadius: 15, marginHorizontal: 8, alignItems: 'center', justifyContent: 'center' },
   avatarImg: { width: 30, height: 30, borderRadius: 15 },
   avatarText: { color: '#fff', fontSize: 11, fontWeight: '600' },
   msgMeta: { fontSize: 11, color: Colors.textSecondary, marginBottom: 3 },
-  bubble: { borderRadius: 14, padding: 10 },
+  bubble: { borderRadius: 14, paddingHorizontal: 16, paddingVertical: 8 },
   bubbleMine: { backgroundColor: '#2F86C0', borderTopRightRadius: 4 },
   bubbleOther: { backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', borderTopLeftRadius: 4 },
-  msgText: { fontSize: 14, color: Colors.text },
+  msgText: { fontSize: 15, lineHeight: 22, color: Colors.text },
   msgImage: { width: 200, height: 150, borderRadius: 10, marginTop: 6 },
   videoThumb: { width: 220, height: 150, borderRadius: 12, overflow: 'hidden', marginTop: 6, backgroundColor: '#1A1A2E' },
   playOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },

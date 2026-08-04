@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput,
+  View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -35,7 +35,13 @@ export default function AdminConversationScreen() {
   const [messages, setMessages] = useState<PrivateMessage[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const bottomRef = useRef<ScrollView>(null);
+  const bottomRef = useRef<FlatList>(null);
+  // Miroir synchrone de `text` : sur Android, taper le dernier mot puis
+  // taper tres vite sur Envoyer peut faire lire a `send()` une valeur de
+  // state pas encore a jour (le dernier mot manque a l'envoi). Une ref est
+  // ecrite de facon synchrone dans onChangeText, donc toujours a jour.
+  const textRef = useRef('');
+  const updateText = (t: string) => { textRef.current = t; setText(t); };
 
   useEffect(() => {
     // Scope par danseur (pas juste par compte) : sur un compte famille avec
@@ -60,20 +66,21 @@ export default function AdminConversationScreen() {
   }, [messages]);
 
   const send = async () => {
-    if (!user || !selectedDancer || !text.trim() || sending) return;
+    const value = textRef.current.trim();
+    if (!user || !selectedDancer || !value || sending) return;
     setSending(true);
     try {
       await addDoc(collection(db, 'privateMessages'), {
         fromDancerId: selectedDancer.id,
         fromDancerName: `${selectedDancer.firstName} ${selectedDancer.lastName}`,
         fromAccountId: user.uid,
-        text: text.trim(),
+        text: value,
         // Timestamp client (pas serverTimestamp) : evite le placeholder null
         // pendant l'ecriture optimiste, qui retardait l'affichage du message
         // dans la liste triee par sentAt.
         sentAt: Timestamp.now(),
       });
-      setText('');
+      updateText('');
     } finally {
       setSending(false);
     }
@@ -94,18 +101,20 @@ export default function AdminConversationScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <FlatList
         ref={bottomRef}
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 14, paddingBottom: 20 }}
         onContentSizeChange={() => bottomRef.current?.scrollToEnd({ animated: true })}
-      >
-        {messages.length === 0 ? (
+        data={messages}
+        keyExtractor={m => m.id}
+        ListEmptyComponent={
           <Text style={styles.empty}>
             Envoyez un message à l'administration du club, vous recevrez sa réponse ici.
           </Text>
-        ) : messages.map(m => (
-          <View key={m.id} style={[styles.msgRow, !m.fromAdmin && { flexDirection: 'row-reverse' }]}>
+        }
+        renderItem={({ item: m }) => (
+          <View style={[styles.msgRow, !m.fromAdmin && { flexDirection: 'row-reverse' }]}>
             <View style={styles.msgWrap}>
               <Text style={[styles.msgMeta, !m.fromAdmin && { textAlign: 'right' }]}>
                 {m.fromAdmin ? 'Administration' : 'Moi'} · {timeAgo(m.sentAt)}
@@ -115,14 +124,14 @@ export default function AdminConversationScreen() {
               </View>
             </View>
           </View>
-        ))}
-      </ScrollView>
+        )}
+      />
 
       <View style={[styles.composer, { paddingBottom: insets.bottom + 8 }]}>
         <TextInput
           style={styles.input}
           value={text}
-          onChangeText={setText}
+          onChangeText={updateText}
           placeholder="Message…"
           placeholderTextColor={Colors.textLight}
           multiline
@@ -150,13 +159,18 @@ const styles = StyleSheet.create({
 
   empty: { textAlign: 'center', color: Colors.textSecondary, fontSize: 14, paddingVertical: 40, paddingHorizontal: 16 },
 
-  msgRow: { flexDirection: 'row', marginBottom: 12 },
-  msgWrap: { maxWidth: '80%' },
+  // Structure alignee sur kdanse-app (ChannelScreen), seule version dont on
+  // ait la preuve qu'elle s'affiche correctement sur le Samsung concerne :
+  // alignItems flex-end, maxWidth 72%, padding H/V distincts, fontSize 15 /
+  // lineHeight 22. Ne pas revenir a des valeurs "equivalentes" sans retester
+  // sur cet appareil.
+  msgRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 12 },
+  msgWrap: { maxWidth: '72%' },
   msgMeta: { fontSize: 11, color: Colors.textSecondary, marginBottom: 3 },
-  bubble: { borderRadius: 14, padding: 10 },
+  bubble: { borderRadius: 14, paddingHorizontal: 16, paddingVertical: 8 },
   bubbleMine: { backgroundColor: '#2F86C0', borderTopRightRadius: 4 },
   bubbleOther: { backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', borderTopLeftRadius: 4 },
-  msgText: { fontSize: 14, color: Colors.text },
+  msgText: { fontSize: 15, lineHeight: 22, color: Colors.text },
 
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 12, paddingTop: 8, backgroundColor: Colors.background, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.06)' },
   input: { flex: 1, minHeight: 42, maxHeight: 120, borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 21, backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 11, fontSize: 14, color: Colors.text },

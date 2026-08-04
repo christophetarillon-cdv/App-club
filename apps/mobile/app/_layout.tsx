@@ -1,3 +1,6 @@
+// Doit rester le tout premier import : surcharge react-native.Text avant que
+// quoi que ce soit ne soit rendu (voir le commentaire du fichier).
+import '@/lib/androidFontFix';
 import { useEffect } from 'react';
 import { ActivityIndicator, View, Text } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
