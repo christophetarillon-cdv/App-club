@@ -425,7 +425,14 @@ service cloud.firestore {
         request.auth.uid == request.resource.data.fromAccountId ||
         hasPagePermission('/admin/private-messages')
       );
-      allow update, delete: if hasPagePermission('/admin/private-messages');
+      // Le danseur doit pouvoir marquer comme lues les reponses de l'admin
+      // dans SA conversation, mais rien d'autre : hasOnly limite l'ecriture au
+      // seul champ readByDancerAt (pas de modification du texte ni du fil).
+      allow update: if hasPagePermission('/admin/private-messages') ||
+        (isAuth() &&
+         resource.data.fromAccountId == request.auth.uid &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readByDancerAt']));
+      allow delete: if hasPagePermission('/admin/private-messages');
     }
 
     // ── documents personnels (reçus, attestations) ────────────────────────────

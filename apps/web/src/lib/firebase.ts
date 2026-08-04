@@ -2,7 +2,7 @@
 // après correction du lockfile pnpm (rien à voir avec le code applicatif)
 // — à retirer librement plus tard.
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
@@ -17,7 +17,22 @@ const firebaseConfig = {
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]!;
-export const db = getFirestore(app);
+
+// experimentalAutoDetectLongPolling : le transport WebChannel par defaut peut
+// rester bloque indefiniment derriere certains reseaux/proxys au lieu
+// d'echouer proprement — l'ecriture ne part jamais et il faut recharger la
+// page. L'auto-detection bascule alors sur du long polling.
+// initializeFirestore leve si Firestore est deja initialise (hot reload Next),
+// d'ou le repli sur getFirestore.
+function createDb() {
+  try {
+    return initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+  } catch {
+    return getFirestore(app);
+  }
+}
+
+export const db = createDb();
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app, 'europe-west3');

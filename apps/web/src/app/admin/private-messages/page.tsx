@@ -37,6 +37,7 @@ export default function AdminPrivateMessagesPage() {
   const [openDancerId, setOpenDancerId] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -90,6 +91,7 @@ export default function AdminPrivateMessagesPage() {
   const handleReply = async () => {
     if (!openConversation || !reply.trim() || sending) return;
     setSending(true);
+    setSendError(null);
     try {
       await addDoc(collection(db, 'privateMessages'), {
         fromAccountId: openConversation.accountId,
@@ -102,6 +104,11 @@ export default function AdminPrivateMessagesPage() {
         sentAt: Timestamp.now(),
       });
       setReply('');
+    } catch (error) {
+      // Sans ce catch, un envoi qui echoue restait totalement silencieux : le
+      // texte semblait parti alors qu'aucun document n'etait cree cote base.
+      console.error('reply failed', error);
+      setSendError("La réponse n'a pas pu être envoyée. Vérifiez votre connexion et réessayez.");
     } finally {
       setSending(false);
     }
@@ -127,6 +134,10 @@ export default function AdminPrivateMessagesPage() {
             ))}
             <div ref={bottomRef} />
           </div>
+
+          {sendError && (
+            <p className="mb-2 text-sm text-red-600" role="alert">{sendError}</p>
+          )}
 
           <div className="flex items-end gap-2">
             <textarea

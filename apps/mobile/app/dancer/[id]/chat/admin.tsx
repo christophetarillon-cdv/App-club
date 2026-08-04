@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -47,14 +47,30 @@ export default function AdminConversationScreen() {
     // Scope par danseur (pas juste par compte) : sur un compte famille avec
     // plusieurs danseurs, chacun ne doit voir que sa propre conversation.
     if (!user || !selectedDancer) return;
+    // fromAccountId doit etre filtre ici en plus de fromDancerId : la regle
+    // Firestore autorise la lecture si `fromAccountId == request.auth.uid`, et
+    // Firestore ne peut prouver cette regle que si la requete contraint
+    // elle-meme ce champ. Sans ce filtre, toute la requete est rejetee pour un
+    // danseur non-admin — l'ecran n'affiche alors que les messages ecrits
+    // pendant la session (cache local), sans historique ni reponse de l'admin.
+    // Un compte admin ne le voyait pas : il passe par hasPagePermission().
     const q = query(
       collection(db, 'privateMessages'),
       where('fromDancerId', '==', selectedDancer.id),
+      where('fromAccountId', '==', user.uid),
       orderBy('sentAt', 'asc'),
     );
-    const unsub = onSnapshot(q, snap => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as PrivateMessage)));
-    });
+    const unsub = onSnapshot(
+      q,
+      snap => {
+        setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as PrivateMessage)));
+      },
+      error => {
+        // Sans ce handler, un refus des regles est silencieux : l'ecran reste
+        // sur les seuls messages du cache local, ce qui masque la cause.
+        console.error('privateMessages listener error', error);
+      },
+    );
     return unsub;
   }, [user?.uid, selectedDancer?.id]);
 
@@ -62,7 +78,12 @@ export default function AdminConversationScreen() {
   useEffect(() => {
     const unread = messages.filter(m => m.fromAdmin && !m.readByDancerAt);
     if (unread.length === 0) return;
-    Promise.all(unread.map(m => updateDoc(doc(db, 'privateMessages', m.id), { readByDancerAt: serverTimestamp() })));
+    // .catch obligatoire : un refus des regles remontait en promesse non
+    // capturee, ce qui affichait une erreur plein ecran par-dessus le chat.
+    // Le marquage "lu" est accessoire, son echec ne doit rien bloquer.
+    Promise.all(
+      unread.map(m => updateDoc(doc(db, 'privateMessages', m.id), { readByDancerAt: serverTimestamp() })),
+    ).catch(error => console.error('readByDancerAt update failed', error));
   }, [messages]);
 
   const send = async () => {
@@ -81,6 +102,11 @@ export default function AdminConversationScreen() {
         sentAt: Timestamp.now(),
       });
       updateText('');
+    } catch (error) {
+      // Sans ce catch, un envoi refuse restait invisible : la zone de saisie
+      // se vidait et le message semblait parti alors qu'il n'existait pas.
+      console.error('send private message failed', error);
+      Alert.alert('Message non envoyé', "Vérifiez votre connexion et réessayez.");
     } finally {
       setSending(false);
     }
