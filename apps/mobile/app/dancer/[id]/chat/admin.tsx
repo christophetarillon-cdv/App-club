@@ -26,10 +26,20 @@ function timeAgo(ts: any): string {
 }
 
 export default function AdminConversationScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // Ecran a double usage :
+  //  - sans parametre, le danseur consulte SA conversation avec le club ;
+  //  - avec targetDancerId, un admin/bureau consulte celle d'un danseur et y
+  //    repond au nom du club.
+  // Reutiliser le meme ecran plutot que d'en creer un second evite de
+  // dupliquer l'affichage des bulles — et donc de reintroduire les bugs
+  // d'affichage Android corriges dans ce fichier.
+  const { id, targetDancerId, targetAccountId, targetName } = useLocalSearchParams<{
+    id: string; targetDancerId?: string; targetAccountId?: string; targetName?: string;
+  }>();
+  const isAdminView = !!targetDancerId;
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, account } = useAuth();
   const { selectedDancer } = useDancer();
 
   const [messages, setMessages] = useState<PrivateMessage[]>([]);
@@ -46,20 +56,28 @@ export default function AdminConversationScreen() {
   useEffect(() => {
     // Scope par danseur (pas juste par compte) : sur un compte famille avec
     // plusieurs danseurs, chacun ne doit voir que sa propre conversation.
-    if (!user || !selectedDancer) return;
-    // fromAccountId doit etre filtre ici en plus de fromDancerId : la regle
-    // Firestore autorise la lecture si `fromAccountId == request.auth.uid`, et
-    // Firestore ne peut prouver cette regle que si la requete contraint
-    // elle-meme ce champ. Sans ce filtre, toute la requete est rejetee pour un
-    // danseur non-admin — l'ecran n'affiche alors que les messages ecrits
-    // pendant la session (cache local), sans historique ni reponse de l'admin.
-    // Un compte admin ne le voyait pas : il passe par hasPagePermission().
-    const q = query(
-      collection(db, 'privateMessages'),
-      where('fromDancerId', '==', selectedDancer.id),
-      where('fromAccountId', '==', user.uid),
-      orderBy('sentAt', 'asc'),
-    );
+    if (!user) return;
+    if (!isAdminView && !selectedDancer) return;
+    // Vue admin : la regle passe par hasPagePermission(), qui ne depend pas du
+    // document — un filtre sur le seul fromDancerId est donc prouvable.
+    // Vue danseur : fromAccountId doit etre filtre EN PLUS de fromDancerId. La
+    // regle autorise la lecture si `fromAccountId == request.auth.uid`, et
+    // Firestore ne peut la prouver que si la requete contraint elle-meme ce
+    // champ. Sans ce filtre, toute la requete est rejetee pour un danseur non
+    // admin — l'ecran n'affiche alors que les messages ecrits pendant la
+    // session (cache local), sans historique ni reponse du club.
+    const q = isAdminView
+      ? query(
+          collection(db, 'privateMessages'),
+          where('fromDancerId', '==', targetDancerId),
+          orderBy('sentAt', 'asc'),
+        )
+      : query(
+          collection(db, 'privateMessages'),
+          where('fromDancerId', '==', selectedDancer!.id),
+          where('fromAccountId', '==', user.uid),
+          orderBy('sentAt', 'asc'),
+        );
     const unsub = onSnapshot(
       q,
       snap => {
@@ -72,29 +90,41 @@ export default function AdminConversationScreen() {
       },
     );
     return unsub;
-  }, [user?.uid, selectedDancer?.id]);
+  }, [user?.uid, selectedDancer?.id, targetDancerId]);
 
-  // Marque comme lues les reponses admin non encore vues par le danseur.
+  // Marquage "lu", dans les deux sens : le danseur marque les reponses du
+  // club (readByDancerAt), le club marque les messages du danseur (readAt) —
+  // c'est ce dernier qui alimente la pastille de non-lus cote admin.
   useEffect(() => {
-    const unread = messages.filter(m => m.fromAdmin && !m.readByDancerAt);
+    const unread = isAdminView
+      ? messages.filter(m => !m.fromAdmin && !m.readAt)
+      : messages.filter(m => m.fromAdmin && !m.readByDancerAt);
     if (unread.length === 0) return;
+    const field = isAdminView ? 'readAt' : 'readByDancerAt';
     // .catch obligatoire : un refus des regles remontait en promesse non
     // capturee, ce qui affichait une erreur plein ecran par-dessus le chat.
     // Le marquage "lu" est accessoire, son echec ne doit rien bloquer.
     Promise.all(
-      unread.map(m => updateDoc(doc(db, 'privateMessages', m.id), { readByDancerAt: serverTimestamp() })),
-    ).catch(error => console.error('readByDancerAt update failed', error));
-  }, [messages]);
+      unread.map(m => updateDoc(doc(db, 'privateMessages', m.id), { [field]: serverTimestamp() })),
+    ).catch(error => console.error(`${field} update failed`, error));
+  }, [messages, isAdminView]);
 
   const send = async () => {
     const value = textRef.current.trim();
-    if (!user || !selectedDancer || !value || sending) return;
+    if (!user || !value || sending) return;
+    if (!isAdminView && !selectedDancer) return;
     setSending(true);
     try {
+      // En vue admin, le fil reste identifie par le DANSEUR (fromDancerId /
+      // fromAccountId inchanges) : c'est fromAdmin qui distingue la reponse du
+      // club. Ecrire l'uid de l'admin casserait le rattachement du fil.
       await addDoc(collection(db, 'privateMessages'), {
-        fromDancerId: selectedDancer.id,
-        fromDancerName: `${selectedDancer.firstName} ${selectedDancer.lastName}`,
-        fromAccountId: user.uid,
+        fromDancerId: isAdminView ? targetDancerId : selectedDancer!.id,
+        fromDancerName: isAdminView
+          ? (targetName ?? 'Danseur')
+          : `${selectedDancer!.firstName} ${selectedDancer!.lastName}`,
+        fromAccountId: isAdminView ? targetAccountId : user.uid,
+        ...(isAdminView ? { fromAdmin: true } : {}),
         text: value,
         // Timestamp client (pas serverTimestamp) : evite le placeholder null
         // pendant l'ecriture optimiste, qui retardait l'affichage du message
@@ -123,7 +153,9 @@ export default function AdminConversationScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity style={styles.headerRow} onPress={() => router.back()} activeOpacity={0.7}>
           <Text style={styles.backChevron}>‹</Text>
-          <Text style={styles.headerTitle}>Message à l'administration</Text>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {isAdminView ? (targetName ?? 'Conversation') : "Message à l'administration"}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -136,21 +168,29 @@ export default function AdminConversationScreen() {
         keyExtractor={m => m.id}
         ListEmptyComponent={
           <Text style={styles.empty}>
-            Envoyez un message à l'administration du club, vous recevrez sa réponse ici.
+            {isAdminView
+              ? 'Aucun message dans cette conversation.'
+              : "Envoyez un message à l'administration du club, vous recevrez sa réponse ici."}
           </Text>
         }
-        renderItem={({ item: m }) => (
-          <View style={[styles.msgRow, !m.fromAdmin && { flexDirection: 'row-reverse' }]}>
+        renderItem={({ item: m }) => {
+          // "mine" = message ecrit par celui qui regarde : le club en vue
+          // admin, le danseur sinon. Les bulles s'inversent en consequence.
+          const mine = isAdminView ? !!m.fromAdmin : !m.fromAdmin;
+          const who = m.fromAdmin ? 'Administration' : (targetName ?? 'Danseur');
+          return (
+          <View style={[styles.msgRow, mine && { flexDirection: 'row-reverse' }]}>
             <View style={styles.msgWrap}>
-              <Text style={[styles.msgMeta, !m.fromAdmin && { textAlign: 'right' }]}>
-                {m.fromAdmin ? 'Administration' : 'Moi'} · {timeAgo(m.sentAt)}
+              <Text style={[styles.msgMeta, mine && { textAlign: 'right' }]}>
+                {mine ? 'Moi' : (isAdminView ? who : 'Administration')} · {timeAgo(m.sentAt)}
               </Text>
-              <View style={[styles.bubble, !m.fromAdmin ? styles.bubbleMine : styles.bubbleOther]}>
-                <Text style={[styles.msgText, !m.fromAdmin && { color: '#fff' }]}>{m.text}</Text>
+              <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
+                <Text style={[styles.msgText, mine && { color: '#fff' }]}>{m.text}</Text>
               </View>
             </View>
           </View>
-        )}
+          );
+        }}
       />
 
       <View style={[styles.composer, { paddingBottom: insets.bottom + 8 }]}>

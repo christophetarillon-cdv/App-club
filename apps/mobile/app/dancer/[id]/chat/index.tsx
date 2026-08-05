@@ -38,8 +38,13 @@ export default function ChatListScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, account } = useAuth();
   const { selectedDancer } = useDancer();
+
+  // Cumul compte + fiche danseur : le role peut etre porte par l'un ou
+  // l'autre. Mêmes roles que la permission /admin/private-messages.
+  const isStaff = [...(account?.roles ?? []), ...(selectedDancer?.roles ?? [])]
+    .some(r => r === 'admin' || r === 'bureau');
 
   const [rows, setRows] = useState<ChannelRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -169,6 +174,23 @@ export default function ChatListScreen() {
           </View>
           <Text style={styles.adminBtnText}>Message à l'administration</Text>
         </TouchableOpacity>
+
+        {/* Boite de reception du club — visible pour ceux qui ont la permission
+            /admin/private-messages, soit admin et bureau. Le role peut etre
+            porte par le compte OU par la fiche danseur : ne regarder que l'un
+            des deux masquerait la fonctionnalite a une partie du bureau. */}
+        {isStaff && (
+          <TouchableOpacity
+            style={styles.adminBtn}
+            onPress={() => router.push(`/dancer/${id}/chat/inbox` as any)}
+            activeOpacity={0.8}
+          >
+            <Svg width={17} height={17} viewBox="0 0 24 24" fill="none">
+              <Path d="M4 4h16v12H5.2L4 17.2V4z" stroke="#5A5A6A" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+            <Text style={styles.adminBtnText}>Messages privés des danseurs</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       <BottomTabBar dancerId={id} qrValue={id} active="chat" bottomInset={insets.bottom} />
