@@ -11,7 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import type { ProfileFieldsConfig, CustomField, RoleConfig, PersonalDocument } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, validateContactFields } from '@cdv/types';
 import { BirthDateSelect } from '@/components/BirthDateSelect';
 
 const DOC_TYPE_LABELS: Record<string, string> = {
@@ -245,6 +245,7 @@ export default function DancerDetailPage() {
   const [editingInfo, setEditingInfo] = useState(false);
   const [pendingInfo, setPendingInfo] = useState<PendingInfo | null>(null);
   const [savingInfo, setSavingInfo] = useState(false);
+  const [infoError, setInfoError] = useState('');
 
   const [editingCustom, setEditingCustom] = useState(false);
   const [pendingCustom, setPendingCustom] = useState<Record<string, unknown>>({});
@@ -262,6 +263,18 @@ export default function DancerDetailPage() {
 
   const handleSaveInfo = async () => {
     if (!dancerId || !pendingInfo) return;
+    // Même règle que l'app mobile (packages/types) : une saisie refusée d'un
+    // côté ne doit pas passer de l'autre.
+    const formatErrors = validateContactFields({
+      phone: pendingInfo.phone,
+      postalCode: pendingInfo.postalCode,
+      emergencyPhone: pendingInfo.emergencyContactPhone,
+    });
+    if (formatErrors.length > 0) {
+      setInfoError(formatErrors.join(' '));
+      return;
+    }
+    setInfoError('');
     setSavingInfo(true);
     try {
       await updateDoc(doc(db, 'dancers', dancerId), {
@@ -820,11 +833,15 @@ export default function DancerDetailPage() {
                 className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700 disabled:opacity-50">
                 {savingInfo ? 'Enregistrement…' : 'Enregistrer'}
               </button>
-              <button onClick={() => setEditingInfo(false)}
+              <button onClick={() => { setEditingInfo(false); setInfoError(''); }}
                 className="text-xs text-gray-500 hover:text-gray-700">Annuler</button>
             </div>
           )}
         </div>
+
+        {editingInfo && infoError && (
+          <p className="mb-3 text-sm text-red-600" role="alert">{infoError}</p>
+        )}
 
         {!editingInfo ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">

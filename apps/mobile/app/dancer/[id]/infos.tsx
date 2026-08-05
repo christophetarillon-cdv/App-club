@@ -23,7 +23,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import BottomTabBar from '@/components/BottomTabBar';
 import DateField from '@/components/DateField';
 import type { ProfileFieldsConfig, ProfileFieldKey, CustomField, Dancer } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, validateContactFields } from '@cdv/types';
 
 // ── Types locaux ──────────────────────────────────────────────────────────────
 
@@ -80,11 +80,11 @@ function FieldLabel({ label, required }: { label: string; required?: boolean }) 
 }
 
 function Field({ label, value, onChangeText, placeholder, keyboardType, secureTextEntry,
-  editable = true, autoCapitalize = 'none', required, multiline, showToggle }: {
+  editable = true, autoCapitalize = 'none', required, multiline, showToggle, maxLength }: {
   label: string; value: string; onChangeText: (v: string) => void;
   placeholder?: string; keyboardType?: any; secureTextEntry?: boolean; editable?: boolean;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters'; required?: boolean; multiline?: boolean;
-  showToggle?: boolean;
+  showToggle?: boolean; maxLength?: number;
 }) {
   const [secure, setSecure] = useState(secureTextEntry ?? false);
 
@@ -136,6 +136,7 @@ function Field({ label, value, onChangeText, placeholder, keyboardType, secureTe
           multiline={multiline}
           numberOfLines={multiline ? 3 : 1}
           textAlignVertical={multiline ? 'top' : undefined}
+          maxLength={maxLength}
         />
       )}
     </View>
@@ -686,6 +687,14 @@ export default function InfosScreen() {
       return;
     }
 
+    // Format des champs renseignes (telephone, code postal) : sans ce controle,
+    // pres de la moitie des valeurs enregistrees etaient inexploitables.
+    const formatErrors = validateContactFields({ phone, postalCode, emergencyPhone });
+    if (formatErrors.length > 0) {
+      setSaveError(formatErrors.join('\n'));
+      return;
+    }
+
     setSaving(true);
     setSaved(false);
     try {
@@ -1034,7 +1043,7 @@ export default function InfosScreen() {
 
             {fieldConfig.phone.enabled && (
               <Field label="Téléphone" value={phone} onChangeText={setPhone}
-                keyboardType="phone-pad" required={fieldConfig.phone.required} />
+                keyboardType="phone-pad" maxLength={16} required={fieldConfig.phone.required} />
             )}
 
             {fieldConfig.street.enabled && (
@@ -1044,7 +1053,7 @@ export default function InfosScreen() {
 
             {fieldConfig.postalCode.enabled && (
               <Field label="Code postal" value={postalCode} onChangeText={setPostalCode}
-                keyboardType="number-pad" required={fieldConfig.postalCode.required} />
+                keyboardType="number-pad" maxLength={5} required={fieldConfig.postalCode.required} />
             )}
 
             {fieldConfig.city.enabled && (
@@ -1063,7 +1072,7 @@ export default function InfosScreen() {
                     <Field label="Nom" value={emergencyName} onChangeText={setEmergencyName} autoCapitalize="words" />
                   </View>
                   <View style={styles.col2}>
-                    <Field label="Téléphone" value={emergencyPhone} onChangeText={setEmergencyPhone} keyboardType="phone-pad" />
+                    <Field label="Téléphone" value={emergencyPhone} onChangeText={setEmergencyPhone} keyboardType="phone-pad" maxLength={16} />
                   </View>
                 </View>
               </View>
