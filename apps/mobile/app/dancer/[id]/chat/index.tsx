@@ -54,7 +54,10 @@ export default function ChatListScreen() {
   // que le danseur a lu la reponse, meme s'il revient tres vite de l'ecran
   // de conversation. Scope par danseur : chacun a sa propre conversation.
   useEffect(() => {
-    if (!selectedDancer) return;
+    // Inutile pour l'admin/bureau : le bouton "Message à l'administration" leur
+    // est masqué, la pastille n'est donc jamais affichée — autant ne pas
+    // maintenir un écouteur temps réel pour rien.
+    if (!selectedDancer || isStaff) return;
     const q = query(
       collection(db, 'privateMessages'),
       where('fromDancerId', '==', selectedDancer.id),
@@ -64,7 +67,7 @@ export default function ChatListScreen() {
       setAdminUnread(snap.docs.some(d => !d.data().readByDancerAt));
     });
     return unsub;
-  }, [selectedDancer?.id]);
+  }, [selectedDancer?.id, isStaff]);
 
   const load = useCallback(async () => {
     if (!selectedDancer || !user) return;
@@ -167,13 +170,18 @@ export default function ChatListScreen() {
           </View>
         )}
 
-        <TouchableOpacity style={styles.adminBtn} onPress={() => router.push(`/dancer/${id}/chat/admin` as any)} activeOpacity={0.8}>
-          <View>
-            <Svg width={17} height={17} viewBox="0 0 24 24" fill="none"><Path d="M3 8l9 6 9-6M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="#5A5A6A" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-            {adminUnread && <View style={styles.adminUnreadDot} />}
-          </View>
-          <Text style={styles.adminBtnText}>Message à l'administration</Text>
-        </TouchableOpacity>
+        {/* Masque pour l'admin et le bureau : ils SONT l'administration, le
+            bouton reviendrait a s'ecrire a soi-meme. Ils disposent a la place
+            de la boite de reception ci-dessous. */}
+        {!isStaff && (
+          <TouchableOpacity style={styles.adminBtn} onPress={() => router.push(`/dancer/${id}/chat/admin` as any)} activeOpacity={0.8}>
+            <View>
+              <Svg width={17} height={17} viewBox="0 0 24 24" fill="none"><Path d="M3 8l9 6 9-6M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="#5A5A6A" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+              {adminUnread && <View style={styles.adminUnreadDot} />}
+            </View>
+            <Text style={styles.adminBtnText}>Message à l'administration</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Boite de reception du club — visible pour ceux qui ont la permission
             /admin/private-messages, soit admin et bureau. Le role peut etre
