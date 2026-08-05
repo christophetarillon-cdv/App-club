@@ -18,7 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import DateField from '@/components/DateField';
 import type { PricingPlan, Season, Dancer, PaymentMethod, ProfileFieldsConfig } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS, DEFAULT_PAYMENT_INFO } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, DEFAULT_PAYMENT_INFO, validateContactFields } from '@cdv/types';
 import {
   mergeProfileFieldsConfig, computeMissingAccountFields, computeMissingDancerFields,
   type MissingField,
@@ -99,10 +99,10 @@ function newInstallment(iso?: string): InstallmentForm {
 
 // ── Champs du formulaire de complétion de profil ───────────────────────────
 
-function TextField({ label, value, onChangeText, placeholder, keyboardType, multiline }: {
+function TextField({ label, value, onChangeText, placeholder, keyboardType, multiline, maxLength }: {
   label: string; value: string; onChangeText: (v: string) => void;
   placeholder?: string; keyboardType?: 'default' | 'phone-pad' | 'number-pad';
-  multiline?: boolean;
+  multiline?: boolean; maxLength?: number;
 }) {
   return (
     <View style={{ marginBottom: 12 }}>
@@ -115,6 +115,7 @@ function TextField({ label, value, onChangeText, placeholder, keyboardType, mult
         placeholderTextColor={Colors.textLight}
         keyboardType={keyboardType}
         multiline={multiline}
+        maxLength={maxLength}
       />
     </View>
   );
@@ -403,6 +404,20 @@ export default function MembershipCreateScreen() {
 
   const handleSaveProfileForm = async () => {
     if (!profileFormValid() || !user) return;
+    // Format des champs saisis, meme regle que le reste de l'app
+    // (packages/types) : ce formulaire alimente aussi la fiche danseur, il ne
+    // doit pas etre une porte d'entree pour des valeurs inexploitables.
+    const formatErrors = [...new Set([
+      ...validateContactFields({ phone: profileForm['account.phone'] as string }),
+      ...dancersMissing.flatMap(({ dancer }) => validateContactFields({
+        postalCode: profileForm[`${dancer.id}.postalCode`] as string,
+        emergencyPhone: profileForm[`${dancer.id}.emergencyPhone`] as string,
+      })),
+    ])];
+    if (formatErrors.length > 0) {
+      Alert.alert('Saisie invalide', formatErrors.join('\n'));
+      return;
+    }
     setSavingProfile(true);
     try {
       const writes: Promise<unknown>[] = [];
@@ -847,6 +862,7 @@ export default function MembershipCreateScreen() {
                 value={profileForm['account.phone'] as string ?? ''}
                 onChangeText={v => setFormValue('account.phone', v)}
                 keyboardType="phone-pad"
+                maxLength={16}
               />
             )}
             {accountMissing.some(f => f.key === 'marketingConsent') && (
@@ -895,7 +911,7 @@ export default function MembershipCreateScreen() {
             )}
             {fields.some(f => f.key === 'postalCode') && (
               <TextField label="Code postal" value={profileForm[`${dancer.id}.postalCode`] as string ?? ''}
-                onChangeText={v => setFormValue(`${dancer.id}.postalCode`, v)} keyboardType="number-pad" />
+                onChangeText={v => setFormValue(`${dancer.id}.postalCode`, v)} keyboardType="number-pad" maxLength={5} />
             )}
             {fields.some(f => f.key === 'city') && (
               <TextField label="Ville" value={profileForm[`${dancer.id}.city`] as string ?? ''}
@@ -910,7 +926,7 @@ export default function MembershipCreateScreen() {
                 <TextField label="Contact d'urgence — nom" value={profileForm[`${dancer.id}.emergencyName`] as string ?? ''}
                   onChangeText={v => setFormValue(`${dancer.id}.emergencyName`, v)} />
                 <TextField label="Contact d'urgence — téléphone" value={profileForm[`${dancer.id}.emergencyPhone`] as string ?? ''}
-                  onChangeText={v => setFormValue(`${dancer.id}.emergencyPhone`, v)} keyboardType="phone-pad" />
+                  onChangeText={v => setFormValue(`${dancer.id}.emergencyPhone`, v)} keyboardType="phone-pad" maxLength={16} />
               </>
             )}
             {fields.some(f => f.key === 'medicalNotes') && (

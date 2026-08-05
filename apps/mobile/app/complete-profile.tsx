@@ -10,7 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ProfileFieldsConfig } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, validateContactFields } from '@cdv/types';
 import { mergeProfileFieldsConfig, computeMissingDancerFields } from '@/lib/profileFields';
 import DateField from '@/components/DateField';
 
@@ -20,10 +20,10 @@ const GENDER_OPTIONS = [
   { value: 'other', label: 'Autre' },
 ];
 
-function TextField({ label, value, onChangeText, placeholder, keyboardType, multiline }: {
+function TextField({ label, value, onChangeText, placeholder, keyboardType, multiline, maxLength }: {
   label: string; value: string; onChangeText: (v: string) => void;
   placeholder?: string; keyboardType?: 'default' | 'phone-pad' | 'number-pad';
-  multiline?: boolean;
+  multiline?: boolean; maxLength?: number;
 }) {
   return (
     <View style={{ marginBottom: 12 }}>
@@ -36,6 +36,7 @@ function TextField({ label, value, onChangeText, placeholder, keyboardType, mult
         placeholderTextColor={Colors.textLight}
         keyboardType={keyboardType}
         multiline={multiline}
+        maxLength={maxLength}
       />
     </View>
   );
@@ -131,6 +132,18 @@ export default function CompleteProfileScreen() {
       Alert.alert('Formulaire incomplet', 'Merci de renseigner tous les champs.');
       return;
     }
+    // Format des champs saisis, meme regle que le reste de l'app
+    // (packages/types) : sans ce controle, ce formulaire laissait passer des
+    // telephones et codes postaux inexploitables.
+    const formatErrors = dancersMissing.flatMap(({ dancer }) => validateContactFields({
+      postalCode: form[`${dancer.id}.postalCode`] as string,
+      emergencyPhone: form[`${dancer.id}.emergencyPhone`] as string,
+    }));
+    const allErrors = [...new Set(formatErrors)];
+    if (allErrors.length > 0) {
+      Alert.alert('Saisie invalide', allErrors.join('\n'));
+      return;
+    }
     setSaving(true);
     try {
       await Promise.all(dancersMissing.map(({ dancer, fields }) => {
@@ -216,7 +229,7 @@ export default function CompleteProfileScreen() {
               <TextField label="Rue" value={form[`${dancer.id}.street`] as string ?? ''} onChangeText={v => setFormValue(`${dancer.id}.street`, v)} />
             )}
             {fields.some(f => f.key === 'postalCode') && (
-              <TextField label="Code postal" value={form[`${dancer.id}.postalCode`] as string ?? ''} onChangeText={v => setFormValue(`${dancer.id}.postalCode`, v)} keyboardType="number-pad" />
+              <TextField label="Code postal" value={form[`${dancer.id}.postalCode`] as string ?? ''} onChangeText={v => setFormValue(`${dancer.id}.postalCode`, v)} keyboardType="number-pad" maxLength={5} />
             )}
             {fields.some(f => f.key === 'city') && (
               <TextField label="Ville" value={form[`${dancer.id}.city`] as string ?? ''} onChangeText={v => setFormValue(`${dancer.id}.city`, v)} />
@@ -227,7 +240,7 @@ export default function CompleteProfileScreen() {
             {fields.some(f => f.key === 'emergencyContact') && (
               <>
                 <TextField label="Contact d'urgence — nom" value={form[`${dancer.id}.emergencyName`] as string ?? ''} onChangeText={v => setFormValue(`${dancer.id}.emergencyName`, v)} />
-                <TextField label="Contact d'urgence — téléphone" value={form[`${dancer.id}.emergencyPhone`] as string ?? ''} onChangeText={v => setFormValue(`${dancer.id}.emergencyPhone`, v)} keyboardType="phone-pad" />
+                <TextField label="Contact d'urgence — téléphone" value={form[`${dancer.id}.emergencyPhone`] as string ?? ''} onChangeText={v => setFormValue(`${dancer.id}.emergencyPhone`, v)} keyboardType="phone-pad" maxLength={16} />
               </>
             )}
             {fields.some(f => f.key === 'medicalNotes') && (

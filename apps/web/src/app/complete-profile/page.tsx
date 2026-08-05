@@ -6,7 +6,7 @@ import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import type { ProfileFieldsConfig } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, validateContactFields } from '@cdv/types';
 import { mergeProfileFieldsConfig, computeMissingDancerFields } from '@/lib/profileFields';
 import { BirthDateSelect } from '@/components/BirthDateSelect';
 
@@ -85,6 +85,12 @@ export default function CompleteProfilePage() {
 
   const handleSave = async () => {
     if (!isValid()) { alert('Merci de renseigner tous les champs.'); return; }
+    // Meme regle que l'app mobile (packages/types).
+    const formatErrors = [...new Set(dancersMissing.flatMap(({ dancer }) => validateContactFields({
+      postalCode: form[`${dancer.id}.postalCode`] as string,
+      emergencyPhone: form[`${dancer.id}.emergencyPhone`] as string,
+    })))];
+    if (formatErrors.length > 0) { alert(formatErrors.join('\n')); return; }
     setSaving(true);
     try {
       await Promise.all(dancersMissing.map(({ dancer, fields }) => {
@@ -177,6 +183,7 @@ export default function CompleteProfilePage() {
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Code postal</label>
                 <input type="text" value={form[`${dancer.id}.postalCode`] as string ?? ''}
                   onChange={e => setFormValue(`${dancer.id}.postalCode`, e.target.value)}
+                              maxLength={5}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
               </div>
             )}
@@ -208,6 +215,7 @@ export default function CompleteProfilePage() {
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Téléphone</label>
                   <input type="tel" value={form[`${dancer.id}.emergencyPhone`] as string ?? ''}
                     onChange={e => setFormValue(`${dancer.id}.emergencyPhone`, e.target.value)}
+                              maxLength={16}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
                 </div>
               </div>

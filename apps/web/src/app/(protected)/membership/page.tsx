@@ -15,7 +15,7 @@ import { AppShell } from '@/components/AppShell';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { ProfileFieldsConfig, Dancer as FullDancer } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS, DEFAULT_PAYMENT_INFO } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, DEFAULT_PAYMENT_INFO, validateContactFields } from '@cdv/types';
 import { BirthDateSelect } from '@/components/BirthDateSelect';
 import {
   mergeProfileFieldsConfig, computeMissingAccountFields, computeMissingDancerFields,
@@ -489,6 +489,17 @@ export default function MembershipPage() {
 
   const handleSaveProfileForm = async () => {
     if (!profileFormValid() || !user) return;
+    // Meme regle que l'app mobile (packages/types) : ce formulaire alimente
+    // aussi la fiche danseur, il ne doit pas laisser passer de valeurs
+    // inexploitables.
+    const formatErrors = [...new Set([
+      ...validateContactFields({ phone: profileForm['account.phone'] as string }),
+      ...dancersMissing.flatMap(({ dancer }) => validateContactFields({
+        postalCode: profileForm[`${dancer.id}.postalCode`] as string,
+        emergencyPhone: profileForm[`${dancer.id}.emergencyPhone`] as string,
+      })),
+    ])];
+    if (formatErrors.length > 0) { alert(formatErrors.join('\n')); return; }
     setSavingProfile(true);
     try {
       const writes: Promise<unknown>[] = [];
@@ -920,6 +931,7 @@ export default function MembershipPage() {
                             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Téléphone</label>
                             <input type="tel" value={profileForm['account.phone'] as string ?? ''}
                               onChange={e => setFormValue('account.phone', e.target.value)}
+                              maxLength={16}
                               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
                           </div>
                         )}
@@ -983,6 +995,7 @@ export default function MembershipPage() {
                             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Code postal</label>
                             <input type="text" value={profileForm[`${dancer.id}.postalCode`] as string ?? ''}
                               onChange={e => setFormValue(`${dancer.id}.postalCode`, e.target.value)}
+                              maxLength={5}
                               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
                           </div>
                         )}
@@ -1014,6 +1027,7 @@ export default function MembershipPage() {
                               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Téléphone</label>
                               <input type="tel" value={profileForm[`${dancer.id}.emergencyPhone`] as string ?? ''}
                                 onChange={e => setFormValue(`${dancer.id}.emergencyPhone`, e.target.value)}
+                              maxLength={16}
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
                             </div>
                           </div>
