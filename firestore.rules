@@ -217,8 +217,11 @@ service cloud.firestore {
     // Contient des données personnelles : lecture réservée à l'administration,
     // écriture interdite depuis le client (Cloud Function uniquement, qui passe
     // outre les règles). Conservation bornée par le champ purgeAfter (10 ans).
+    // Clé dédiée et configurable plutôt que '/admin/payments', qui n'existe pas
+    // dans pagePermissions et retomberait donc sur ['admin'] : le bureau, qui
+    // gère les finances, en aurait été exclu sans possibilité de réglage.
     match /accountingIdentities/{id} {
-      allow read: if hasPagePermission('/admin/payments');
+      allow read: if hasPagePermission('/admin/payments/search');
       allow write: if false;
     }
 

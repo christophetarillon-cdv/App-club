@@ -95,6 +95,7 @@ export const ADMIN_NAV: NavGroup[] = [
       { label: 'Comptes bancaires', href: '/admin/settings/bank-accounts' },
       { label: 'Infos de paiement', href: '/admin/settings/payment-info' },
       { label: 'Chèques', href: '/admin/payments/cheques' },
+      { label: 'Recherche par e-mail', href: '/admin/payments/search' },
     ],
   },
   {
