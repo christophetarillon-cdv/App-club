@@ -137,6 +137,7 @@ export default function AdminExportsPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastCount, setLastCount] = useState<number | null>(null);
+  const [dancerCoverage, setDancerCoverage] = useState<{ covered: number; total: number } | null>(null);
 
   useEffect(() => {
     getDocs(collection(db, 'seasons')).then(snap => {
@@ -162,6 +163,7 @@ export default function AdminExportsPage() {
     setError(null);
     setGenerating(true);
     setLastCount(null);
+    setDancerCoverage(null);
 
     try {
       const season = seasons.find(s => s.id === selectedSeasonId);
@@ -281,8 +283,12 @@ export default function AdminExportsPage() {
       // En mode "tous les danseurs", on part de TOUT le roster (indépendant de
       // la saison) ; sinon uniquement les danseurs ayant une cotisation cette
       // saison-là (comportement d'origine).
+      // Les fiches supprimées (anonymisées, conservées pour la comptabilité)
+      // sont exclues du mode "tous les danseurs", comme sur la page Danseurs :
+      // sans cela l'export en comptait une de plus que l'effectif affiché.
+      // Elles restent présentes si elles ont une cotisation sur la saison.
       const dancerIds = (granularity === 'dancer' && allDancers)
-        ? [...dancerMap.keys()]
+        ? [...dancerMap.keys()].filter(id => dancerMap.get(id)?.isDeleted !== true)
         : [...planByDancerId.keys()];
 
       const rows: DancerExportRow[] = [];
@@ -371,6 +377,14 @@ export default function AdminExportsPage() {
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
       XLSX.writeFile(wb, filename);
       setLastCount(outRows.length);
+      // Repère explicite : un export a 46 lignes alors que le club compte 89
+      // danseurs n'a rien d'anormal (46 ont une cotisation cette saison), mais
+      // sans ce rappel on croit facilement a une perte de donnees.
+      setDancerCoverage(
+        granularity === 'dancer' && !allDancers
+          ? { covered: dancerIds.length, total: [...dancerMap.keys()].filter(id => dancerMap.get(id)?.isDeleted !== true).length }
+          : null,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors de la génération de l'export");
     } finally {
@@ -433,7 +447,15 @@ export default function AdminExportsPage() {
 
         {error && <p className="text-sm text-red-600">{error}</p>}
         {lastCount !== null && !error && (
-          <p className="text-sm text-green-600">Export généré — {lastCount} ligne(s).</p>
+          <div className="text-sm">
+            <p className="text-green-600">Export généré — {lastCount} ligne(s).</p>
+            {dancerCoverage && dancerCoverage.covered < dancerCoverage.total && (
+              <p className="text-gray-500 mt-1">
+                {dancerCoverage.covered} danseur(s) sur {dancerCoverage.total} : seuls ceux ayant une
+                cotisation sur cette saison sont inclus. Cochez « Inclure tous les danseurs » pour les {dancerCoverage.total}.
+              </p>
+            )}
+          </div>
         )}
 
         <button onClick={handleGenerate} disabled={generating || !selectedSeasonId}
