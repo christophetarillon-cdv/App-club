@@ -53,8 +53,12 @@ export default function DateField({ label, value, onChangeText, required, maximu
         <Text style={value ? styles.value : styles.placeholder}>{value || 'jj/mm/aaaa'}</Text>
       </TouchableOpacity>
 
+      {/* display="spinner" et pas "default" sur Android : le calendrier Material
+          impose de remonter mois par mois, ce qui est inutilisable pour une date
+          de naissance (60 ans en arriere). Les molettes jour/mois/annee donnent
+          le meme confort que sur iOS, l'annee etant directement atteignable. */}
       {showPicker && Platform.OS === 'android' && (
-        <DateTimePicker value={currentDate} mode="date" display="default" onChange={handleChange} maximumDate={maximumDate} minimumDate={minimumDate} />
+        <DateTimePicker value={currentDate} mode="date" display="spinner" onChange={handleChange} maximumDate={maximumDate} minimumDate={minimumDate} />
       )}
 
       {showPicker && Platform.OS === 'ios' && (
