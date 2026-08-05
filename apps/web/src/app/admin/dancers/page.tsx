@@ -46,6 +46,7 @@ interface DancerRow {
   roles: string[];
   isActive: boolean;
   isDeleted: boolean;
+  isDetached: boolean;
   info?: MembershipInfo;
 }
 
@@ -167,6 +168,9 @@ export default function AdminDancersPage() {
         roles: d.data().roles ?? [],
         isActive: d.data().isActive !== false,
         isDeleted: d.data().isDeleted === true,
+        // Detache : plus rattache a aucun compte (retrait valide). La fiche et
+        // l'historique sont intacts, mais la personne ne peut plus se connecter.
+        isDetached: !d.data().accountId,
         info: infoByDancer.get(d.id),
       }));
       dancers.sort((a, b) =>
@@ -468,6 +472,14 @@ export default function AdminDancersPage() {
                     {row.lastName}
                     {row.isDeleted && (
                       <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded font-medium">Supprimé</span>
+                    )}
+                    {!row.isDeleted && row.isDetached && (
+                      <span
+                        className="ml-2 text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-medium"
+                        title="Rattaché à aucun compte : la fiche et l'historique sont conservés, mais la personne ne peut plus se connecter."
+                      >
+                        Détaché
+                      </span>
                     )}
                   </td>
                   <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{row.firstName}</td>
