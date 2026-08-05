@@ -446,15 +446,19 @@ export default function InfosScreen() {
 
   useEffect(() => {
     if (!account) return;
-    // Repli sur le telephone du compte : les fiches anterieures n'ont pas de
-    // telephone propre (6 sur 90), le numero existant reste donc affiche sans
-    // migration des donnees historiques.
-    setPhone(selectedDancer?.phone ?? account.phone ?? '');
+    // Repli sur le telephone du compte UNIQUEMENT si le compte n'a qu'un seul
+    // danseur : l'attribution est alors certaine. Sur un compte a plusieurs
+    // danseurs, le numero du compte est celui de l'un d'eux — le pre-remplir
+    // pour les autres ferait recopier le numero d'une personne sur la fiche
+    // d'une autre au premier enregistrement. Chacun saisit donc le sien.
+    const fallback = dancers.length <= 1 ? account.phone ?? '' : '';
+    setPhone(selectedDancer?.phone ?? fallback);
     setMarketingConsent(account.marketingConsent ?? false);
     setImageRightsConsent(account.imageRightsConsent ?? false);
-    // selectedDancer.id en dependance : le telephone appartient desormais au
-    // danseur, il doit donc etre rafraichi quand on change de danseur.
-  }, [account?.uid, selectedDancer?.id]);
+    // selectedDancer.id : le telephone appartient desormais au danseur, il doit
+    // etre rafraichi quand on change de danseur. dancers.length : le repli en
+    // depend, et un danseur peut etre ajoute ou retire en cours de session.
+  }, [account?.uid, selectedDancer?.id, dancers.length]);
 
   // Demandes de retrait deja en attente : evite d'en deposer deux pour le meme
   // danseur et permet d'afficher l'etat a l'utilisateur.
