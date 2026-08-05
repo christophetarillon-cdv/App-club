@@ -1954,6 +1954,69 @@ export const onPrivateMessageCreated = onDocumentCreated(
   },
 );
 
+// ── onDancerRemovalRequested — previent le bureau d'une demande a traiter ────
+// Sans cette notification, une demande pouvait rester en attente indefiniment :
+// rien ne signalait son arrivee, il fallait penser a ouvrir la page Danseurs.
+export const onDancerRemovalRequested = onDocumentCreated(
+  { document: 'dancerRemovalRequests/{requestId}', region: 'europe-west3' },
+  async (event) => {
+    const req = event.data?.data();
+    if (!req) return;
+    // Les suppressions de compte transitent par la meme collection mais sont
+    // seulement journalisees (auto-approved) : elles n'appellent aucune action.
+    if (req.status !== 'pending') return;
+
+    const db = getDb();
+    const staffAccountIds = await getStaffAccountIds(db);
+    if (staffAccountIds.length === 0) return;
+
+    const snaps = await Promise.all(staffAccountIds.map(id => db.doc(`accounts/${id}`).get()));
+    const tokens = snaps.flatMap(s =>
+      Array.isArray(s.data()?.fcmTokens) ? (s.data()!.fcmTokens as string[]) : [],
+    );
+    if (tokens.length === 0) return;
+
+    await sendPushToTokens(tokens, {
+      title: 'Demande de retrait à valider',
+      body: `${req.dancerName ?? 'Un danseur'} — ${req.accountEmail ?? ''}`.trim(),
+      data: { type: 'dancer_removal_request', requestId: event.params.requestId },
+      link: '/admin/dancers',
+    });
+  },
+);
+
+// ── onDancerRemovalReviewed — previent l'adherent de la decision ─────────────
+export const onDancerRemovalReviewed = onDocumentUpdated(
+  { document: 'dancerRemovalRequests/{requestId}', region: 'europe-west3' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+    // Uniquement le passage de "en attente" a une decision : evite de
+    // renotifier a chaque ecriture ulterieure sur le document.
+    if (before.status !== 'pending') return;
+    if (after.status !== 'approved' && after.status !== 'rejected') return;
+
+    const db = getDb();
+    const accountSnap = await db.doc(`accounts/${after.accountId}`).get();
+    const tokens = Array.isArray(accountSnap.data()?.fcmTokens)
+      ? (accountSnap.data()!.fcmTokens as string[])
+      : [];
+    if (tokens.length === 0) return;
+
+    const name = after.dancerName ?? 'Le danseur';
+    const approved = after.status === 'approved';
+
+    await sendPushToTokens(tokens, {
+      title: approved ? 'Retrait accepté' : 'Retrait refusé',
+      body: approved
+        ? `${name} a été retiré de votre compte.`
+        : `La demande de retrait de ${name} a été refusée. Contactez le club pour en savoir plus.`,
+      data: { type: 'dancer_removal_reviewed', status: after.status },
+    });
+  },
+);
+
 // ── generateReceipt — logique partagée de génération de reçu PDF ─────────────
 async function generateReceipt(installmentId: string, data: admin.firestore.DocumentData) {
     const db = getDb();
