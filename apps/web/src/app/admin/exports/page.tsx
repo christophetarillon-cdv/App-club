@@ -186,16 +186,28 @@ export default function AdminExportsPage() {
       const solo = membershipSnap.docs.map(d => ({ id: d.id, ...d.data() as any })).filter(m => !m.paymentGroupId);
       const groups = groupSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
 
+      // dancerId a été ajouté après coup et ne figure pas dans le type
+      // Membership : les cotisations antérieures n'en ont pas. Sans ce repli
+      // (le même que la page Danseurs), elles étaient écartées en silence et
+      // le danseur disparaissait de l'export — ses échéances avec lui, donc
+      // des montants manquants dans l'export financier.
+      const resolveDancerId = (m: any): string | undefined =>
+        m.dancerId ?? accountMap.get(m.userId)?.dancerIds?.[0];
+
       // Résout, pour chaque danseur concerné, son plan (solo direct ou via groupe)
       const planByDancerId = new Map<string, { raw: any; installmentIds: string[] }>();
-      solo.forEach(m => { if (m.dancerId) planByDancerId.set(m.dancerId, { raw: m, installmentIds: m.installmentIds ?? [] }); });
+      solo.forEach(m => {
+        const did = resolveDancerId(m);
+        if (did) planByDancerId.set(did, { raw: m, installmentIds: m.installmentIds ?? [] });
+      });
       for (const g of groups) {
         const memberIds: string[] = g.membershipIds ?? [];
         const memberSnaps = await Promise.all(memberIds.map((id: string) => getDoc(doc(db, 'memberships', id))));
         memberSnaps.forEach(s => {
           if (!s.exists()) return;
           const md = s.data();
-          if (md.dancerId) planByDancerId.set(md.dancerId, { raw: { ...g, pricingPlanId: md.pricingPlanId }, installmentIds: g.installmentIds ?? [] });
+          const did = resolveDancerId(md);
+          if (did) planByDancerId.set(did, { raw: { ...g, pricingPlanId: md.pricingPlanId }, installmentIds: g.installmentIds ?? [] });
         });
       }
 
