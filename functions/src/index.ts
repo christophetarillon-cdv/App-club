@@ -2017,6 +2017,96 @@ export const onDancerRemovalReviewed = onDocumentUpdated(
   },
 );
 
+// ── onDancerAttachRequested — previent le titulaire du compte cible ──────────
+export const onDancerAttachRequested = onDocumentCreated(
+  { document: 'dancerAttachRequests/{requestId}', region: 'europe-west3' },
+  async (event) => {
+    const req = event.data?.data();
+    if (!req || req.status !== 'pending') return;
+
+    const db = getDb();
+    const accountSnap = await db.doc(`accounts/${req.targetAccountId}`).get();
+    const tokens = Array.isArray(accountSnap.data()?.fcmTokens)
+      ? (accountSnap.data()!.fcmTokens as string[])
+      : [];
+    if (tokens.length === 0) return;
+
+    await sendPushToTokens(tokens, {
+      title: 'Demande de rattachement',
+      body: `Le club souhaite rattacher ${req.dancerName ?? 'un danseur'} à votre compte. Votre accord est nécessaire.`,
+      data: { type: 'dancer_attach_request', requestId: event.params.requestId },
+    });
+  },
+);
+
+// ── onDancerAttachReviewed — realise le rattachement si le titulaire accepte ─
+// Le rattachement est fait ICI et pas cote client : le titulaire n'est pas
+// encore proprietaire de la fiche danseur, les regles lui interdisent donc de
+// l'ecrire. Il ne fait que repondre a la demande.
+export const onDancerAttachReviewed = onDocumentUpdated(
+  { document: 'dancerAttachRequests/{requestId}', region: 'europe-west3' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+    if (before.status !== 'pending') return;
+    if (after.status !== 'accepted' && after.status !== 'refused') return;
+
+    const db = getDb();
+    const staffAccountIds = await getStaffAccountIds(db);
+    const staffSnaps = await Promise.all(staffAccountIds.map(id => db.doc(`accounts/${id}`).get()));
+    const staffTokens = staffSnaps.flatMap(s =>
+      Array.isArray(s.data()?.fcmTokens) ? (s.data()!.fcmTokens as string[]) : [],
+    );
+
+    if (after.status === 'refused') {
+      if (staffTokens.length > 0) {
+        await sendPushToTokens(staffTokens, {
+          title: 'Rattachement refusé',
+          body: `${after.targetAccountEmail ?? 'Le titulaire'} a refusé le rattachement de ${after.dancerName ?? 'un danseur'}.`,
+          data: { type: 'dancer_attach_reviewed', status: 'refused' },
+          link: '/admin/dancers',
+        });
+      }
+      return;
+    }
+
+    // Acceptation : on revalide l'etat avant d'ecrire. La fiche a pu etre
+    // rattachee ailleurs entre la demande et la reponse.
+    const dancerRef = db.doc(`dancers/${after.dancerId}`);
+    const dancerSnap = await dancerRef.get();
+    if (!dancerSnap.exists) {
+      await event.data!.after.ref.update({ status: 'failed', failureReason: 'dancer_missing' });
+      return;
+    }
+    if (dancerSnap.data()?.accountId) {
+      await event.data!.after.ref.update({ status: 'failed', failureReason: 'already_attached' });
+      return;
+    }
+
+    const batch = db.batch();
+    batch.update(dancerRef, {
+      accountId: after.targetAccountId,
+      detachedAt: admin.firestore.FieldValue.delete(),
+      detachedFromAccountId: admin.firestore.FieldValue.delete(),
+      attachedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    batch.update(db.doc(`accounts/${after.targetAccountId}`), {
+      dancerIds: admin.firestore.FieldValue.arrayUnion(after.dancerId),
+    });
+    await batch.commit();
+
+    if (staffTokens.length > 0) {
+      await sendPushToTokens(staffTokens, {
+        title: 'Rattachement accepté',
+        body: `${after.dancerName ?? 'Un danseur'} a été rattaché au compte ${after.targetAccountEmail ?? ''}.`.trim(),
+        data: { type: 'dancer_attach_reviewed', status: 'accepted' },
+        link: '/admin/dancers',
+      });
+    }
+  },
+);
+
 // ── generateReceipt — logique partagée de génération de reçu PDF ─────────────
 async function generateReceipt(installmentId: string, data: admin.firestore.DocumentData) {
     const db = getDb();

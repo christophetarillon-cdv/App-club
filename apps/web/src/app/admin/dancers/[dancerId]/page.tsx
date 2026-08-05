@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   collection, doc, getDoc, getDocs, limit, orderBy, query, updateDoc, where,
-  writeBatch, serverTimestamp, arrayRemove,
+  writeBatch, serverTimestamp, arrayRemove, addDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { GENDER_OPTIONS, genderLabel } from '@/lib/gender-constants';
@@ -228,6 +228,17 @@ export default function DancerDetailPage() {
   const [pendingActive, setPendingActive] = useState(true);
   const [savingRoles, setSavingRoles] = useState(false);
   const [detaching, setDetaching] = useState(false);
+  const [reattachEmail, setReattachEmail] = useState('');
+  const [reattachTarget, setReattachTarget] = useState<
+    { id: string; email: string; displayName: string; dancerNames: string[] } | null
+  >(null);
+  const [reattachSearching, setReattachSearching] = useState(false);
+  const [reattaching, setReattaching] = useState(false);
+  const [reattachError, setReattachError] = useState('');
+  const [attachRequestSent, setAttachRequestSent] = useState(false);
+  const [pendingAttach, setPendingAttach] = useState<
+    { id: string; targetAccountEmail: string; status: string } | null
+  >(null);
   const [detachError, setDetachError] = useState('');
   const [allRoles, setAllRoles] = useState<RoleConfig[]>([]);
 
@@ -333,6 +344,98 @@ export default function DancerDetailPage() {
   // l'historique (présences, cotisations, documents) restent en base pour la
   // comptabilité. Le danseur disparait simplement du compte — l'app mobile
   // liste les danseurs par accountId, la disparition y est donc immédiate.
+  // Dernière demande de rattachement pour ce danseur : permet d'afficher
+  // "en attente de la réponse du titulaire", ou le refus le cas échéant.
+  useEffect(() => {
+    if (!dancerId) return;
+    getDocs(query(collection(db, 'dancerAttachRequests'), where('dancerId', '==', dancerId)))
+      .then(snap => {
+        const rows = snap.docs.map(d => ({
+          id: d.id,
+          targetAccountEmail: d.data().targetAccountEmail ?? '',
+          status: d.data().status ?? '',
+          requestedAt: d.data().requestedAt?.seconds ?? 0,
+        }));
+        rows.sort((a, b) => b.requestedAt - a.requestedAt);
+        setPendingAttach(rows[0] ?? null);
+      })
+      .catch(e => console.error('attach request load failed', e));
+  }, [dancerId, attachRequestSent]);
+
+  // Rattachement : l'administration propose, le titulaire du compte cible
+  // accepte ou refuse depuis l'app. Rien n'est modifié sur la fiche ici — le
+  // rattachement effectif est réalisé par une Cloud Function à l'acceptation.
+  const handleSearchAccount = async () => {
+    const email = reattachEmail.trim();
+    if (!email || reattachSearching) return;
+    setReattachSearching(true);
+    setReattachError('');
+    setReattachTarget(null);
+    try {
+      // Les e-mails ne sont pas normalisés en base : on interroge la saisie et
+      // sa version en minuscules (même approche que la recherche par e-mail).
+      const variants = [...new Set([email, email.toLowerCase()])];
+      const snaps = await Promise.all(
+        variants.map(e => getDocs(query(collection(db, 'accounts'), where('email', '==', e)))),
+      );
+      const found = snaps.flatMap(s => s.docs)[0];
+      if (!found) {
+        setReattachError("Aucun compte ne correspond à cette adresse.");
+        return;
+      }
+      if (found.data().isDeleted === true) {
+        setReattachError("Ce compte a été supprimé, il ne peut pas accueillir de danseur.");
+        return;
+      }
+      // Les danseurs déjà présents sont affichés pour éviter un rattachement
+      // au mauvais foyer — l'erreur serait invisible ensuite.
+      const ids: string[] = found.data().dancerIds ?? [];
+      const dancerSnaps = await Promise.all(ids.map(id => getDoc(doc(db, 'dancers', id))));
+      setReattachTarget({
+        id: found.id,
+        email: found.data().email ?? '',
+        displayName: found.data().displayName ?? '',
+        dancerNames: dancerSnaps
+          .filter(s => s.exists())
+          .map(s => `${s.data()?.firstName ?? ''} ${s.data()?.lastName ?? ''}`.trim()),
+      });
+    } catch (error) {
+      console.error('account search failed', error);
+      setReattachError("La recherche a échoué. Vérifiez votre connexion et réessayez.");
+    } finally {
+      setReattachSearching(false);
+    }
+  };
+
+  const handleRequestAttach = async () => {
+    if (!dancerId || !dancer || !reattachTarget || reattaching) return;
+    if (!confirm(
+      `Proposer le rattachement de ${dancer.firstName} ${dancer.lastName} au compte ${reattachTarget.email} ?\n\n` +
+      `Le titulaire devra accepter depuis son application. Rien n'est modifié tant qu'il n'a pas répondu.`
+    )) return;
+
+    setReattaching(true);
+    setReattachError('');
+    try {
+      await addDoc(collection(db, 'dancerAttachRequests'), {
+        dancerId,
+        dancerName: `${dancer.firstName} ${dancer.lastName}`.trim(),
+        targetAccountId: reattachTarget.id,
+        targetAccountEmail: reattachTarget.email,
+        status: 'pending',
+        requestedAt: serverTimestamp(),
+      });
+      setAttachRequestSent(true);
+      setReattachTarget(null);
+      setReattachEmail('');
+    } catch (error) {
+      console.error('attach request failed', error);
+      setReattachError("L'envoi de la demande a échoué. Vérifiez votre connexion et réessayez.");
+    } finally {
+      setReattaching(false);
+    }
+  };
+
   const handleDetach = async () => {
     if (!dancerId || !dancer || !dancer.accountId || detaching) return;
     if ((account?.dancerIds?.length ?? 0) <= 1) {
@@ -913,6 +1016,80 @@ export default function DancerDetailPage() {
               </p>
             )}
             {detachError && <p className="mt-2 text-sm text-red-600" role="alert">{detachError}</p>}
+          </div>
+        )}
+
+        {/* Rattacher à un compte — uniquement pour un danseur détaché. Le
+            titulaire du compte cible doit accepter depuis son application :
+            rien n'est modifié tant qu'il n'a pas répondu. */}
+        {!editingInfo && !editingRoles && !dancer.accountId && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+              Rattacher à un compte
+            </p>
+
+            {pendingAttach?.status === 'pending' ? (
+              <p className="text-sm text-amber-700">
+                Demande envoyée à {pendingAttach.targetAccountEmail} — en attente de sa réponse.
+              </p>
+            ) : (
+              <>
+                {pendingAttach?.status === 'refused' && (
+                  <p className="mb-2 text-sm text-red-600">
+                    {pendingAttach.targetAccountEmail} a refusé le rattachement. Vous pouvez proposer un autre compte.
+                  </p>
+                )}
+                {pendingAttach?.status === 'failed' && (
+                  <p className="mb-2 text-sm text-red-600">
+                    Le rattachement n&apos;a pas pu être finalisé (fiche déjà rattachée entre-temps).
+                  </p>
+                )}
+
+                <div className="flex gap-2 max-w-md">
+                  <input
+                    type="email"
+                    value={reattachEmail}
+                    onChange={e => setReattachEmail(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSearchAccount(); }}
+                    placeholder="E-mail du compte d’accueil"
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                  <button
+                    onClick={handleSearchAccount}
+                    disabled={!reattachEmail.trim() || reattachSearching}
+                    className="text-sm bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-50 shrink-0"
+                  >
+                    {reattachSearching ? 'Recherche…' : 'Rechercher'}
+                  </button>
+                </div>
+
+                {reattachTarget && (
+                  <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-3 max-w-md">
+                    <p className="text-sm font-medium text-gray-900">
+                      {reattachTarget.displayName || '(sans nom)'}
+                    </p>
+                    <p className="text-xs text-gray-500">{reattachTarget.email}</p>
+                    <p className="mt-2 text-xs text-gray-600">
+                      {reattachTarget.dancerNames.length > 0
+                        ? `Danseurs déjà sur ce compte : ${reattachTarget.dancerNames.join(', ')}`
+                        : 'Aucun danseur sur ce compte.'}
+                    </p>
+                    <button
+                      onClick={handleRequestAttach}
+                      disabled={reattaching}
+                      className="mt-3 text-sm font-medium bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {reattaching ? 'Envoi…' : 'Proposer le rattachement'}
+                    </button>
+                  </div>
+                )}
+
+                <p className="mt-2 text-xs text-gray-400">
+                  Le titulaire du compte doit accepter depuis son application. Rien n&apos;est modifié tant qu&apos;il n&apos;a pas répondu.
+                </p>
+              </>
+            )}
+            {reattachError && <p className="mt-2 text-sm text-red-600" role="alert">{reattachError}</p>}
           </div>
         )}
       </div>

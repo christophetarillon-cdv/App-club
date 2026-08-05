@@ -225,6 +225,29 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── demandes de rattachement d'un danseur à un compte ─────────────────────
+    // Sens inverse du retrait : l'administration propose, le titulaire du
+    // compte cible accepte ou refuse. Le rattachement effectif est réalisé par
+    // une Cloud Function à l'acceptation — le titulaire ne peut pas l'écrire
+    // lui-même, il n'est pas encore propriétaire de la fiche danseur.
+    match /dancerAttachRequests/{id} {
+      allow read: if (isAuth() && resource.data.targetAccountId == request.auth.uid)
+        || hasPagePermission('/admin/dancers');
+      // Seule l'administration propose un rattachement.
+      allow create: if hasPagePermission('/admin/dancers')
+        && request.resource.data.status == 'pending';
+      // Le titulaire ne peut que répondre : statut + date, rien d'autre.
+      // L'administration peut annuler sa propre demande.
+      allow update: if hasPagePermission('/admin/dancers') || (
+        isAuth() &&
+        resource.data.targetAccountId == request.auth.uid &&
+        resource.data.status == 'pending' &&
+        request.resource.data.status in ['accepted', 'refused'] &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt'])
+      );
+      allow delete: if hasPagePermission('/admin/dancers');
+    }
+
     // ── demandes de retrait d'un danseur ──────────────────────────────────────
     // Le titulaire ne detache pas lui-meme un danseur : il depose une demande,
     // que l'administration valide ou refuse. Le detachement effectif n'a lieu

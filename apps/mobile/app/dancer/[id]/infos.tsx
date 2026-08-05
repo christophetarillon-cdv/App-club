@@ -400,6 +400,10 @@ export default function InfosScreen() {
   const [addingDancer, setAddingDancer]   = useState(false);
   const [removingDancerId, setRemovingDancerId] = useState<string | null>(null);
   const [pendingRemovalIds, setPendingRemovalIds] = useState<string[]>([]);
+  const [attachRequests, setAttachRequests] = useState<
+    { id: string; dancerName: string }[]
+  >([]);
+  const [answeringAttachId, setAnsweringAttachId] = useState<string | null>(null);
 
   // ── Mot de passe
   const [showPassword, setShowPassword] = useState(false);
@@ -472,6 +476,61 @@ export default function InfosScreen() {
       .then(snap => setPendingRemovalIds(snap.docs.map(d => d.data().dancerId as string)))
       .catch(error => console.error('pending removal requests load failed', error));
   }, [user?.uid]);
+
+  // Demandes de rattachement proposees par le club : le titulaire doit donner
+  // son accord avant qu'un danseur soit ajoute a son compte.
+  const loadAttachRequests = () => {
+    if (!user) return;
+    getDocs(query(
+      collection(db, 'dancerAttachRequests'),
+      where('targetAccountId', '==', user.uid),
+      where('status', '==', 'pending'),
+    ))
+      .then(snap => setAttachRequests(snap.docs.map(d => ({
+        id: d.id,
+        dancerName: (d.data().dancerName as string) ?? 'Un danseur',
+      }))))
+      .catch(error => console.error('attach requests load failed', error));
+  };
+  useEffect(loadAttachRequests, [user?.uid]);
+
+  const answerAttach = (requestId: string, name: string, accept: boolean) => {
+    Alert.alert(
+      accept ? 'Accepter le rattachement' : 'Refuser le rattachement',
+      accept
+        ? `${name} sera ajouté à votre compte et vous pourrez gérer sa fiche.`
+        : `Le club sera informé de votre refus. ${name} ne sera pas ajouté à votre compte.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: accept ? 'Accepter' : 'Refuser',
+          style: accept ? 'default' : 'destructive',
+          onPress: async () => {
+            setAnsweringAttachId(requestId);
+            try {
+              // On ne modifie que la demande : le rattachement lui-meme est
+              // realise par une Cloud Function, car les regles interdisent
+              // d'ecrire sur une fiche danseur dont on n'est pas encore
+              // proprietaire.
+              await updateDoc(doc(db, 'dancerAttachRequests', requestId), {
+                status: accept ? 'accepted' : 'refused',
+                reviewedAt: serverTimestamp(),
+              });
+              setAttachRequests(prev => prev.filter(r => r.id !== requestId));
+              if (accept) {
+                Alert.alert('Rattachement accepté', `${name} apparaîtra sur votre compte dans quelques instants.`);
+              }
+            } catch (error) {
+              console.error('attach answer failed', error);
+              Alert.alert('Erreur', "Impossible d'enregistrer votre réponse.");
+            } finally {
+              setAnsweringAttachId(null);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   // ── Chargement champs custom ──────────────────────────────────────────────
 
@@ -1111,6 +1170,42 @@ export default function InfosScreen() {
             </View>
           ))}
 
+          {attachRequests.length > 0 && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.cardBody}>
+                <Text style={styles.attachTitle}>Demande de rattachement</Text>
+                {attachRequests.map(r => (
+                  <View key={r.id} style={styles.attachBox}>
+                    <Text style={styles.attachText}>
+                      Le club souhaite rattacher <Text style={styles.attachName}>{r.dancerName}</Text> à
+                      votre compte. Votre accord est nécessaire.
+                    </Text>
+                    <View style={styles.attachActions}>
+                      <TouchableOpacity
+                        onPress={() => answerAttach(r.id, r.dancerName, false)}
+                        disabled={answeringAttachId === r.id}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.attachRefuse}>Refuser</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.attachAcceptBtn, answeringAttachId === r.id && { opacity: 0.5 }]}
+                        onPress={() => answerAttach(r.id, r.dancerName, true)}
+                        disabled={answeringAttachId === r.id}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.attachAcceptText}>
+                          {answeringAttachId === r.id ? 'Envoi…' : 'Accepter'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
           {dancers.length > 1 && (
             <>
               <View style={styles.divider} />
@@ -1410,6 +1505,18 @@ const styles = StyleSheet.create({
   dancerRowName: { flex: 1, fontSize: 14, color: Colors.text },
   dancerRowRemove: { fontSize: 14, color: '#C0392B', fontWeight: '500' },
   dancerRowPending: { fontSize: 13, color: Colors.textSecondary, fontStyle: 'italic' },
+
+  attachTitle: { fontSize: 12, color: Colors.textSecondary, marginBottom: 8 },
+  attachBox: {
+    backgroundColor: '#FFF7E6', borderWidth: 1, borderColor: '#F0D9A8',
+    borderRadius: 10, padding: 12, marginBottom: 8,
+  },
+  attachText: { fontSize: 14, lineHeight: 20, color: Colors.text },
+  attachName: { fontWeight: '600' },
+  attachActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 16, marginTop: 12 },
+  attachRefuse: { fontSize: 14, color: Colors.textSecondary },
+  attachAcceptBtn: { backgroundColor: '#2F86C0', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  attachAcceptText: { fontSize: 14, color: '#fff', fontWeight: '600' },
   dancersListHint: { fontSize: 12, color: Colors.textLight, marginTop: 4, lineHeight: 17 },
 
   // Danseurs
