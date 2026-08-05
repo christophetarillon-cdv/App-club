@@ -446,10 +446,15 @@ export default function InfosScreen() {
 
   useEffect(() => {
     if (!account) return;
-    setPhone(account.phone ?? '');
+    // Repli sur le telephone du compte : les fiches anterieures n'ont pas de
+    // telephone propre (6 sur 90), le numero existant reste donc affiche sans
+    // migration des donnees historiques.
+    setPhone(selectedDancer?.phone ?? account.phone ?? '');
     setMarketingConsent(account.marketingConsent ?? false);
     setImageRightsConsent(account.imageRightsConsent ?? false);
-  }, [account?.uid]);
+    // selectedDancer.id en dependance : le telephone appartient desormais au
+    // danseur, il doit donc etre rafraichi quand on change de danseur.
+  }, [account?.uid, selectedDancer?.id]);
 
   // Demandes de retrait deja en attente : evite d'en deposer deux pour le meme
   // danseur et permet d'afficher l'etat a l'utilisateur.
@@ -663,9 +668,21 @@ export default function InfosScreen() {
         dancerUpdates.customFields = { ...(selectedDancer.customFields ?? {}), ...processed };
       }
 
+      // Le telephone appartient au DANSEUR, pas au compte : deux adultes d'un
+      // meme compte ont chacun le leur. L'admin web l'ecrivait deja sur la
+      // fiche danseur, le mobile sur le compte — les deux interfaces
+      // s'ignoraient donc mutuellement.
+      if (fieldConfig.phone.enabled) dancerUpdates.phone = phone.trim();
+
       // Champs account
       const accountUpdates: Record<string, unknown> = { updatedAt: serverTimestamp() };
-      if (fieldConfig.phone.enabled)              accountUpdates.phone = phone.trim();
+      // account.phone reste alimente s'il est vide : il sert de contact
+      // principal du compte et conditionne le controle "profil incomplet"
+      // (profileFields.ts). On ne l'ecrase pas s'il existe deja, pour qu'un
+      // second danseur ne remplace pas le numero du premier.
+      if (fieldConfig.phone.enabled && !account?.phone?.trim()) {
+        accountUpdates.phone = phone.trim();
+      }
       if (fieldConfig.marketingConsent.enabled)   accountUpdates.marketingConsent = marketingConsent;
       if (fieldConfig.imageRightsConsent.enabled) accountUpdates.imageRightsConsent = imageRightsConsent;
 
