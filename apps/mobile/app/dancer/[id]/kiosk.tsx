@@ -5,7 +5,8 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, functions } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { Colors } from '@/constants/Colors';
 
 const KIOSK_URL = 'https://app-club-web.vercel.app/kiosk/setup';
@@ -15,10 +16,7 @@ export default function KioskScreen() {
   const insets = useSafeAreaInsets();
   const webviewRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
-  // Masque le bouton retour pendant qu'une session de kiosque est active
-  // (scan ou recherche manuelle), pour empêcher de quitter facilement le
-  // kiosque en plein pointage. Reste visible seulement sur l'écran de
-  // configuration initiale (choix de la séance).
+  const [kioskUrl, setKioskUrl] = useState<string | null>(null);
   const [scanActive, setScanActive] = useState(false);
 
   const [exitCode, setExitCode] = useState<string | null>(null);
@@ -27,9 +25,32 @@ export default function KioskScreen() {
   const [codeError, setCodeError] = useState(false);
 
   useEffect(() => {
-    getDoc(doc(db, 'appSettings', 'main')).then(snap => {
-      setExitCode(snap.data()?.kioskExitCode || null);
-    }).catch(() => setExitCode(null));
+    const init = async () => {
+      try {
+        // Récupère le custom token pour authentifier le web
+        const createToken = httpsCallable(functions, 'createWebSessionToken');
+        const result = await createToken({});
+        const token = (result.data as any).token;
+
+        // Construit l'URL avec le token
+        const url = new URL(KIOSK_URL);
+        url.searchParams.set('token', token);
+        setKioskUrl(url.toString());
+      } catch {
+        // Fallback : ouvre le kiosk sans token (affichera login)
+        setKioskUrl(KIOSK_URL);
+      }
+
+      // Charge le code de sortie
+      try {
+        const snap = await getDoc(doc(db, 'appSettings', 'main'));
+        setExitCode(snap.data()?.kioskExitCode || null);
+      } catch {
+        setExitCode(null);
+      }
+    };
+
+    init();
   }, []);
 
   const requestExit = () => {
@@ -48,20 +69,21 @@ export default function KioskScreen() {
 
   return (
     <View style={styles.root}>
-      <WebView
-        ref={webviewRef}
-        source={{ uri: KIOSK_URL }}
-        style={styles.webview}
-        onLoadEnd={() => setLoading(false)}
-        onNavigationStateChange={(navState) => {
-          setScanActive(/\/kiosk\/[^/]+\/(scan|search)(\?|$)/.test(navState.url));
-        }}
-        // Le kiosque scanne des QR codes via la caméra du navigateur (getUserMedia).
-        mediaCapturePermissionGrantType="grant"
-        allowsInlineMediaPlayback
-        javaScriptEnabled
-        domStorageEnabled
-      />
+      {kioskUrl && (
+        <WebView
+          ref={webviewRef}
+          source={{ uri: kioskUrl }}
+          style={styles.webview}
+          onLoadEnd={() => setLoading(false)}
+          onNavigationStateChange={(navState) => {
+            setScanActive(/\/kiosk\/[^/]+\/(scan|search)(\?|$)/.test(navState.url));
+          }}
+          mediaCapturePermissionGrantType="grant"
+          allowsInlineMediaPlayback
+          javaScriptEnabled
+          domStorageEnabled
+        />
+      )}
       {loading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator color={Colors.primary} size="large" />

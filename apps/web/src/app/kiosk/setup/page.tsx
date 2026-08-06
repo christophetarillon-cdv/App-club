@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { collection, getDocs, query, where, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
+import { signInWithCustomToken } from 'firebase/auth';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 
@@ -41,15 +42,32 @@ const ClockIcon = () => (
 export default function KioskSetupPage() {
   const { user, account, dancers, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [sessions, setSessions] = useState<SessionOption[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Traite le token passé en paramètre URL
+  useEffect(() => {
+    const token = searchParams.get('token');
+    if (token && !user) {
+      signInWithCustomToken(auth, token)
+        .then(() => {
+          // Retire le token de l'URL après authentification
+          window.history.replaceState({}, '', '/kiosk/setup');
+        })
+        .catch(() => {
+          // Silencieusement échoue — l'auth normal se fait via useAuth
+        });
+    }
+  }, [searchParams, user]);
+
   const isAllowed =
     account?.roles?.includes('admin') ||
-    dancers.some(d => d.roles.includes('admin') || d.roles.includes('instructor'));
+    account?.roles?.includes('pointage') ||
+    dancers.some(d => d.roles.includes('admin') || d.roles.includes('instructor') || d.roles.includes('pointage'));
 
   const myDancer = dancers.find(d => d.roles.includes('admin') || d.roles.includes('instructor'));
   const backHref = myDancer ? `/dancer/${myDancer.id}` : '/';

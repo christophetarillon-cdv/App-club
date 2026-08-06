@@ -37,7 +37,7 @@ service cloud.firestore {
     }
 
     function isInstructor() {
-      return isAuth() && userRoles().hasAny(['instructor', 'admin']);
+      return isAuth() && userRoles().hasAny(['instructor', 'admin', 'pointage']);
     }
 
     function hasPagePermission(page) {

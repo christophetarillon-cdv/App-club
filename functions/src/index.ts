@@ -21,6 +21,14 @@ admin.initializeApp();
 const getDb = () => admin.firestore();
 const getAuth = () => admin.auth();
 
+// ── createWebSessionToken — génère un token pour authentifier le web sans login
+export const createWebSessionToken = onCall({ region: 'europe-west3' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'User must be authenticated');
+
+  const token = await getAuth().createCustomToken(request.auth.uid);
+  return { token };
+});
+
 // ── onDancerCreated — normalise noms + assigne memberNumber ───────────────────
 export const onDancerCreated = onDocumentCreated(
   { document: 'dancers/{dancerId}', region: 'europe-west3' },
