@@ -1,0 +1,7 @@
+{
+  "buildCommand": "next build",
+  "outputDirectory": ".next",
+  "env": {
+    "FFDANSE_PASSWORD": "@ffdanse_password"
+  }
+}

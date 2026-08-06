@@ -1,0 +1,56 @@
+name: FFDanse - Mise à jour mensuelle
+
+on:
+  schedule:
+    # Chaque 1er du mois à 2h du matin
+    - cron: '0 2 1 * *'
+  workflow_dispatch: # Permet de déclencher manuellement
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install playwright
+          python -m playwright install chromium
+
+      - name: Récupérer les données FFDanse
+        working-directory: ${{ github.workspace }}/../../ffdanse-scraper
+        run: |
+          python recuperer_structures.py
+
+      - name: Générer le CSV pour Vercel
+        working-directory: ${{ github.workspace }}/../../ffdanse-scraper
+        run: |
+          cp structures_ffdanse.csv ${{ github.workspace }}/apps/ffdanse-web/public/data/structures.csv
+
+      - name: Commit et push
+        run: |
+          cd ${{ github.workspace }}
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add apps/ffdanse-web/public/data/structures.csv
+          git commit -m "chore: mise à jour des données FFDanse" || echo "No changes to commit"
+          git push
+
+      - name: Trigger Vercel redeploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          curl -X POST "https://api.vercel.com/v13/deployments" \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"projectId\": \"$VERCEL_PROJECT_ID\", \"orgId\": \"$VERCEL_ORG_ID\"}" || echo "Vercel redeploy skipped"
