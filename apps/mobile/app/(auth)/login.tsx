@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
@@ -8,6 +8,10 @@ import { auth, functionsBaseUrl } from '@/lib/firebase';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
+import {
+  isBiometricAvailable, getBiometricLabel, isBiometricEnabled,
+  authenticateWithBiometric, getBiometricCredentials, saveBiometricCredentials,
+} from '@/services/biometric.service';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -18,6 +22,25 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [resetLoading, setResetLoading] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricLabel, setBiometricLabel] = useState('Biométrie');
+  const [biometricLoading, setBiometricLoading] = useState(false);
+  const [saveBiometric, setSaveBiometric] = useState(false);
+
+  useEffect(() => {
+    const checkBiometric = async () => {
+      const available = await isBiometricAvailable();
+      setBiometricAvailable(available);
+      if (available) {
+        const enabled = await isBiometricEnabled();
+        setBiometricEnabled(enabled);
+        const label = await getBiometricLabel();
+        setBiometricLabel(label);
+      }
+    };
+    checkBiometric();
+  }, []);
 
   const handleLogin = async () => {
     if (!email.trim() || !password) return;
@@ -26,10 +49,35 @@ export default function LoginScreen() {
     setInfo(null);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
+      if (saveBiometric && biometricAvailable) {
+        await saveBiometricCredentials(email.trim(), password);
+      }
     } catch {
       setError('Email ou mot de passe incorrect.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleBiometricLogin = async () => {
+    setBiometricLoading(true);
+    setError(null);
+    try {
+      const authenticated = await authenticateWithBiometric();
+      if (!authenticated) {
+        setError('Authentification échouée.');
+        return;
+      }
+      const creds = await getBiometricCredentials();
+      if (!creds) {
+        setError('Aucune biométrie sauvegardée.');
+        return;
+      }
+      await signInWithEmailAndPassword(auth, creds.email, creds.password);
+    } catch {
+      setError('Erreur lors de la connexion.');
+    } finally {
+      setBiometricLoading(false);
     }
   };
 
@@ -136,6 +184,20 @@ export default function LoginScreen() {
           {info && <Text style={styles.info}>{info}</Text>}
           {error && <Text style={styles.error}>{error}</Text>}
 
+          {biometricEnabled && (
+            <TouchableOpacity
+              style={[styles.buttonBiometric, biometricLoading && styles.buttonDisabled]}
+              onPress={handleBiometricLogin}
+              disabled={biometricLoading}
+              activeOpacity={0.8}
+            >
+              {biometricLoading
+                ? <ActivityIndicator color={Colors.primary} />
+                : <Text style={styles.buttonBiometricText}>Se connecter avec {biometricLabel}</Text>
+              }
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleLogin}
@@ -147,6 +209,19 @@ export default function LoginScreen() {
               : <Text style={styles.buttonText}>Se connecter</Text>
             }
           </TouchableOpacity>
+
+          {biometricAvailable && !biometricEnabled && (
+            <TouchableOpacity
+              style={styles.saveBiometricContainer}
+              onPress={() => setSaveBiometric(!saveBiometric)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, saveBiometric && styles.checkboxChecked]}>
+                {saveBiometric && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <Text style={styles.saveBiometricText}>Sauvegarder la biométrie</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -244,6 +319,20 @@ const styles = StyleSheet.create({
     color: Colors.success,
     textAlign: 'center',
   },
+  buttonBiometric: {
+    backgroundColor: Colors.white,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  buttonBiometricText: {
+    color: Colors.primary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
   button: {
     backgroundColor: Colors.primary,
     borderRadius: 14,
@@ -258,5 +347,35 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  saveBiometricContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+    paddingHorizontal: 4,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  checkmark: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  saveBiometricText: {
+    fontSize: 13,
+    color: Colors.text,
+    fontWeight: '500',
   },
 });
