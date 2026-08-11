@@ -9,6 +9,7 @@ import { updateDancer } from '@/lib/auth';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import type { Dancer } from '@cdv/types';
+import { validateContactFields } from '@cdv/types';
 import { useRoles } from '@/hooks/useRoles';
 import { BirthDateSelect } from '@/components/BirthDateSelect';
 
@@ -87,7 +88,17 @@ export default function DancerProfilePage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!dancer) return;
-    setSaving(true); setError(null); setSaved(false);
+    setError(null); setSaved(false);
+
+    // Même règle que l'app mobile (packages/types) : une saisie refusée d'un
+    // côté ne doit pas passer de l'autre.
+    const formatErrors = validateContactFields({ phone, emergencyPhone });
+    if (formatErrors.length > 0) {
+      setError(formatErrors.join(' '));
+      return;
+    }
+
+    setSaving(true);
     try {
       await updateDancer(dancer.id, {
         firstName: firstName.trim(),

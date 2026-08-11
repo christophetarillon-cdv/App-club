@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { doc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { ProfileFieldsConfig } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, validateContactFields } from '@cdv/types';
 import { logout, createDancer, updateDancer, deleteDancer } from '@/lib/auth';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRoles } from '@/hooks/useRoles';
@@ -207,7 +207,19 @@ export default function ProfilePage() {
   const handleAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    setSavingAccount(true); setAccountError(null); setSavedAccount(false);
+    setAccountError(null); setSavedAccount(false);
+
+    // Même règle que l'app mobile (packages/types) : une saisie refusée d'un
+    // côté ne doit pas passer de l'autre.
+    if (fieldConfig.phone.enabled) {
+      const formatErrors = validateContactFields({ phone: accountForm.phone });
+      if (formatErrors.length > 0) {
+        setAccountError(formatErrors.join(' '));
+        return;
+      }
+    }
+
+    setSavingAccount(true);
     try {
       const updates: Record<string, unknown> = {
         displayName: accountForm.displayName.trim(),

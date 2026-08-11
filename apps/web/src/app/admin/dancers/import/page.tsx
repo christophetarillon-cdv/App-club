@@ -6,6 +6,7 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import Link from 'next/link';
+import { validateContactFields } from '@cdv/types';
 
 interface RoleOption { key: string; label: string; }
 
@@ -159,8 +160,19 @@ export default function AdminImportDancersPage() {
         else if (!firstName) dancer.error = 'Prénom manquant';
         else if (!lastName) dancer.error = 'Nom manquant';
         else if (!resolvedRole) dancer.error = `Rôle inconnu (${roleNames})`;
+        else {
+          // Même règle que l'app mobile (packages/types) : une saisie refusée
+          // d'un côté ne doit pas passer de l'autre.
+          const formatErrors = validateContactFields({ postalCode, emergencyPhone: emergencyContactPhone });
+          if (formatErrors.length > 0) dancer.error = formatErrors.join(' ');
+        }
 
         group.dancers.push(dancer);
+      });
+
+      byEmail.forEach(group => {
+        const formatErrors = validateContactFields({ phone: group.phone });
+        if (formatErrors.length > 0) group.error = formatErrors.join(' ');
       });
 
       if (rows.length === 0) {
@@ -177,7 +189,7 @@ export default function AdminImportDancersPage() {
     }
   };
 
-  const hasErrors = (group: AccountGroup) => group.dancers.some(d => d.error);
+  const hasErrors = (group: AccountGroup) => !!group.error || group.dancers.some(d => d.error);
   const validGroups = groups.filter(g => !hasErrors(g));
 
   const handleImport = async () => {
@@ -302,6 +314,7 @@ export default function AdminImportDancersPage() {
                     {result?.status === 'error' && <span className="text-xs text-red-600 font-medium">{result.message}</span>}
                     {result?.status === 'creating' && <span className="text-xs text-gray-400">Création…</span>}
                   </div>
+                  {group.error && <p className="text-xs text-red-500 mb-1">{group.error}</p>}
                   <div className="space-y-1">
                     {group.dancers.map((d, j) => (
                       <div key={j} className="text-xs text-gray-500 flex items-center gap-2">

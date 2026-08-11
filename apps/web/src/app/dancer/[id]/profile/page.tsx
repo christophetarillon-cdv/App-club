@@ -13,7 +13,7 @@ import { updateDancer, createDancer } from '@/lib/auth';
 import type { UpdateDancerInput } from '@/lib/auth';
 import type { Dancer, ProfileFieldsConfig, CustomField, CustomFieldRole } from '@cdv/types';
 import { BirthDateSelect } from '@/components/BirthDateSelect';
-import { DEFAULT_PROFILE_FIELDS, ROLE_PRIORITY } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, ROLE_PRIORITY, validateContactFields } from '@cdv/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { GENDER_OPTIONS } from '@/lib/gender-constants';
 import { AppShell } from '@/components/AppShell';
@@ -386,7 +386,21 @@ export default function DancerPersonalProfilePage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!dancer) return;
-    setSaving(true); setError(null); setSaved(false);
+    setError(null); setSaved(false);
+
+    // Même règle que l'app mobile (packages/types) : une saisie refusée d'un
+    // côté ne doit pas passer de l'autre.
+    const formatErrors = validateContactFields({
+      phone: fieldConfig.phone.enabled ? phone : undefined,
+      postalCode: fieldConfig.postalCode.enabled ? postalCode : undefined,
+      emergencyPhone: fieldConfig.emergencyContact.enabled ? emergencyPhone : undefined,
+    });
+    if (formatErrors.length > 0) {
+      setError(formatErrors.join(' '));
+      return;
+    }
+
+    setSaving(true);
     try {
       const updates: UpdateDancerInput = { firstName: firstName.trim(), lastName: lastName.trim() };
       if (fieldConfig.phone.enabled) updates.phone = phone.trim() || undefined;

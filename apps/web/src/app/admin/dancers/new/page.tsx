@@ -9,6 +9,7 @@ import { db, functions } from '@/lib/firebase';
 import { GENDER_OPTIONS } from '@/lib/gender-constants';
 import Link from 'next/link';
 import { BirthDateSelect } from '@/components/BirthDateSelect';
+import { validateContactFields } from '@cdv/types';
 
 interface RoleOption { key: string; label: string; }
 
@@ -104,6 +105,25 @@ export default function AdminNewAccountPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // Même règle que l'app mobile (packages/types) : une saisie refusée d'un
+    // côté ne doit pas passer de l'autre.
+    const formatErrors = validateContactFields({ phone });
+    dancers.forEach((d, i) => {
+      const dancerErrors = validateContactFields({
+        postalCode: d.postalCode,
+        emergencyPhone: d.emergencyContactPhone,
+      });
+      if (dancerErrors.length > 0) {
+        const label = [d.firstName, d.lastName].filter(Boolean).join(' ') || `Danseur ${i + 1}`;
+        formatErrors.push(...dancerErrors.map(err => `${label} : ${err}`));
+      }
+    });
+    if (formatErrors.length > 0) {
+      setError(formatErrors.join(' '));
+      return;
+    }
+
     setSaving(true);
     try {
       const call = httpsCallable(functions, 'adminCreateAccount');
@@ -153,6 +173,16 @@ export default function AdminNewAccountPage() {
     e.preventDefault();
     if (!selectedAccountId) return;
     setAddDancerError(null);
+
+    const formatErrors = validateContactFields({
+      postalCode: addDancerForm.postalCode,
+      emergencyPhone: addDancerForm.emergencyContactPhone,
+    });
+    if (formatErrors.length > 0) {
+      setAddDancerError(formatErrors.join(' '));
+      return;
+    }
+
     setAddingDancer(true);
     try {
       const d = addDancerForm;
