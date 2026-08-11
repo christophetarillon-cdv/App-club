@@ -1,6 +1,6 @@
 import type { WithTimestamps } from './common';
 
-export type AccountRole = 'admin' | 'bureau';
+export type AccountRole = 'admin' | 'bureau' | 'pointage';
 
 export interface Account extends WithTimestamps {
   uid: string;
