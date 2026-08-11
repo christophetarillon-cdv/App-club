@@ -335,9 +335,9 @@ export default function DancerDetailPage() {
     setSavingRoles(true);
     await updateDoc(doc(db, 'dancers', dancerId), { roles: pendingRoles, isActive: pendingActive });
 
-    // Sync account.roles: admin/bureau depuis le dancer vers le compte
+    // Sync account.roles: admin/bureau/pointage depuis le dancer vers le compte
     if (dancer.accountId) {
-      const ACCOUNT_ROLES = ['admin', 'bureau'];
+      const ACCOUNT_ROLES = ['admin', 'bureau', 'pointage'];
       const newAccountRoles = pendingRoles.filter(r => ACCOUNT_ROLES.includes(r));
       // On ne retire pas les rôles compte si un autre dancer du même compte les possède
       const currentAccountRoles: string[] = account?.roles ?? [];
