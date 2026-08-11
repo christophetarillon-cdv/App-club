@@ -81,41 +81,41 @@ export default function BottomTabBar({
     <View style={[styles.tabBar, { paddingBottom: bottomInset + 8 }]}>
       <TouchableOpacity style={styles.tabItem} onPress={() => go('home')}>
         <HomeIcon color={colorFor('home')} />
-        <Text style={[styles.tabLabel, active === 'home' && styles.tabLabelActive]}>Accueil</Text>
+        <Text style={[styles.tabLabel, active === 'home' && styles.tabLabelActive]} numberOfLines={1}>Accueil</Text>
       </TouchableOpacity>
 
       {showChat && (
         <TouchableOpacity style={styles.tabItem} onPress={() => go('chat')}>
           <ChatIcon color={colorFor('chat')} />
-          <Text style={[styles.tabLabel, active === 'chat' && styles.tabLabelActive]}>Discussion</Text>
+          <Text style={[styles.tabLabel, active === 'chat' && styles.tabLabelActive]} numberOfLines={1}>Discussion</Text>
         </TouchableOpacity>
       )}
 
       {showPlanning && (
         <TouchableOpacity style={styles.tabItem} onPress={() => go('planning')}>
           <CalendarIcon color={colorFor('planning')} />
-          <Text style={[styles.tabLabel, active === 'planning' && styles.tabLabelActive]}>Calendrier</Text>
+          <Text style={[styles.tabLabel, active === 'planning' && styles.tabLabelActive]} numberOfLines={1}>Calendrier</Text>
         </TouchableOpacity>
       )}
 
       {showCard && (
         <TouchableOpacity style={styles.tabItem} onPress={() => go('card')}>
           <QrIcon color={colorFor('card')} />
-          <Text style={[styles.tabLabel, active === 'card' && styles.tabLabelActive]}>Ma carte</Text>
+          <Text style={[styles.tabLabel, active === 'card' && styles.tabLabelActive]} numberOfLines={1}>Ma carte</Text>
         </TouchableOpacity>
       )}
 
       {showVideos && (
         <TouchableOpacity style={styles.tabItem} onPress={() => go('videos')}>
           <VideoIcon color={colorFor('videos')} />
-          <Text style={[styles.tabLabel, active === 'videos' && styles.tabLabelActive]}>Vidéos</Text>
+          <Text style={[styles.tabLabel, active === 'videos' && styles.tabLabelActive]} numberOfLines={1}>Vidéos</Text>
         </TouchableOpacity>
       )}
 
       {showAudios && (
         <TouchableOpacity style={styles.tabItem} onPress={() => go('audios')}>
           <AudioIcon color={colorFor('audios')} />
-          <Text style={[styles.tabLabel, active === 'audios' && styles.tabLabelActive]}>Audios</Text>
+          <Text style={[styles.tabLabel, active === 'audios' && styles.tabLabelActive]} numberOfLines={1}>Audios</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -142,6 +142,6 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   tabItem: { flex: 1, alignItems: 'center', paddingBottom: 4, gap: 3 },
-  tabLabel: { fontSize: 11, color: Colors.tabIcon, fontWeight: '500' },
+  tabLabel: { fontSize: 9.5, color: Colors.tabIcon, fontWeight: '500' },
   tabLabelActive: { color: Colors.tabIconActive },
 });
