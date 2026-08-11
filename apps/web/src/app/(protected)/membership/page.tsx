@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getApp } from 'firebase/app';
 import {
-  collection, getDocs, query, where, addDoc, doc, getDoc, updateDoc,
+  collection, getDocs, query, where, orderBy, addDoc, doc, getDoc, updateDoc,
   deleteDoc, writeBatch, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -79,6 +79,108 @@ const METHOD_LABEL: Record<PaymentMethod, string> = {
   cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', helloasso: 'En ligne',
 };
 
+// Charge et enrichit les cotisations/groupes d'un danseur pour UNE saison
+// donnée. Partagé entre le chargement de la saison en cours (assistant de
+// création inclus) et la consultation en lecture seule d'une saison passée,
+// pour ne pas dupliquer la logique d'enrichissement (nom danseur, libellé
+// plan, échéancier) entre les deux.
+async function loadSeasonMemberships(
+  userId: string, dancerId: string, seasonId: string, dancerMap: Map<string, Dancer>
+): Promise<{ memberships: MembershipEntry[]; groups: PaymentGroup[] }> {
+  const [membershipSnap, groupsSnap] = await Promise.all([
+    getDocs(query(collection(db, 'memberships'), where('userId', '==', userId), where('seasonId', '==', seasonId))),
+    getDocs(query(collection(db, 'paymentGroups'), where('userId', '==', userId), where('seasonId', '==', seasonId))),
+  ]);
+
+  const loadedMemberships: MembershipEntry[] = await Promise.all(
+    membershipSnap.docs.map(async md => {
+      const data = md.data();
+      let dancerName: string | undefined;
+      const mDancerId: string | undefined = data.dancerId;
+      if (mDancerId) {
+        const dancer = dancerMap.get(mDancerId);
+        if (dancer) {
+          dancerName = `${dancer.firstName} ${dancer.lastName}`.trim();
+        } else {
+          const ds = await getDoc(doc(db, 'dancers', mDancerId));
+          if (ds.exists()) dancerName = `${ds.data().firstName} ${ds.data().lastName}`.trim();
+        }
+      }
+      let planLabel: string | undefined;
+      if (data.pricingPlanId) {
+        const ps = await getDoc(doc(db, 'pricingPlans', data.pricingPlanId));
+        if (ps.exists()) planLabel = ps.data().label;
+      }
+      return {
+        id: md.id, dancerId: mDancerId, dancerName, planLabel,
+        paymentGroupId: data.paymentGroupId,
+        pricingPlanId: data.pricingPlanId,
+        totalDue: data.totalDue, totalPaid: data.totalPaid,
+        paymentMethod: data.paymentMethod, paymentPlanStatus: data.paymentPlanStatus,
+        installmentIds: data.installmentIds ?? [], installments: [],
+        status: data.status,
+      };
+    })
+  );
+
+  const membershipById = new Map(loadedMemberships.map(m => [m.id, m]));
+  const loadedGroups: Omit<PaymentGroup, 'installments'>[] = groupsSnap.docs.map(gd => {
+    const data = gd.data();
+    const membershipIds: string[] = data.membershipIds ?? [];
+    const groupDancers = membershipIds.map(mid => {
+      const m = membershipById.get(mid);
+      return { name: m?.dancerName ?? '—', planLabel: m?.planLabel ?? '—' };
+    });
+    return {
+      id: gd.id, membershipIds,
+      totalDue: data.totalDue, totalPaid: data.totalPaid,
+      paymentMethod: data.paymentMethod, paymentPlanStatus: data.paymentPlanStatus,
+      installmentIds: data.installmentIds ?? [],
+      dancers: groupDancers,
+    };
+  });
+
+  const allInstallmentIds = [
+    ...loadedMemberships.flatMap(m => m.installmentIds),
+    ...loadedGroups.flatMap(g => g.installmentIds),
+  ];
+  const uniqueIds = [...new Set(allInstallmentIds)];
+  const installmentMap = new Map<string, InstallmentDetail>();
+  if (uniqueIds.length > 0) {
+    const docs = await Promise.all(uniqueIds.map(iid => getDoc(doc(db, 'paymentInstallments', iid))));
+    docs.forEach(d => {
+      if (d.exists()) {
+        const dd = d.data();
+        installmentMap.set(d.id, {
+          id: d.id,
+          amount: dd.amount ?? 0,
+          expectedDate: dd.expectedDate ?? '',
+          status: dd.status ?? 'pending',
+          method: dd.method ?? '',
+          chequeNumber: dd.chequeNumber ?? undefined,
+          draweeBank: dd.draweeBank ?? undefined,
+          draweeCity: dd.draweeCity ?? undefined,
+        });
+      }
+    });
+  }
+  const toInstallments = (ids: string[]) =>
+    ids.map(iid => installmentMap.get(iid)).filter((x): x is InstallmentDetail => Boolean(x));
+
+  // Un compte peut porter plusieurs danseurs (foyer) : on ne garde que ce qui
+  // concerne CE danseur. Les groupes restent affichés en entier dès qu'ils
+  // l'incluent (paiement familial partagé).
+  const myMemberships = loadedMemberships.filter(m => m.dancerId === dancerId);
+  const myGroups = loadedGroups.filter(g =>
+    g.membershipIds.some(mid => membershipById.get(mid)?.dancerId === dancerId)
+  );
+
+  return {
+    memberships: myMemberships.map(m => ({ ...m, installments: toInstallments(m.installmentIds) })),
+    groups: myGroups.map(g => ({ ...g, installments: toInstallments(g.installmentIds) })),
+  };
+}
+
 export default function MembershipPage() {
   const { user, account, dancers: fullDancers } = useAuth();
   const { selectedDancer } = useDancer();
@@ -90,6 +192,16 @@ export default function MembershipPage() {
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [memberships, setMemberships] = useState<MembershipEntry[]>([]);
   const [paymentGroups, setPaymentGroups] = useState<PaymentGroup[]>([]);
+
+  // Saisons précédentes — uniquement celles où le danseur affiché a une
+  // cotisation (pas la liste complète des saisons du club). null = on
+  // regarde la saison en cours ; sinon l'id d'une saison passée consultée
+  // en lecture seule.
+  const [pastSeasons, setPastSeasons] = useState<Season[]>([]);
+  const [viewedSeasonId, setViewedSeasonId] = useState<string | null>(null);
+  const [pastMemberships, setPastMemberships] = useState<MembershipEntry[]>([]);
+  const [pastPaymentGroups, setPastPaymentGroups] = useState<PaymentGroup[]>([]);
+  const [loadingPastSeason, setLoadingPastSeason] = useState(false);
   const [myDancers, setMyDancers] = useState<Dancer[]>([]);
   const [globalEnrolledIds, setGlobalEnrolledIds] = useState<Set<string>>(new Set());
   const [enrolledCheckFailed, setEnrolledCheckFailed] = useState(false);
@@ -134,12 +246,27 @@ export default function MembershipPage() {
 
   useEffect(() => {
     if (!user || !selectedDancer) return;
+    setViewedSeasonId(null);
     (async () => {
       try {
-      const seasonsSnap = await getDocs(query(collection(db, 'seasons'), where('isActive', '==', true)));
-      if (seasonsSnap.empty) { setLoading(false); return; }
-      const activeSeason = { id: seasonsSnap.docs[0]!.id, label: seasonsSnap.docs[0]!.data().label as string };
+      const [seasonsSnap, dancerMembershipsSnap] = await Promise.all([
+        getDocs(query(collection(db, 'seasons'), orderBy('startDate', 'desc'))),
+        // Les règles Firestore n'autorisent la lecture de `memberships` que
+        // via `userId` (voir firestore.rules) : une requête filtrée
+        // uniquement par dancerId est refusée même si les documents seraient
+        // légitimes. On garde donc le même filtre userId que le reste de la page.
+        getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid), where('dancerId', '==', selectedDancer.id))),
+      ]);
+
+      const allSeasonsList: Season[] = seasonsSnap.docs.map(d => ({ id: d.id, label: d.data().label as string }));
+      const activeDoc = seasonsSnap.docs.find(d => d.data().isActive === true);
+      const activeSeason = activeDoc ? { id: activeDoc.id, label: activeDoc.data().label as string } : null;
       setSeason(activeSeason);
+
+      // Saisons passées où ce danseur a une cotisation — pas toutes les
+      // saisons du club, pour ne rien montrer à un adhérent sans historique.
+      const dancerSeasonIds = new Set(dancerMembershipsSnap.docs.map(d => d.data().seasonId as string));
+      setPastSeasons(allSeasonsList.filter(s => s.id !== activeSeason?.id && dancerSeasonIds.has(s.id)));
 
       const accSnap = await getDoc(doc(db, 'accounts', user.uid));
       let myDancersList: Dancer[] = [];
@@ -152,6 +279,10 @@ export default function MembershipPage() {
         setMyDancers(myDancersList);
         if (myDancersList[0]) setSelectedDancerIds(new Set([myDancersList[0].id]));
       }
+
+      if (!activeSeason) { setLoading(false); return; }
+
+      const dancerMap = new Map(myDancersList.map(d => [d.id, d]));
 
       // Vérification "danseur déjà engagé" (approved + pending, tous comptes
       // confondus) — via la Cloud Function getEnrolledDancerIds (même
@@ -171,13 +302,10 @@ export default function MembershipPage() {
           return null;
         }
       };
-      const [plansSnap, membershipSnap, groupsSnap, enrolledRes] = await Promise.all([
+      const [plansSnap, activeSeasonData, enrolledRes] = await Promise.all([
         getDocs(query(collection(db, 'pricingPlans'),
           where('seasonId', '==', activeSeason.id), where('isActive', '==', true))),
-        getDocs(query(collection(db, 'memberships'),
-          where('userId', '==', user.uid), where('seasonId', '==', activeSeason.id))),
-        getDocs(query(collection(db, 'paymentGroups'),
-          where('userId', '==', user.uid), where('seasonId', '==', activeSeason.id))),
+        loadSeasonMemberships(user.uid, selectedDancer.id, activeSeason.id, dancerMap),
         fetchEnrolled(),
       ]);
       if (enrolledRes === null) {
@@ -193,96 +321,8 @@ export default function MembershipPage() {
       }));
       setPlans(loadedPlans);
 
-      const dancerMap = new Map(myDancersList.map(d => [d.id, d]));
-      const loadedMemberships: MembershipEntry[] = await Promise.all(
-        membershipSnap.docs.map(async md => {
-          const data = md.data();
-          let dancerName: string | undefined;
-          const dancerId: string | undefined = data.dancerId;
-          if (dancerId) {
-            const dancer = dancerMap.get(dancerId);
-            if (dancer) {
-              dancerName = `${dancer.firstName} ${dancer.lastName}`.trim();
-            } else {
-              const ds = await getDoc(doc(db, 'dancers', dancerId));
-              if (ds.exists()) dancerName = `${ds.data().firstName} ${ds.data().lastName}`.trim();
-            }
-          }
-          let planLabel: string | undefined = loadedPlans.find(p => p.id === data.pricingPlanId)?.label;
-          if (!planLabel && data.pricingPlanId) {
-            const ps = await getDoc(doc(db, 'pricingPlans', data.pricingPlanId));
-            if (ps.exists()) planLabel = ps.data().label;
-          }
-          return {
-            id: md.id, dancerId, dancerName, planLabel,
-            paymentGroupId: data.paymentGroupId,
-            pricingPlanId: data.pricingPlanId,
-            totalDue: data.totalDue, totalPaid: data.totalPaid,
-            paymentMethod: data.paymentMethod, paymentPlanStatus: data.paymentPlanStatus,
-            installmentIds: data.installmentIds ?? [], installments: [],
-            status: data.status,
-          };
-        })
-      );
-      // Build payment groups with enriched dancer info
-      const membershipById = new Map(loadedMemberships.map(m => [m.id, m]));
-      const loadedGroups: Omit<PaymentGroup, 'installments'>[] = groupsSnap.docs.map(gd => {
-        const data = gd.data();
-        const membershipIds: string[] = data.membershipIds ?? [];
-        const dancers = membershipIds.map(mid => {
-          const m = membershipById.get(mid);
-          return { name: m?.dancerName ?? '—', planLabel: m?.planLabel ?? '—' };
-        });
-        return {
-          id: gd.id, membershipIds,
-          totalDue: data.totalDue, totalPaid: data.totalPaid,
-          paymentMethod: data.paymentMethod, paymentPlanStatus: data.paymentPlanStatus,
-          installmentIds: data.installmentIds ?? [],
-          dancers,
-        };
-      });
-
-      // Load installment details for all memberships and groups
-      const allInstallmentIds = [
-        ...loadedMemberships.flatMap(m => m.installmentIds),
-        ...loadedGroups.flatMap(g => g.installmentIds),
-      ];
-      const uniqueIds = [...new Set(allInstallmentIds)];
-      const installmentMap = new Map<string, InstallmentDetail>();
-      if (uniqueIds.length > 0) {
-        const docs = await Promise.all(uniqueIds.map(id => getDoc(doc(db, 'paymentInstallments', id))));
-        docs.forEach(d => {
-          if (d.exists()) {
-            const dd = d.data();
-            installmentMap.set(d.id, {
-              id: d.id,
-              amount: dd.amount ?? 0,
-              expectedDate: dd.expectedDate ?? '',
-              status: dd.status ?? 'pending',
-              method: dd.method ?? '',
-              chequeNumber: dd.chequeNumber ?? undefined,
-              draweeBank: dd.draweeBank ?? undefined,
-              draweeCity: dd.draweeCity ?? undefined,
-            });
-          }
-        });
-      }
-
-      const toInstallments = (ids: string[]) =>
-        ids.map(id => installmentMap.get(id)).filter((x): x is InstallmentDetail => Boolean(x));
-
-      // Un compte peut porter plusieurs danseurs (foyer) : cette page ne doit
-      // montrer que les cotisations du danseur affiché, pas celles de ses
-      // frères et sœurs. Les groupes peuvent regrouper plusieurs danseurs du
-      // même compte (paiement familial) — on garde le groupe entier dès qu'il
-      // concerne le danseur sélectionné, comme sur mobile.
-      const myMemberships = loadedMemberships.filter(m => m.dancerId === selectedDancer.id);
-      const myGroups = loadedGroups.filter(g =>
-        g.membershipIds.some(mid => membershipById.get(mid)?.dancerId === selectedDancer.id)
-      );
-
-      setMemberships(myMemberships.map(m => ({ ...m, installments: toInstallments(m.installmentIds) })));
-      setPaymentGroups(myGroups.map(g => ({ ...g, installments: toInstallments(g.installmentIds) })));
+      setMemberships(activeSeasonData.memberships);
+      setPaymentGroups(activeSeasonData.groups);
       } catch (err) {
         console.error('Erreur chargement cotisation:', err);
       } finally {
@@ -290,6 +330,22 @@ export default function MembershipPage() {
       }
     })();
   }, [user, selectedDancer]);
+
+  const loadPastSeason = async (s: Season) => {
+    if (!user || !selectedDancer) return;
+    setViewedSeasonId(s.id);
+    setLoadingPastSeason(true);
+    try {
+      const dancerMap = new Map(myDancers.map(d => [d.id, d]));
+      const data = await loadSeasonMemberships(user.uid, selectedDancer.id, s.id, dancerMap);
+      setPastMemberships(data.memberships);
+      setPastPaymentGroups(data.groups);
+    } catch (err) {
+      console.error('Erreur chargement saison passée:', err);
+    } finally {
+      setLoadingPastSeason(false);
+    }
+  };
 
   useEffect(() => {
     getDoc(doc(db, 'appSettings', 'main')).then(snap => {
@@ -713,6 +769,77 @@ export default function MembershipPage() {
           </div>
         )}
 
+        {pastSeasons.length > 0 && (
+          <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+            {season && (
+              <button
+                onClick={() => setViewedSeasonId(null)}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                  viewedSeasonId === null
+                    ? 'bg-blue-600 border-blue-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Saison {season.label}
+              </button>
+            )}
+            {pastSeasons.map(s => (
+              <button
+                key={s.id}
+                onClick={() => loadPastSeason(s)}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                  viewedSeasonId === s.id
+                    ? 'bg-blue-600 border-blue-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Saison {s.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {viewedSeasonId !== null && (
+          <div className="space-y-4">
+            {loadingPastSeason ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="w-6 h-6 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : pastMemberships.length === 0 && pastPaymentGroups.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-12 text-center">
+                <p className="text-gray-400">Aucune cotisation pour cette saison.</p>
+              </div>
+            ) : (
+              <>
+                {pastMemberships.filter(m => !m.paymentGroupId).map(m => (
+                  <MembershipCard
+                    key={m.id}
+                    membership={m}
+                    season={pastSeasons.find(s => s.id === viewedSeasonId)!}
+                    payingOnline={false}
+                    onPayOnline={() => {}}
+                    onCancel={async () => {}}
+                    readOnly
+                  />
+                ))}
+                {pastPaymentGroups.map(group => (
+                  <GroupMembershipCard
+                    key={group.id}
+                    group={group}
+                    season={pastSeasons.find(s => s.id === viewedSeasonId)!}
+                    payingOnline={false}
+                    onPayOnline={() => {}}
+                    onCancel={async () => {}}
+                    readOnly
+                  />
+                ))}
+              </>
+            )}
+          </div>
+        )}
+
+        {viewedSeasonId === null && (
+        <>
         {!season && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-12 text-center">
             <p className="text-gray-400">Aucune saison active pour le moment.</p>
@@ -1199,17 +1326,20 @@ export default function MembershipPage() {
             )}
           </div>
         )}
+        </>
+        )}
       </div>
     </AppShell>
   );
 }
 
-function MembershipCard({ membership, season, payingOnline, onPayOnline, onCancel }: {
+function MembershipCard({ membership, season, payingOnline, onPayOnline, onCancel, readOnly }: {
   membership: MembershipEntry;
   season: Season;
   payingOnline: boolean;
   onPayOnline: (amount: number) => void;
   onCancel: () => Promise<void>;
+  readOnly?: boolean;
 }) {
   const METHOD_LABEL: Record<string, string> = {
     cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces',
@@ -1264,7 +1394,7 @@ function MembershipCard({ membership, season, payingOnline, onPayOnline, onCance
         <InstallmentsTable installments={membership.installments} method={membership.paymentMethod} />
       )}
 
-      {membership.paymentPlanStatus === 'pending' && membership.installmentIds.length === 0 && (
+      {!readOnly && membership.paymentPlanStatus === 'pending' && membership.installmentIds.length === 0 && (
         <div className="mt-4 space-y-2">
           {membership.totalDue > membership.totalPaid && (
             <button
@@ -1287,7 +1417,7 @@ function MembershipCard({ membership, season, payingOnline, onPayOnline, onCance
           </div>
         </div>
       )}
-      {membership.paymentPlanStatus === 'rejected' && (
+      {!readOnly && membership.paymentPlanStatus === 'rejected' && (
         <Link href={`/membership/payment-plan?membershipId=${membership.id}`}
           className="block w-full text-center mt-4 bg-orange-600 text-white font-semibold py-2.5 rounded-lg hover:bg-orange-700 text-sm transition-colors">
           Modifier le plan de paiement →
@@ -1297,12 +1427,13 @@ function MembershipCard({ membership, season, payingOnline, onPayOnline, onCance
   );
 }
 
-function GroupMembershipCard({ group, season, payingOnline, onPayOnline, onCancel }: {
+function GroupMembershipCard({ group, season, payingOnline, onPayOnline, onCancel, readOnly }: {
   group: PaymentGroup;
   season: Season;
   payingOnline: boolean;
   onPayOnline: (amount: number) => void;
   onCancel: () => Promise<void>;
+  readOnly?: boolean;
 }) {
   const METHOD_LABEL: Record<string, string> = {
     cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces',
@@ -1361,7 +1492,7 @@ function GroupMembershipCard({ group, season, payingOnline, onPayOnline, onCance
         <InstallmentsTable installments={group.installments} method={group.paymentMethod} />
       )}
 
-      {group.paymentPlanStatus === 'pending' && group.installmentIds.length === 0 && (
+      {!readOnly && group.paymentPlanStatus === 'pending' && group.installmentIds.length === 0 && (
         <div className="mt-4 space-y-2">
           {group.totalDue > group.totalPaid && (
             <button
@@ -1384,7 +1515,7 @@ function GroupMembershipCard({ group, season, payingOnline, onPayOnline, onCance
           </div>
         </div>
       )}
-      {group.paymentPlanStatus === 'rejected' && (
+      {!readOnly && group.paymentPlanStatus === 'rejected' && (
         <Link href={`/membership/payment-plan?groupId=${group.id}`}
           className="block w-full text-center mt-4 bg-orange-600 text-white font-semibold py-2.5 rounded-lg hover:bg-orange-700 text-sm transition-colors">
           Modifier le plan de paiement →

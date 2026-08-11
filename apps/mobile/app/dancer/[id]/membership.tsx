@@ -364,14 +364,23 @@ export default function MembershipScreen() {
     if (!user) return;
     (async () => {
       try {
-        const snap = await getDocs(
-          query(collection(db, 'seasons'), orderBy('startDate', 'desc')),
-        );
-        if (snap.empty) return;
-        const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as Season));
-        setAvailableSeasons(all);
+        const [seasonsSnap, dancerMembershipsSnap] = await Promise.all([
+          getDocs(query(collection(db, 'seasons'), orderBy('startDate', 'desc'))),
+          // Les règles Firestore n'autorisent la lecture de `memberships` que
+          // via `userId` (voir firestore.rules) : une requête filtrée
+          // uniquement par dancerId est refusée même si les documents
+          // seraient légitimes. On garde donc le même filtre userId que le
+          // reste de la page.
+          getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid), where('dancerId', '==', id))),
+        ]);
+        if (seasonsSnap.empty) return;
+        const all = seasonsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Season));
         // Priorité : saison active, sinon inscriptions ouvertes, sinon la plus récente
         const best = all.find(s => s.isActive) ?? all.find(s => s.registrationOpen) ?? all[0]!;
+        // Les saisons passées ne sont proposées que si ce danseur y a une
+        // cotisation — pas de chips de saisons vides à faire défiler.
+        const seasonIdsWithData = new Set(dancerMembershipsSnap.docs.map(d => d.data().seasonId as string));
+        setAvailableSeasons(all.filter(s => s.id === best.id || seasonIdsWithData.has(s.id)));
         setSeason(best);
         await loadForSeason(best);
       } catch (err) {
