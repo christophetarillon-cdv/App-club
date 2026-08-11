@@ -198,7 +198,7 @@ export default function WelcomePage() {
             )}
 
             <button type="submit" disabled={!step1Valid || loading}
-              className="w-full bg-orange-500 text-white font-semibold py-2.5 rounded-lg hover:bg-orange-600 disabled:opacity-40 transition-colors text-sm">
+              className="w-full bg-orange text-white font-semibold py-2.5 rounded-lg hover:bg-orangeDark disabled:opacity-40 transition-colors text-sm">
               {loading ? 'Création…' : "Commencer l'essai"}
             </button>
           </form>
