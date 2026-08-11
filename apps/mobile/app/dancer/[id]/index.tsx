@@ -334,7 +334,7 @@ export default function DancerHomeScreen() {
         </View>
       </ScrollView>
 
-      <BottomTabBar dancerId={id!} bottomInset={insets.bottom} />
+      <BottomTabBar dancerId={id!} active="home" bottomInset={insets.bottom} />
 
       {/* ── Bottom sheet création actualité ── */}
       {sheetOpen && (

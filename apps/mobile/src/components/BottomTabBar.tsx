@@ -1,11 +1,18 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import Svg, { Path, Rect } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import { Colors } from '@/constants/Colors';
 import { usePagePermissions } from '@/contexts/PagePermissionsContext';
 
-type TabKey = 'chat' | 'planning' | 'card' | 'videos' | 'audios';
+type TabKey = 'home' | 'chat' | 'planning' | 'card' | 'videos' | 'audios';
 
+function HomeIcon({ color }: { color: string }) {
+  return (
+    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+      <Path d="M3 10.5L12 3l9 7.5M5 9.5V20a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V9.5" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
 function ChatIcon({ color }: { color: string }) {
   return (
     <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
@@ -24,6 +31,14 @@ function VideoIcon({ color }: { color: string }) {
   return (
     <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
       <Path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 8h10a2 2 0 012 2v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4a2 2 0 012-2z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function QrIcon({ color }: { color: string }) {
+  return (
+    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+      <Path d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
+      <Path d="M6.75 6.75h.75v.75h-.75zM6.75 16.5h.75v.75h-.75zM16.5 6.75h.75v.75h-.75zM13.5 13.5h.75v.75h-.75zM13.5 19.5h.75v.75h-.75zM19.5 13.5h.75v.75h-.75zM19.5 19.5h.75v.75h-.75zM16.5 16.5h.75v.75h-.75z" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -53,8 +68,9 @@ export default function BottomTabBar({
   const showAudios = hasPerm('/audio');
 
   const go = (screen: TabKey) => {
-    const href = `/dancer/${dancerId}/${screen}` as any;
     if (active === screen) return;
+    if (screen === 'home') { router.replace(`/dancer/${dancerId}` as any); return; }
+    const href = `/dancer/${dancerId}/${screen}` as any;
     if (screen === 'card') { router.push(href); return; }
     if (active) router.replace(href);
     else router.push(href);
@@ -63,6 +79,11 @@ export default function BottomTabBar({
 
   return (
     <View style={[styles.tabBar, { paddingBottom: bottomInset + 8 }]}>
+      <TouchableOpacity style={styles.tabItem} onPress={() => go('home')}>
+        <HomeIcon color={colorFor('home')} />
+        <Text style={[styles.tabLabel, active === 'home' && styles.tabLabelActive]}>Accueil</Text>
+      </TouchableOpacity>
+
       {showChat && (
         <TouchableOpacity style={styles.tabItem} onPress={() => go('chat')}>
           <ChatIcon color={colorFor('chat')} />
@@ -78,19 +99,10 @@ export default function BottomTabBar({
       )}
 
       {showCard && (
-        <View style={styles.tabCenter}>
-          <TouchableOpacity style={styles.tabCenterBtn} onPress={() => go('card')} activeOpacity={0.85}>
-            <Svg width={34} height={34} viewBox="0 0 24 24" fill="none">
-              <Rect x="3" y="3" width="7" height="7" rx="1" stroke="white" strokeWidth={1.8} />
-              <Rect x="14" y="3" width="7" height="7" rx="1" stroke="white" strokeWidth={1.8} />
-              <Rect x="3" y="14" width="7" height="7" rx="1" stroke="white" strokeWidth={1.8} />
-              <Rect x="5" y="5" width="3" height="3" fill="white" />
-              <Rect x="16" y="5" width="3" height="3" fill="white" />
-              <Rect x="5" y="16" width="3" height="3" fill="white" />
-              <Path d="M14 14h2v2h-2zM18 14h3v2h-3zM14 18h2v3h-2zM18 18h3v3h-3z" fill="white" />
-            </Svg>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.tabItem} onPress={() => go('card')}>
+          <QrIcon color={colorFor('card')} />
+          <Text style={[styles.tabLabel, active === 'card' && styles.tabLabelActive]}>Ma carte</Text>
+        </TouchableOpacity>
       )}
 
       {showVideos && (
@@ -132,19 +144,4 @@ const styles = StyleSheet.create({
   tabItem: { flex: 1, alignItems: 'center', paddingBottom: 4, gap: 3 },
   tabLabel: { fontSize: 11, color: Colors.tabIcon, fontWeight: '500' },
   tabLabelActive: { color: Colors.tabIconActive },
-  tabCenter: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', marginBottom: 4 },
-  tabCenterBtn: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.orange,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-    shadowColor: Colors.orange,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 8,
-  },
 });
