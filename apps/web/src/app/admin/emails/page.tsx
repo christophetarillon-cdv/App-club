@@ -8,9 +8,9 @@ import type { Season, Dancer, DancerRole } from '@cdv/types';
 import { RichTextEditor } from '@/components/RichTextEditor';
 
 const ROLE_LABELS: Record<DancerRole, string> = {
-  member: 'Membre', trial: 'Essai', instructor: 'Moniteur', bureau: 'Bureau', admin: 'Admin',
+  member: 'Membre', trial: 'Essai', instructor: 'Moniteur', bureau: 'Bureau', admin: 'Admin', pointage: 'Pointage',
 };
-const ROLE_OPTIONS: DancerRole[] = ['member', 'trial', 'instructor', 'bureau', 'admin'];
+const ROLE_OPTIONS: DancerRole[] = ['member', 'trial', 'instructor', 'bureau', 'admin', 'pointage'];
 
 interface Campaign {
   id: string;
