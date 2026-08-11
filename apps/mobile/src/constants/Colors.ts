@@ -8,6 +8,10 @@ export const Colors = {
   orange: '#F5A83A',
   orangeDark: '#E8951F',
 
+  // Cotisation en attente
+  cotisation: '#E4572E',
+  cotisationDark: '#B8391A',
+
   // Action cards
   cardTeal: '#4A8B9C',
   cardTealDark: '#3A7080',

@@ -20,6 +20,8 @@ const config: Config = {
         orangeDark: colors.orangeDark,
         cardTeal: colors.cardTeal,
         cardTealDark: colors.cardTealDark,
+        cotisation: colors.cotisation,
+        cotisationDark: colors.cotisationDark,
       },
     },
   },

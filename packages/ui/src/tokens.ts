@@ -17,6 +17,8 @@ export const colors = {
   orangeDark: '#E8951F',
   cardTeal: '#4A8B9C',
   cardTealDark: '#3A7080',
+  cotisation: '#E4572E',
+  cotisationDark: '#B8391A',
 } as const;
 
 export const spacing = {

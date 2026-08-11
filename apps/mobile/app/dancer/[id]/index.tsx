@@ -6,11 +6,12 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
-  collection, query, orderBy, limit, getDocs,
+  collection, query, orderBy, limit, getDocs, where,
   addDoc, deleteDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
+import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
 import { usePagePermissions } from '@/contexts/PagePermissionsContext';
 import { Colors } from '@/constants/Colors';
@@ -75,6 +76,7 @@ function CardWaves() {
 
 export default function DancerHomeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
   const { selectedDancer } = useDancer();
   const { hasPerm } = usePagePermissions();
   const router = useRouter();
@@ -86,6 +88,8 @@ export default function DancerHomeScreen() {
   const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const [cotisationSeasonLabel, setCotisationSeasonLabel] = useState<string | null>(null);
+
   const isAdmin = selectedDancer?.roles?.includes('admin') ?? false;
 
   const loadAnnouncements = () => {
@@ -96,7 +100,31 @@ export default function DancerHomeScreen() {
     }).catch(() => {});
   };
 
+  // Bandeau "Cotisation en attente" : reste affiché tant qu'aucune cotisation
+  // de la saison active n'a de plan de paiement approuvé pour ce danseur —
+  // pas de date de fin, pas de fermeture manuelle (décision Christophe).
+  const loadCotisationStatus = useCallback(async () => {
+    if (!user || !selectedDancer) { setCotisationSeasonLabel(null); return; }
+    try {
+      const seasonsSnap = await getDocs(query(collection(db, 'seasons'), where('isActive', '==', true)));
+      if (seasonsSnap.empty) { setCotisationSeasonLabel(null); return; }
+      const activeSeason = seasonsSnap.docs[0]!;
+      const membershipsSnap = await getDocs(query(
+        collection(db, 'memberships'),
+        where('userId', '==', user.uid),
+        where('seasonId', '==', activeSeason.id),
+        where('dancerId', '==', selectedDancer.id),
+      ));
+      const hasApproved = membershipsSnap.docs.some(d => d.data().paymentPlanStatus === 'approved');
+      setCotisationSeasonLabel(hasApproved ? null : (activeSeason.data().label as string));
+    } catch (err) {
+      console.error('cotisation status:', err);
+      setCotisationSeasonLabel(null);
+    }
+  }, [user, selectedDancer]);
+
   useFocusEffect(useCallback(() => { loadAnnouncements(); }, []));
+  useFocusEffect(useCallback(() => { loadCotisationStatus(); }, [loadCotisationStatus]));
 
   const nav = (screen: string) => router.push(`/dancer/${id}/${screen}` as any);
 
@@ -210,8 +238,27 @@ export default function DancerHomeScreen() {
           <Text style={styles.name}>{selectedDancer.firstName}</Text>
         </View>
 
+        {/* ── Cotisation en attente ── */}
+        {cotisationSeasonLabel && (
+          <View style={[styles.section, { marginTop: 28 }]}>
+            <TouchableOpacity style={styles.cotisationCard} onPress={() => nav('membership')} activeOpacity={0.9}>
+              <View style={styles.cotisationHeaderRow}>
+                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                  <Path d="M12 9v4M12 16.5h.01M10.29 3.86l-8.02 13.9A1.5 1.5 0 003.55 20h16.9a1.5 1.5 0 001.28-2.24l-8.02-13.9a1.5 1.5 0 00-2.56 0z"
+                    stroke={Colors.white} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"/>
+                </Svg>
+                <Text style={styles.cotisationTitle}>Cotisation en attente</Text>
+              </View>
+              <Text style={styles.cotisationSub}>Saison {cotisationSeasonLabel} non réglée.</Text>
+              <View style={styles.cotisationBtn}>
+                <Text style={styles.cotisationBtnText}>Payer ma cotisation</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* ── Actualités ── */}
-        <View style={[styles.section, { marginTop: 42 }]}>
+        <View style={[styles.section, { marginTop: cotisationSeasonLabel ? 14 : 42 }]}>
           <View style={styles.actu}>
             <View style={styles.actuBadgeRow}>
               <View style={styles.actuBadge}>
@@ -403,6 +450,28 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   name: { fontSize: 22, fontWeight: '600', color: Colors.text },
+
+  // Cotisation en attente
+  cotisationCard: {
+    backgroundColor: Colors.cotisation,
+    borderRadius: 18,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  cotisationHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  cotisationTitle: { fontSize: 15, fontWeight: '700', color: Colors.white },
+  cotisationSub: { fontSize: 13, color: 'rgba(255,255,255,0.85)', marginBottom: 12 },
+  cotisationBtn: {
+    backgroundColor: Colors.white,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  cotisationBtnText: { fontSize: 14, fontWeight: '600', color: Colors.cotisationDark },
 
   // Actualités
   section: { paddingHorizontal: 20, marginTop: 28 },

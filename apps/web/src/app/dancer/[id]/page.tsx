@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
@@ -94,6 +94,32 @@ export default function DancerHubPage() {
   useEffect(() => {
     if (dancer) selectDancer(dancer);
   }, [dancer?.id]);
+
+  // Bandeau "Cotisation en attente" : reste affiché tant qu'aucune cotisation
+  // de la saison active n'a de plan de paiement approuvé pour ce danseur —
+  // pas de date de fin, pas de fermeture manuelle (décision Christophe).
+  const [cotisationSeasonLabel, setCotisationSeasonLabel] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user || !dancer) { setCotisationSeasonLabel(null); return; }
+    (async () => {
+      try {
+        const seasonsSnap = await getDocs(query(collection(db, 'seasons'), where('isActive', '==', true)));
+        if (seasonsSnap.empty) { setCotisationSeasonLabel(null); return; }
+        const activeSeason = seasonsSnap.docs[0]!;
+        const membershipsSnap = await getDocs(query(
+          collection(db, 'memberships'),
+          where('userId', '==', user.uid),
+          where('seasonId', '==', activeSeason.id),
+          where('dancerId', '==', dancer.id),
+        ));
+        const hasApproved = membershipsSnap.docs.some(d => d.data().paymentPlanStatus === 'approved');
+        setCotisationSeasonLabel(hasApproved ? null : (activeSeason.data().label as string));
+      } catch (err) {
+        console.error('cotisation status:', err);
+        setCotisationSeasonLabel(null);
+      }
+    })();
+  }, [user, dancer?.id]);
 
   const handleSwitchDancer = (d: Dancer) => {
     selectDancer(d);
@@ -253,6 +279,24 @@ export default function DancerHubPage() {
         {/* Main content */}
         <main className="flex-1 overflow-y-auto p-4 pb-24 md:pb-6 md:p-6 bg-background">
           <div className="max-w-lg mx-auto space-y-5">
+
+            {/* Cotisation en attente */}
+            {cotisationSeasonLabel && (
+              <Link href="/membership"
+                className="flex items-center gap-3 bg-[#FAECE7] border border-[#F0997B] rounded-2xl px-4 py-3.5 hover:brightness-[0.98] transition-all">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"
+                  className="w-6 h-6 text-[#D85A30] shrink-0">
+                  <path d="M12 9v4M12 16.5h.01M10.29 3.86l-8.02 13.9A1.5 1.5 0 003.55 20h16.9a1.5 1.5 0 001.28-2.24l-8.02-13.9a1.5 1.5 0 00-2.56 0z" />
+                </svg>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[#712B13]">Cotisation en attente</p>
+                  <p className="text-xs text-[#993C1D] mt-0.5">Saison {cotisationSeasonLabel} non réglée.</p>
+                </div>
+                <span className="shrink-0 bg-cotisation text-white text-xs font-semibold px-3.5 py-2 rounded-lg whitespace-nowrap">
+                  Payer ma cotisation →
+                </span>
+              </Link>
+            )}
 
             {/* Accès rapide — tuiles pleine largeur, une par ligne (façon mobile) */}
             {quickCards.length > 0 && (
