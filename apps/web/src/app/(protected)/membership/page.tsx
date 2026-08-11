@@ -273,9 +273,6 @@ export default function MembershipPage() {
 
       setMemberships(loadedMemberships.map(m => ({ ...m, installments: toInstallments(m.installmentIds) })));
       setPaymentGroups(loadedGroups.map(g => ({ ...g, installments: toInstallments(g.installmentIds) })));
-
-      const hasAnyMembership = loadedMemberships.length > 0 || loadedGroups.length > 0;
-      if (!hasAnyMembership) setShowCreateForm(true);
       } catch (err) {
         console.error('Erreur chargement cotisation:', err);
       } finally {
@@ -709,6 +706,19 @@ export default function MembershipPage() {
         {!season && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-12 text-center">
             <p className="text-gray-400">Aucune saison active pour le moment.</p>
+          </div>
+        )}
+
+        {season && memberships.length === 0 && paymentGroups.length === 0 && !showCreateForm && (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-12 text-center space-y-3">
+            <p className="font-semibold text-gray-800">Aucune cotisation</p>
+            <p className="text-sm text-gray-500">Aucune cotisation trouvée pour la saison en cours.</p>
+            <button
+              onClick={() => { resetCreateForm(); setShowCreateForm(true); }}
+              className="mt-2 bg-blue-600 text-white font-semibold px-6 py-2.5 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            >
+              Payer ma cotisation
+            </button>
           </div>
         )}
 
