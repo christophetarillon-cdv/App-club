@@ -174,7 +174,9 @@ export const createDancer = async (accountId: string, input: CreateDancerInput) 
     lastNameLower: input.lastName.toLowerCase(),
     isMinor: input.isMinor ?? false,
     ...(input.birthDate ? { birthDate: input.birthDate } : {}),
-    roles: ['member'],
+    // Un danseur nouvellement ajouté au compte démarre en essai, pas membre
+    // direct — plus logique, l'adhésion se confirme séparément.
+    roles: ['trial'],
     isActive: true,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

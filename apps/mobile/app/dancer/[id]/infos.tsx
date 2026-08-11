@@ -785,7 +785,9 @@ export default function InfosScreen() {
         firstNameLower: newFirstName.trim().toLowerCase(),
         lastNameLower: newLastName.trim().toLowerCase(),
         isMinor: false,
-        roles: ['member'],
+        // Un danseur nouvellement ajouté au compte démarre en essai, pas
+        // membre direct — plus logique, l'adhésion se confirme séparément.
+        roles: ['trial'],
         isActive: true,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
