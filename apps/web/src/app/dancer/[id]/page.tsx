@@ -95,9 +95,10 @@ export default function DancerHubPage() {
     if (dancer) selectDancer(dancer);
   }, [dancer?.id]);
 
-  // Bandeau "Cotisation en attente" : reste affiché tant qu'aucune cotisation
-  // de la saison active n'a de plan de paiement approuvé pour ce danseur —
-  // pas de date de fin, pas de fermeture manuelle (décision Christophe).
+  // Bandeau "Cotisation en attente" : affiché tant qu'aucune cotisation
+  // (même non validée) n'existe pour la saison active — dès qu'un plan est
+  // créé, qu'il soit approuvé ou non, le bandeau disparaît. Pas de date de
+  // fin, pas de fermeture manuelle (décision Christophe).
   const [cotisationSeasonLabel, setCotisationSeasonLabel] = useState<string | null>(null);
   useEffect(() => {
     if (!user || !dancer) { setCotisationSeasonLabel(null); return; }
@@ -112,8 +113,7 @@ export default function DancerHubPage() {
           where('seasonId', '==', activeSeason.id),
           where('dancerId', '==', dancer.id),
         ));
-        const hasApproved = membershipsSnap.docs.some(d => d.data().paymentPlanStatus === 'approved');
-        setCotisationSeasonLabel(hasApproved ? null : (activeSeason.data().label as string));
+        setCotisationSeasonLabel(membershipsSnap.empty ? (activeSeason.data().label as string) : null);
       } catch (err) {
         console.error('cotisation status:', err);
         setCotisationSeasonLabel(null);
@@ -282,7 +282,7 @@ export default function DancerHubPage() {
 
             {/* Cotisation en attente */}
             {cotisationSeasonLabel && (
-              <Link href="/membership"
+              <Link href="/membership?create=1"
                 className="flex items-center gap-3 bg-[#FAECE7] border border-[#F0997B] rounded-2xl px-4 py-3.5 hover:brightness-[0.98] transition-all">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"
                   className="w-6 h-6 text-[#D85A30] shrink-0">

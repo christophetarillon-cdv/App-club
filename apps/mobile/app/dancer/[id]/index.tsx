@@ -100,9 +100,10 @@ export default function DancerHomeScreen() {
     }).catch(() => {});
   };
 
-  // Bandeau "Cotisation en attente" : reste affiché tant qu'aucune cotisation
-  // de la saison active n'a de plan de paiement approuvé pour ce danseur —
-  // pas de date de fin, pas de fermeture manuelle (décision Christophe).
+  // Bandeau "Cotisation en attente" : affiché tant qu'aucune cotisation
+  // (même non validée) n'existe pour la saison active — dès qu'un plan est
+  // créé, qu'il soit approuvé ou non, le bandeau disparaît. Pas de date de
+  // fin, pas de fermeture manuelle (décision Christophe).
   const loadCotisationStatus = useCallback(async () => {
     if (!user || !selectedDancer) { setCotisationSeasonLabel(null); return; }
     try {
@@ -115,8 +116,7 @@ export default function DancerHomeScreen() {
         where('seasonId', '==', activeSeason.id),
         where('dancerId', '==', selectedDancer.id),
       ));
-      const hasApproved = membershipsSnap.docs.some(d => d.data().paymentPlanStatus === 'approved');
-      setCotisationSeasonLabel(hasApproved ? null : (activeSeason.data().label as string));
+      setCotisationSeasonLabel(membershipsSnap.empty ? (activeSeason.data().label as string) : null);
     } catch (err) {
       console.error('cotisation status:', err);
       setCotisationSeasonLabel(null);
@@ -241,7 +241,7 @@ export default function DancerHomeScreen() {
         {/* ── Cotisation en attente ── */}
         {cotisationSeasonLabel && (
           <View style={[styles.section, { marginTop: 28 }]}>
-            <TouchableOpacity style={styles.cotisationCard} onPress={() => nav('membership')} activeOpacity={0.9}>
+            <TouchableOpacity style={styles.cotisationCard} onPress={() => nav('membership-create')} activeOpacity={0.9}>
               <View style={styles.cotisationHeaderRow}>
                 <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
                   <Path d="M12 9v4M12 16.5h.01M10.29 3.86l-8.02 13.9A1.5 1.5 0 003.55 20h16.9a1.5 1.5 0 001.28-2.24l-8.02-13.9a1.5 1.5 0 00-2.56 0z"
@@ -258,7 +258,7 @@ export default function DancerHomeScreen() {
         )}
 
         {/* ── Actualités ── */}
-        <View style={[styles.section, { marginTop: cotisationSeasonLabel ? 14 : 42 }]}>
+        <View style={[styles.section, { marginTop: cotisationSeasonLabel ? 30 : 42 }]}>
           <View style={styles.actu}>
             <View style={styles.actuBadgeRow}>
               <View style={styles.actuBadge}>

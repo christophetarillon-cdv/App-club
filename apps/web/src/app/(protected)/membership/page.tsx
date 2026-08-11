@@ -625,6 +625,19 @@ export default function MembershipPage() {
     setSelectedMethod('cheque');
   };
 
+  // Depuis le bandeau "Cotisation en attente" de l'accueil (?create=1) : va
+  // directement à l'assistant de choix de cotisation, sans passer par l'écran
+  // intro "Aucune cotisation" (attend que les données du compte soient
+  // chargées, resetCreateForm dépend de myDancers).
+  useEffect(() => {
+    if (loading) return;
+    if (searchParams.get('create') === '1') {
+      resetCreateForm();
+      setShowCreateForm(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, searchParams]);
+
   const allPlansFilled = dancersToCreate.length > 0 &&
     dancersToCreate.every(d => Boolean(selectedPlanIds[d.id]));
 
