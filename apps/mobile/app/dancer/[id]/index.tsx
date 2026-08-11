@@ -43,6 +43,33 @@ function AudioIcon() {
   );
 }
 
+function CalendarIcon() {
+  return (
+    <Svg width={44} height={44} viewBox="0 0 24 24" fill="none">
+      <Path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5"
+        stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+    </Svg>
+  );
+}
+
+function UsersIcon() {
+  return (
+    <Svg width={44} height={44} viewBox="0 0 24 24" fill="none">
+      <Path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"
+        stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+    </Svg>
+  );
+}
+
+function SwitchIcon() {
+  return (
+    <Svg width={44} height={44} viewBox="0 0 24 24" fill="none">
+      <Path d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 3M21 7.5H7.5"
+        stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+    </Svg>
+  );
+}
+
 function DocIcon() {
   return (
     <Svg width={44} height={44} viewBox="0 0 24 24" fill="none">
@@ -76,8 +103,8 @@ function CardWaves() {
 
 export default function DancerHomeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user } = useAuth();
-  const { selectedDancer } = useDancer();
+  const { user, dancers } = useAuth();
+  const { selectedDancer, clearDancer } = useDancer();
   const { hasPerm } = usePagePermissions();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -127,6 +154,11 @@ export default function DancerHomeScreen() {
   useFocusEffect(useCallback(() => { loadCotisationStatus(); }, [loadCotisationStatus]));
 
   const nav = (screen: string) => router.push(`/dancer/${id}/${screen}` as any);
+
+  const handleChangeDancer = () => {
+    clearDancer();
+    router.replace('/select-dancer');
+  };
 
   const handleSignOut = () => {
     Alert.alert('Se déconnecter', 'Confirmer la déconnexion ?', [
@@ -298,8 +330,16 @@ export default function DancerHomeScreen() {
 
         {/* ── Cartes action ── */}
         <View style={styles.section}>
+          {hasPerm('/planning') && (
+            <TouchableOpacity style={styles.actionCard} onPress={() => nav('planning')} activeOpacity={0.85}>
+              <CardWaves />
+              <Text style={styles.actionLabel}>Agenda</Text>
+              <CalendarIcon />
+            </TouchableOpacity>
+          )}
+
           {hasPerm('/media') && (
-            <TouchableOpacity style={styles.actionCard} onPress={() => nav('videos')} activeOpacity={0.85}>
+            <TouchableOpacity style={[styles.actionCard, { marginTop: 12 }]} onPress={() => nav('videos')} activeOpacity={0.85}>
               <CardWaves />
               <Text style={styles.actionLabel}>Mes vidéos</Text>
               <VideoIcon />
@@ -314,11 +354,27 @@ export default function DancerHomeScreen() {
             </TouchableOpacity>
           )}
 
+          {hasPerm('/trombinoscope') && (
+            <TouchableOpacity style={[styles.actionCard, { marginTop: 12 }]} onPress={() => nav('trombinoscope')} activeOpacity={0.85}>
+              <CardWaves />
+              <Text style={styles.actionLabel}>Trombinoscope</Text>
+              <UsersIcon />
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity style={[styles.actionCard, { marginTop: 12 }]} onPress={() => nav('profile')} activeOpacity={0.85}>
             <CardWaves />
             <Text style={styles.actionLabel}>Mon espace</Text>
             <DocIcon />
           </TouchableOpacity>
+
+          {dancers.length > 1 && (
+            <TouchableOpacity style={[styles.actionCard, { marginTop: 12 }]} onPress={handleChangeDancer} activeOpacity={0.85}>
+              <CardWaves />
+              <Text style={styles.actionLabel}>Changer de danseur</Text>
+              <SwitchIcon />
+            </TouchableOpacity>
+          )}
 
           {hasPerm('/kiosk') && (
             <TouchableOpacity style={[styles.actionCard, { marginTop: 12 }]} onPress={() => nav('kiosk')} activeOpacity={0.85}>
