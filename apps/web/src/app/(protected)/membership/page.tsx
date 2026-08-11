@@ -133,7 +133,7 @@ export default function MembershipPage() {
   }, [selectedOtherDancers]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !selectedDancer) return;
     (async () => {
       try {
       const seasonsSnap = await getDocs(query(collection(db, 'seasons'), where('isActive', '==', true)));
@@ -271,15 +271,25 @@ export default function MembershipPage() {
       const toInstallments = (ids: string[]) =>
         ids.map(id => installmentMap.get(id)).filter((x): x is InstallmentDetail => Boolean(x));
 
-      setMemberships(loadedMemberships.map(m => ({ ...m, installments: toInstallments(m.installmentIds) })));
-      setPaymentGroups(loadedGroups.map(g => ({ ...g, installments: toInstallments(g.installmentIds) })));
+      // Un compte peut porter plusieurs danseurs (foyer) : cette page ne doit
+      // montrer que les cotisations du danseur affiché, pas celles de ses
+      // frères et sœurs. Les groupes peuvent regrouper plusieurs danseurs du
+      // même compte (paiement familial) — on garde le groupe entier dès qu'il
+      // concerne le danseur sélectionné, comme sur mobile.
+      const myMemberships = loadedMemberships.filter(m => m.dancerId === selectedDancer.id);
+      const myGroups = loadedGroups.filter(g =>
+        g.membershipIds.some(mid => membershipById.get(mid)?.dancerId === selectedDancer.id)
+      );
+
+      setMemberships(myMemberships.map(m => ({ ...m, installments: toInstallments(m.installmentIds) })));
+      setPaymentGroups(myGroups.map(g => ({ ...g, installments: toInstallments(g.installmentIds) })));
       } catch (err) {
         console.error('Erreur chargement cotisation:', err);
       } finally {
         setLoading(false);
       }
     })();
-  }, [user]);
+  }, [user, selectedDancer]);
 
   useEffect(() => {
     getDoc(doc(db, 'appSettings', 'main')).then(snap => {
