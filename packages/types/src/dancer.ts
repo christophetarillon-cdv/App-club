@@ -1,6 +1,6 @@
 import type { WithTimestamps, FirestoreTimestamp } from './common';
 
-export type DancerRole = 'member' | 'trial' | 'instructor' | 'bureau' | 'admin';
+export type DancerRole = 'member' | 'trial' | 'instructor' | 'bureau' | 'admin' | 'pointage';
 
 export interface Dancer extends WithTimestamps {
   id: string;
