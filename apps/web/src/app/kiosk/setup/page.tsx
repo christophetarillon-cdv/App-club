@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { collection, getDocs, query, where, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
@@ -39,7 +39,7 @@ const ClockIcon = () => (
   </svg>
 );
 
-export default function KioskSetupPage() {
+function KioskSetupContent() {
   const { user, account, dancers, loading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -226,5 +226,17 @@ export default function KioskSetupPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function KioskSetupPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <KioskSetupContent />
+    </Suspense>
   );
 }
