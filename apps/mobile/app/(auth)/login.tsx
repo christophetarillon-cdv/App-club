@@ -1,13 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
+  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Alert,
 } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, functionsBaseUrl } from '@/lib/firebase';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
+import {
+  isBiometricAvailable,
+  isBiometricEnabled,
+  getBiometricLabel,
+  getBiometricCredentials,
+  saveBiometricCredentials,
+  authenticateWithBiometric,
+} from '@/services/biometric.service';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -18,6 +26,60 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [resetLoading, setResetLoading] = useState(false);
+  const [biometricLabel, setBiometricLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    checkBiometric();
+  }, []);
+
+  const checkBiometric = async () => {
+    const available = await isBiometricAvailable();
+    if (!available) return;
+    const enabled = await isBiometricEnabled();
+    if (!enabled) return;
+    const label = await getBiometricLabel();
+    setBiometricLabel(label);
+    // Propose automatiquement la biométrie au lancement
+    triggerBiometricLogin();
+  };
+
+  const triggerBiometricLogin = async () => {
+    try {
+      const success = await authenticateWithBiometric();
+      if (!success) return;
+      const credentials = await getBiometricCredentials();
+      if (!credentials) return;
+      setLoading(true);
+      setError(null);
+      await signInWithEmailAndPassword(auth, credentials.email, credentials.password);
+    } catch {
+      setError('Vos identifiants sauvegardés ne sont plus valides. Reconnectez-vous manuellement.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const offerBiometric = async (emailVal: string, passwordVal: string) => {
+    const available = await isBiometricAvailable();
+    if (!available) return;
+    const alreadyEnabled = await isBiometricEnabled();
+    if (alreadyEnabled) return;
+    const label = await getBiometricLabel();
+    Alert.alert(
+      `Activer ${label} ?`,
+      `Voulez-vous utiliser ${label} pour vous connecter plus rapidement la prochaine fois ?`,
+      [
+        { text: 'Plus tard', style: 'cancel' },
+        {
+          text: 'Activer',
+          onPress: async () => {
+            await saveBiometricCredentials(emailVal, passwordVal);
+            setBiometricLabel(label);
+          },
+        },
+      ],
+    );
+  };
 
   const handleLogin = async () => {
     if (!email.trim() || !password) return;
@@ -26,6 +88,7 @@ export default function LoginScreen() {
     setInfo(null);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
+      offerBiometric(email.trim(), password);
     } catch {
       setError('Email ou mot de passe incorrect.');
     } finally {
@@ -147,6 +210,21 @@ export default function LoginScreen() {
               : <Text style={styles.buttonText}>Se connecter</Text>
             }
           </TouchableOpacity>
+
+          {biometricLabel && (
+            <TouchableOpacity
+              style={styles.biometricBtn}
+              onPress={() => triggerBiometricLogin()}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                <Path d="M12 2a5 5 0 00-5 5v2a5 5 0 0010 0V7a5 5 0 00-5-5zM7 11v2a5 5 0 0010 0v-2M12 16v4M9 20h6"
+                  stroke={Colors.primary} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+              </Svg>
+              <Text style={styles.biometricBtnText}>Connexion avec {biometricLabel}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -258,5 +336,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  biometricBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 13,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    borderRadius: 14,
+  },
+  biometricBtnText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

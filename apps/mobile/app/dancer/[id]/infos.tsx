@@ -14,6 +14,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions';
 import * as ImagePicker from 'expo-image-picker';
 import { auth, db, storage, functions } from '@/lib/firebase';
+import { isBiometricAvailable, isBiometricEnabled, getBiometricLabel, disableBiometric } from '@/services/biometric.service';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
 import { Colors } from '@/constants/Colors';
@@ -419,6 +420,31 @@ export default function InfosScreen() {
   const [delPassword, setDelPassword]             = useState('');
   const [delError, setDelError]                   = useState('');
   const [deleting, setDeleting]                   = useState(false);
+
+  // ── Biométrie (activée uniquement depuis l'écran de connexion — ici on ne
+  // permet que de la désactiver)
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricLabel, setBiometricLabel]     = useState('Biométrie');
+  useEffect(() => {
+    isBiometricAvailable().then((available) => {
+      if (!available) return;
+      isBiometricEnabled().then(setBiometricEnabled);
+      getBiometricLabel().then(setBiometricLabel);
+    });
+  }, []);
+  const handleDisableBiometric = () => {
+    Alert.alert(
+      `Désactiver ${biometricLabel} ?`,
+      'Vous devrez ressaisir votre mot de passe à la prochaine connexion.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Désactiver', style: 'destructive',
+          onPress: async () => { await disableBiometric(); setBiometricEnabled(false); },
+        },
+      ],
+    );
+  };
 
   // ── Chargement config standard ────────────────────────────────────────────
 
@@ -1315,6 +1341,20 @@ export default function InfosScreen() {
               <TextInput style={[styles.input, styles.inputDisabled]} value={user?.email ?? ''} editable={false} />
             </View>
           </View>
+
+          {biometricEnabled && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.toggleRow}>
+                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                  <Path d="M12 2a5 5 0 00-5 5v2a5 5 0 0010 0V7a5 5 0 00-5-5zM7 11v2a5 5 0 0010 0v-2M12 16v4M9 20h6"
+                    stroke={Colors.textSecondary} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+                <Text style={styles.toggleLabel}>Connexion par {biometricLabel}</Text>
+                <Switch value={biometricEnabled} onValueChange={handleDisableBiometric} trackColor={{ true: Colors.primary }} thumbColor="#fff" />
+              </View>
+            </>
+          )}
 
           {hasEmailProvider && (
             <>
