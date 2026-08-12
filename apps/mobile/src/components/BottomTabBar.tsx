@@ -98,13 +98,6 @@ export default function BottomTabBar({
         </TouchableOpacity>
       )}
 
-      {showCard && (
-        <TouchableOpacity style={styles.tabItem} onPress={() => go('card')}>
-          <QrIcon color={colorFor('card')} />
-          <Text style={[styles.tabLabel, active === 'card' && styles.tabLabelActive]} numberOfLines={1}>Ma carte</Text>
-        </TouchableOpacity>
-      )}
-
       {showVideos && (
         <TouchableOpacity style={styles.tabItem} onPress={() => go('videos')}>
           <VideoIcon color={colorFor('videos')} />
@@ -116,6 +109,13 @@ export default function BottomTabBar({
         <TouchableOpacity style={styles.tabItem} onPress={() => go('audios')}>
           <AudioIcon color={colorFor('audios')} />
           <Text style={[styles.tabLabel, active === 'audios' && styles.tabLabelActive]} numberOfLines={1}>Audios</Text>
+        </TouchableOpacity>
+      )}
+
+      {showCard && (
+        <TouchableOpacity style={styles.tabItem} onPress={() => go('card')}>
+          <QrIcon color={colorFor('card')} />
+          <Text style={[styles.tabLabel, active === 'card' && styles.tabLabelActive]} numberOfLines={1}>Ma carte</Text>
         </TouchableOpacity>
       )}
     </View>
