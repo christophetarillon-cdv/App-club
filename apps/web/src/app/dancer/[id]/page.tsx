@@ -286,14 +286,14 @@ export default function DancerHubPage() {
                 className="flex items-center gap-3 bg-[#FAECE7] border border-[#F0997B] rounded-2xl px-4 py-3.5 hover:brightness-[0.98] transition-all">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"
                   className="w-6 h-6 text-[#D85A30] shrink-0">
-                  <path d="M12 9v4M12 16.5h.01M10.29 3.86l-8.02 13.9A1.5 1.5 0 003.55 20h16.9a1.5 1.5 0 001.28-2.24l-8.02-13.9a1.5 1.5 0 00-2.56 0z" />
+                  <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-[#712B13]">Cotisation en attente</p>
-                  <p className="text-xs text-[#993C1D] mt-0.5">Saison {cotisationSeasonLabel} non réglée.</p>
+                  <p className="text-sm font-semibold text-[#712B13]">Inscription {cotisationSeasonLabel}</p>
+                  <p className="text-xs text-[#993C1D] mt-0.5">Merci de compléter vos infos et de choisir votre paiement</p>
                 </div>
                 <span className="shrink-0 bg-cotisation text-white text-xs font-semibold px-3.5 py-2 rounded-lg whitespace-nowrap">
-                  Payer ma cotisation →
+                  Je m'inscris →
                 </span>
               </Link>
             )}

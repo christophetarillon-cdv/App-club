@@ -276,14 +276,14 @@ export default function DancerHomeScreen() {
             <TouchableOpacity style={styles.cotisationCard} onPress={() => nav('membership-create')} activeOpacity={0.9}>
               <View style={styles.cotisationHeaderRow}>
                 <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                  <Path d="M12 9v4M12 16.5h.01M10.29 3.86l-8.02 13.9A1.5 1.5 0 003.55 20h16.9a1.5 1.5 0 001.28-2.24l-8.02-13.9a1.5 1.5 0 00-2.56 0z"
+                  <Path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                     stroke={Colors.white} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"/>
                 </Svg>
-                <Text style={styles.cotisationTitle}>Cotisation en attente</Text>
+                <Text style={styles.cotisationTitle}>Inscription {cotisationSeasonLabel}</Text>
               </View>
-              <Text style={styles.cotisationSub}>Saison {cotisationSeasonLabel} non réglée.</Text>
+              <Text style={styles.cotisationSub}>Merci de compléter vos infos et de choisir votre paiement</Text>
               <View style={styles.cotisationBtn}>
-                <Text style={styles.cotisationBtnText}>Payer ma cotisation</Text>
+                <Text style={styles.cotisationBtnText}>Je m'inscris</Text>
               </View>
             </TouchableOpacity>
           </View>
