@@ -38,8 +38,7 @@ export default function ConfidentialitePage() {
         <p>
           Vos données ne sont ni vendues ni partagées avec des tiers à des fins commerciales. Elles peuvent être
           transmises à des prestataires techniques strictement nécessaires au fonctionnement de l&apos;application
-          (hébergement Google Firebase, stockage Dropbox pour les documents), soumis à des obligations de
-          confidentialité.
+          (hébergement et stockage Google Firebase), soumis à des obligations de confidentialité.
         </p>
 
         <h2>4. Conservation des données</h2>
