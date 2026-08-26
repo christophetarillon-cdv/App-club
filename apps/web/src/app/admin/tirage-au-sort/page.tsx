@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
+import QRCode from 'react-qr-code';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import type { RaffleEntry } from '@cdv/types';
@@ -16,12 +17,40 @@ function tsToDateStr(ts: any): string {
 export default function TirageAuSortAdminPage() {
   const [entries, setEntries] = useState<RaffleEntry[] | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [jeuUrl, setJeuUrl] = useState('');
+  const qrRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getDocs(query(collection(db, 'raffleEntries'), orderBy('createdAt', 'desc'))).then(snap => {
       setEntries(snap.docs.map(d => ({ id: d.id, ...d.data() } as RaffleEntry)));
     });
   }, []);
+
+  useEffect(() => {
+    setJeuUrl(`${window.location.origin}/jeu`);
+  }, []);
+
+  const downloadQR = () => {
+    const svg = qrRef.current?.querySelector('svg');
+    if (!svg) return;
+    const size = 800;
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const img = new Image();
+    img.onload = () => {
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, size, size);
+      ctx.drawImage(img, 0, 0, size, size);
+      const a = document.createElement('a');
+      a.download = 'qr-code-tirage-au-sort.png';
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+    };
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+  };
 
   const handleExport = () => {
     if (!entries) return;
@@ -52,6 +81,23 @@ export default function TirageAuSortAdminPage() {
         </Link>
       </div>
       <p className="text-sm text-gray-500 mb-6">Inscrits au jeu-concours (page publique /jeu).</p>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6 flex items-center gap-5">
+        <div ref={qrRef} className="bg-white p-2 rounded-lg border border-gray-100 shrink-0">
+          {jeuUrl && <QRCode value={jeuUrl} size={110} />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-800 mb-1">QR code d&apos;accès au jeu</p>
+          <p className="text-xs text-gray-500 mb-3 truncate">{jeuUrl}</p>
+          <button
+            onClick={downloadQR}
+            disabled={!jeuUrl}
+            className="text-sm font-medium text-blue-600 hover:underline disabled:opacity-40"
+          >
+            Télécharger le QR code (.png)
+          </button>
+        </div>
+      </div>
 
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm text-gray-600">
