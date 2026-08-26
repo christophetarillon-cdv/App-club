@@ -545,7 +545,22 @@ service cloud.firestore {
       allow read: if hasPagePermission('/admin/tirage-au-sort');
       allow create: if isValidRaffleEntry();
       allow update: if hasPagePermission('/admin/tirage-au-sort') &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasWon', 'wonAt']);
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasWon', 'wonAt', 'winnerCode']);
+      allow delete: if hasPagePermission('/admin/tirage-au-sort');
+    }
+
+    // ── raffleWinnerCodes (code de réduction "saison gratuite") ──────────────
+    // Le code lui-même sert de secret : connaître le code (envoyé/annoncé au
+    // gagnant) suffit pour le vérifier (`get` par id exact), mais impossible
+    // de lister/deviner les codes des autres (pas de `allow list` public).
+    match /raffleWinnerCodes/{code} {
+      allow get: if isAuth();
+      allow list: if hasPagePermission('/admin/tirage-au-sort');
+      allow create: if hasPagePermission('/admin/tirage-au-sort');
+      allow update: if isAuth() &&
+        resource.data.redeemed == false &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['redeemed', 'redeemedAt', 'redeemedMembershipId']) &&
+        request.resource.data.redeemed == true;
       allow delete: if hasPagePermission('/admin/tirage-au-sort');
     }
   }

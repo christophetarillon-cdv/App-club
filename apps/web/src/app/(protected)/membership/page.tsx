@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getApp } from 'firebase/app';
 import {
-  collection, getDocs, query, where, orderBy, addDoc, doc, getDoc, updateDoc,
+  collection, getDocs, query, where, orderBy, addDoc, doc, getDoc, setDoc, updateDoc,
   deleteDoc, writeBatch, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -71,12 +71,12 @@ interface PaymentGroup {
   dancers: { name: string; planLabel: string }[];
 }
 
-type PaymentMethod = 'cheque' | 'transfer' | 'cash' | 'helloasso';
+type PaymentMethod = 'cheque' | 'transfer' | 'cash' | 'helloasso' | 'free';
 type PayScope = 'me' | 'myAccount' | 'otherAccount';
 type Step = 'who' | 'incomplete-profile' | 'plan' | 'payment-info';
 
 const METHOD_LABEL: Record<PaymentMethod, string> = {
-  cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', helloasso: 'En ligne',
+  cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', helloasso: 'En ligne', free: 'Gratuit',
 };
 
 // Charge et enrichit les cotisations/groupes d'un danseur pour UNE saison
@@ -228,6 +228,13 @@ export default function MembershipPage() {
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('cheque');
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Code gagnant (saison gratuite, tirage au sort) — cotisation solo uniquement
+  const [showCodeInput, setShowCodeInput] = useState(false);
+  const [winnerCodeInput, setWinnerCodeInput] = useState('');
+  const [codeChecking, setCodeChecking] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeApplied, setCodeApplied] = useState<{ code: string } | null>(null);
 
   // Fiches complètes des danseurs d'autres comptes sélectionnés (pour
   // vérifier les champs obligatoires manquants).
@@ -640,6 +647,72 @@ export default function MembershipPage() {
 
   const allPlansFilled = dancersToCreate.length > 0 &&
     dancersToCreate.every(d => Boolean(selectedPlanIds[d.id]));
+
+  const checkWinnerCode = async () => {
+    const code = winnerCodeInput.trim().toUpperCase();
+    if (!code) return;
+    setCodeChecking(true);
+    setCodeError(null);
+    try {
+      const snap = await getDoc(doc(db, 'raffleWinnerCodes', code));
+      if (!snap.exists()) { setCodeError('Code invalide.'); return; }
+      if (snap.data().redeemed) { setCodeError('Ce code a déjà été utilisé.'); return; }
+      setCodeApplied({ code });
+    } catch {
+      setCodeError('Erreur de vérification, réessayez.');
+    } finally {
+      setCodeChecking(false);
+    }
+  };
+
+  const handleCreateFree = async () => {
+    if (!user || !season || !codeApplied || dancersToCreate.length !== 1) return;
+    setSubmitting(true);
+    setCreateError(null);
+    try {
+      const dancer = dancersToCreate[0]!;
+      const planId = selectedPlanIds[dancer.id]!;
+      const mRef = doc(collection(db, 'memberships'));
+
+      // Le code est marqué utilisé EN PREMIER : la règle Firestore refuse
+      // cette écriture si un autre appareil l'a déjà consommé entre-temps,
+      // ce qui empêche d'utiliser deux fois le même code sans transaction.
+      await updateDoc(doc(db, 'raffleWinnerCodes', codeApplied.code), {
+        redeemed: true,
+        redeemedAt: serverTimestamp(),
+        redeemedMembershipId: mRef.id,
+      });
+
+      await setDoc(mRef, {
+        userId: user.uid,
+        dancerId: dancer.id,
+        seasonId: season.id,
+        pricingPlanId: planId,
+        totalDue: 0,
+        totalPaid: 0,
+        paymentMethod: 'free',
+        paymentPlanStatus: 'approved',
+        installmentIds: [],
+        status: 'active',
+        payerEmail: user.email ?? '',
+        payerName: account?.displayName ?? '',
+        dancerName: `${dancer.firstName} ${dancer.lastName}`,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      window.location.href = '/membership';
+    } catch (err: any) {
+      if (err?.code === 'permission-denied') {
+        setCodeError('Ce code a déjà été utilisé.');
+        setCodeApplied(null);
+      } else {
+        setCreateError('Une erreur est survenue lors de la création.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleCreate = async () => {
     if (!user || !season || !allPlansFilled) return;
@@ -1260,7 +1333,44 @@ export default function MembershipPage() {
                       ))}
                     </div>
 
-                    {allPlansFilled && (
+                    {dancersToCreate.length === 1 && (
+                      <div>
+                        {codeApplied ? (
+                          <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                            <p className="text-sm font-medium text-green-700">✓ Code {codeApplied.code} appliqué — saison gratuite</p>
+                            <button type="button" onClick={() => { setCodeApplied(null); setWinnerCodeInput(''); }}
+                              className="text-xs font-medium text-gray-500 hover:text-gray-700">
+                              Retirer
+                            </button>
+                          </div>
+                        ) : showCodeInput ? (
+                          <div>
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Code gagnant</p>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={winnerCodeInput}
+                                onChange={e => { setWinnerCodeInput(e.target.value.toUpperCase()); setCodeError(null); }}
+                                placeholder="Ex : AB23CD45"
+                                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                              />
+                              <button type="button" onClick={checkWinnerCode} disabled={!winnerCodeInput.trim() || codeChecking}
+                                className="bg-blue-600 text-white font-semibold px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
+                                {codeChecking ? '…' : 'Valider'}
+                              </button>
+                            </div>
+                            {codeError && <p className="text-xs text-red-600 mt-1">{codeError}</p>}
+                          </div>
+                        ) : (
+                          <button type="button" onClick={() => setShowCodeInput(true)}
+                            className="text-sm font-medium text-blue-600 hover:underline">
+                            J&apos;ai un code gagnant
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {allPlansFilled && !codeApplied && (
                       <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Mode de paiement</p>
                         <div className="flex gap-2 flex-wrap">
@@ -1287,10 +1397,17 @@ export default function MembershipPage() {
                         className="flex-1 bg-gray-100 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-200 text-sm transition-colors">
                         ← Retour
                       </button>
-                      <button onClick={() => setStep('payment-info')} disabled={!allPlansFilled}
-                        className="flex-[2] bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
-                        Continuer →
-                      </button>
+                      {codeApplied ? (
+                        <button onClick={handleCreateFree} disabled={!allPlansFilled || submitting}
+                          className="flex-[2] bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
+                          {submitting ? 'Création…' : 'Valider mon inscription gratuite →'}
+                        </button>
+                      ) : (
+                        <button onClick={() => setStep('payment-info')} disabled={!allPlansFilled}
+                          className="flex-[2] bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
+                          Continuer →
+                        </button>
+                      )}
                     </div>
                   </>
                 )}
@@ -1304,7 +1421,7 @@ export default function MembershipPage() {
 
                     <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                       <p className="font-semibold text-gray-900 text-sm mb-2">{METHOD_LABEL[selectedMethod]}</p>
-                      <p className="text-sm text-gray-600 whitespace-pre-line">{paymentInfo[selectedMethod]}</p>
+                      <p className="text-sm text-gray-600 whitespace-pre-line">{paymentInfo[selectedMethod as 'cheque' | 'transfer' | 'cash' | 'helloasso']}</p>
                     </div>
 
                     {selectedMethod === 'transfer' && bankAccounts.length > 0 && (

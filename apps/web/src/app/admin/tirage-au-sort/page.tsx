@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, orderBy, query } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import QRCode from 'react-qr-code';
 import Link from 'next/link';
@@ -16,13 +16,22 @@ function tsToDateStr(ts: any): string {
 
 export default function TirageAuSortAdminPage() {
   const [entries, setEntries] = useState<RaffleEntry[] | null>(null);
+  const [redeemedByCode, setRedeemedByCode] = useState<Record<string, boolean>>({});
   const [exporting, setExporting] = useState(false);
   const [jeuUrl, setJeuUrl] = useState('');
   const qrRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getDocs(query(collection(db, 'raffleEntries'), orderBy('createdAt', 'desc'))).then(snap => {
-      setEntries(snap.docs.map(d => ({ id: d.id, ...d.data() } as RaffleEntry)));
+    getDocs(query(collection(db, 'raffleEntries'), orderBy('createdAt', 'desc'))).then(async snap => {
+      const rows = snap.docs.map(d => ({ id: d.id, ...d.data() } as RaffleEntry));
+      setEntries(rows);
+
+      const codes = rows.map(r => r.winnerCode).filter((c): c is string => !!c);
+      const pairs = await Promise.all(codes.map(async c => {
+        const codeSnap = await getDoc(doc(db, 'raffleWinnerCodes', c));
+        return [c, codeSnap.data()?.redeemed === true] as const;
+      }));
+      setRedeemedByCode(Object.fromEntries(pairs));
     });
   }, []);
 
@@ -58,8 +67,13 @@ export default function TirageAuSortAdminPage() {
     try {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet([
-        ['Nom', 'Prénom', 'Email', 'Adhérent', 'Gagnant', 'Date d\'inscription'],
-        ...entries.map(e => [e.nom, e.prenom, e.email, e.isDancer ? 'Oui' : 'Non', e.hasWon ? 'Oui' : 'Non', tsToDateStr(e.createdAt)]),
+        ['Nom', 'Prénom', 'Email', 'Adhérent', 'Gagnant', 'Code', 'Code utilisé', 'Date d\'inscription'],
+        ...entries.map(e => [
+          e.nom, e.prenom, e.email, e.isDancer ? 'Oui' : 'Non', e.hasWon ? 'Oui' : 'Non',
+          e.winnerCode ?? '',
+          e.winnerCode ? (redeemedByCode[e.winnerCode] ? 'Oui' : 'Non') : '',
+          tsToDateStr(e.createdAt),
+        ]),
       ]);
       XLSX.utils.book_append_sheet(wb, ws, 'Inscrits');
       XLSX.writeFile(wb, `tirage-au-sort-inscrits-${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -121,12 +135,13 @@ export default function TirageAuSortAdminPage() {
               <th className="px-4 py-2">Email</th>
               <th className="px-4 py-2">Adhérent</th>
               <th className="px-4 py-2">Gagnant</th>
+              <th className="px-4 py-2">Code</th>
               <th className="px-4 py-2">Inscrit le</th>
             </tr>
           </thead>
           <tbody>
             {entries?.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">Aucun inscrit pour le moment.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-400">Aucun inscrit pour le moment.</td></tr>
             )}
             {entries?.map(e => (
               <tr key={e.id} className="border-t border-gray-100">
@@ -139,6 +154,20 @@ export default function TirageAuSortAdminPage() {
                     <span className="inline-block bg-orange/10 text-orangeDark text-xs font-semibold px-2 py-0.5 rounded-full">Gagnant</span>
                   ) : (
                     <span className="text-gray-400">—</span>
+                  )}
+                </td>
+                <td className="px-4 py-2">
+                  {e.winnerCode ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="font-mono text-gray-700">{e.winnerCode}</span>
+                      {redeemedByCode[e.winnerCode] ? (
+                        <span className="text-xs text-green-600 font-medium">Utilisé</span>
+                      ) : (
+                        <span className="text-xs text-gray-400">Non utilisé</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-gray-300">—</span>
                   )}
                 </td>
                 <td className="px-4 py-2 text-gray-500">{tsToDateStr(e.createdAt)}</td>

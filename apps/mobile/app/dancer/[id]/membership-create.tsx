@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
-  collection, query, where, getDocs, doc, getDoc, addDoc, writeBatch,
+  collection, query, where, getDocs, doc, getDoc, addDoc, setDoc, writeBatch,
   serverTimestamp, updateDoc,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -165,6 +165,13 @@ export default function MembershipCreateScreen() {
   const [planIds, setPlanIds] = useState<Record<string, string>>({});
   const [method, setMethod] = useState<PaymentMethod>('cheque');
   const [submitting, setSubmitting] = useState(false);
+
+  // ── Code gagnant (saison gratuite, tirage au sort) ─────────────────────────
+  const [showCodeInput, setShowCodeInput] = useState(false);
+  const [winnerCodeInput, setWinnerCodeInput] = useState('');
+  const [codeChecking, setCodeChecking] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeApplied, setCodeApplied] = useState<{ code: string } | null>(null);
 
   // ── Step 3 : installments
   const [creationResult, setCreationResult] = useState<CreationResult | null>(null);
@@ -493,6 +500,75 @@ export default function MembershipCreateScreen() {
       setPlanIds(pre);
     }
     setStep('plan');
+  };
+
+  // ── Code gagnant (saison gratuite) ─────────────────────────────────────────
+
+  const checkWinnerCode = async () => {
+    const code = winnerCodeInput.trim().toUpperCase();
+    if (!code) return;
+    setCodeChecking(true);
+    setCodeError(null);
+    try {
+      const snap = await getDoc(doc(db, 'raffleWinnerCodes', code));
+      if (!snap.exists()) { setCodeError('Code invalide.'); return; }
+      if (snap.data().redeemed) { setCodeError('Ce code a déjà été utilisé.'); return; }
+      setCodeApplied({ code });
+    } catch {
+      setCodeError('Erreur de vérification, réessayez.');
+    } finally {
+      setCodeChecking(false);
+    }
+  };
+
+  const handleCreateFree = async () => {
+    if (!user || !season || !codeApplied || allSelected.length !== 1) return;
+    setSubmitting(true);
+    try {
+      const dancer = allSelected[0]!;
+      const plan = plans.find(p => p.id === planIds[dancer.id])!;
+      const mRef = doc(collection(db, 'memberships'));
+
+      // Le code est marqué utilisé EN PREMIER : la règle Firestore refuse
+      // cette écriture si un autre appareil l'a déjà consommé entre-temps,
+      // ce qui empêche d'utiliser deux fois le même code sans transaction.
+      await updateDoc(doc(db, 'raffleWinnerCodes', codeApplied.code), {
+        redeemed: true,
+        redeemedAt: serverTimestamp(),
+        redeemedMembershipId: mRef.id,
+      });
+
+      await setDoc(mRef, {
+        userId: user.uid,
+        dancerId: dancer.id,
+        seasonId: season.id,
+        pricingPlanId: plan.id,
+        totalDue: 0,
+        totalPaid: 0,
+        paymentMethod: 'free',
+        paymentPlanStatus: 'approved',
+        installmentIds: [],
+        status: 'active',
+        payerEmail: user.email ?? '',
+        payerName: account?.displayName ?? '',
+        dancerName: `${dancer.firstName} ${dancer.lastName}`,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      Alert.alert('Inscription validée', 'Ta saison gratuite est enregistrée !', [
+        { text: 'OK', onPress: () => router.back() },
+      ]);
+    } catch (e: any) {
+      if (e?.code === 'permission-denied') {
+        setCodeError('Ce code a déjà été utilisé.');
+        setCodeApplied(null);
+      } else {
+        Alert.alert('Erreur', 'Une erreur est survenue lors de la création.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // ── Création membership ──────────────────────────────────────────────────
@@ -1067,7 +1143,8 @@ export default function MembershipCreateScreen() {
   // ── STEP INTERMÉDIAIRE : INFORMATIONS DE PAIEMENT ────────────────────────
 
   function renderPaymentInfo() {
-    const text = paymentInfo[method];
+    // 'free' (code gagnant) ne passe jamais par cette étape.
+    const text = paymentInfo[method as 'cheque' | 'transfer' | 'cash' | 'helloasso'];
     return (
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.incompleteCard}>
@@ -1130,32 +1207,86 @@ export default function MembershipCreateScreen() {
           </View>
         ))}
 
+        {/* Code gagnant (saison gratuite, tirage au sort) — cotisation solo uniquement */}
+        {allSelected.length === 1 && (
+          <View style={styles.codeSection}>
+            {codeApplied ? (
+              <View style={styles.codeAppliedRow}>
+                <Text style={styles.codeAppliedText}>✓ Code {codeApplied.code} appliqué — saison gratuite</Text>
+                <TouchableOpacity onPress={() => { setCodeApplied(null); setWinnerCodeInput(''); }}>
+                  <Text style={styles.codeRemoveText}>Retirer</Text>
+                </TouchableOpacity>
+              </View>
+            ) : showCodeInput ? (
+              <View>
+                <Text style={styles.fieldLabel}>Code gagnant</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TextInput
+                    style={[styles.fieldInput, { flex: 1 }]}
+                    value={winnerCodeInput}
+                    onChangeText={v => { setWinnerCodeInput(v.toUpperCase()); setCodeError(null); }}
+                    placeholder="Ex : AB23CD45"
+                    placeholderTextColor={Colors.textLight}
+                    autoCapitalize="characters"
+                  />
+                  <TouchableOpacity
+                    style={[styles.codeCheckBtn, (!winnerCodeInput.trim() || codeChecking) && styles.btnDisabled]}
+                    onPress={checkWinnerCode}
+                    disabled={!winnerCodeInput.trim() || codeChecking}
+                  >
+                    {codeChecking ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.codeCheckBtnText}>Valider</Text>}
+                  </TouchableOpacity>
+                </View>
+                {codeError && <Text style={styles.errorText}>{codeError}</Text>}
+              </View>
+            ) : (
+              <TouchableOpacity onPress={() => setShowCodeInput(true)}>
+                <Text style={styles.codeLinkText}>J'ai un code gagnant</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {/* Mode de paiement */}
-        <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Mode de paiement</Text>
-        <View style={styles.methodRow}>
-          {(['cheque', 'transfer', 'cash', 'helloasso'] as PaymentMethod[]).map(m => (
-            <TouchableOpacity key={m} style={[styles.methodBtn, method === m && styles.methodBtnActive]}
-              onPress={() => setMethod(m)} activeOpacity={0.75}>
-              <Text style={[styles.methodLabel, method === m && styles.methodLabelActive]}>{METHOD_LABEL[m]}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        {method === 'helloasso' && (
-          <Text style={styles.helloassoHint}>Vous serez redirigé vers HelloAsso pour finaliser le paiement.</Text>
+        {!codeApplied && (
+          <>
+            <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Mode de paiement</Text>
+            <View style={styles.methodRow}>
+              {(['cheque', 'transfer', 'cash', 'helloasso'] as PaymentMethod[]).map(m => (
+                <TouchableOpacity key={m} style={[styles.methodBtn, method === m && styles.methodBtnActive]}
+                  onPress={() => setMethod(m)} activeOpacity={0.75}>
+                  <Text style={[styles.methodLabel, method === m && styles.methodLabelActive]}>{METHOD_LABEL[m]}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {method === 'helloasso' && (
+              <Text style={styles.helloassoHint}>Vous serez redirigé vers HelloAsso pour finaliser le paiement.</Text>
+            )}
+          </>
         )}
 
         {/* Total */}
         {canCreate && (
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalAmount}>{fmtCents(totalDue)}</Text>
+            <Text style={styles.totalAmount}>{codeApplied ? fmtCents(0) : fmtCents(totalDue)}</Text>
           </View>
         )}
 
-        <TouchableOpacity style={[styles.primaryBtn, !canCreate && styles.btnDisabled]}
-          onPress={() => setStep('payment-info')} disabled={!canCreate} activeOpacity={0.8}>
-          <Text style={styles.primaryBtnText}>Continuer →</Text>
-        </TouchableOpacity>
+        {codeApplied ? (
+          <TouchableOpacity style={[styles.primaryBtn, (!canCreate || submitting) && styles.btnDisabled]}
+            onPress={handleCreateFree} disabled={!canCreate || submitting} activeOpacity={0.8}>
+            {submitting
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.primaryBtnText}>Valider mon inscription gratuite →</Text>
+            }
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={[styles.primaryBtn, !canCreate && styles.btnDisabled]}
+            onPress={() => setStep('payment-info')} disabled={!canCreate} activeOpacity={0.8}>
+            <Text style={styles.primaryBtnText}>Continuer →</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     );
   }
@@ -1381,6 +1512,15 @@ const styles = StyleSheet.create({
   addInstBtnText: { color: Colors.primary, fontSize: 14, fontWeight: '600' },
   hintText: { fontSize: 12, color: Colors.textLight, textAlign: 'center', marginTop: 10 },
   errorText: { fontSize: 13, color: Colors.danger, textAlign: 'center', marginBottom: 12 },
+
+  // Code gagnant
+  codeSection: { marginBottom: 16 },
+  codeLinkText: { fontSize: 13, fontWeight: '600', color: Colors.primary },
+  codeCheckBtn: { backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center' },
+  codeCheckBtnText: { color: Colors.white, fontSize: 13, fontWeight: '700' },
+  codeAppliedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#EEFBF3', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12 },
+  codeAppliedText: { fontSize: 13, fontWeight: '600', color: Colors.success, flex: 1 },
+  codeRemoveText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
 
   // Boutons
   primaryBtn: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 8 },

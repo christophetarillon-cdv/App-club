@@ -9,4 +9,5 @@ export interface RaffleEntry {
   createdAt: FirestoreTimestamp;
   hasWon: boolean;
   wonAt?: FirestoreTimestamp;
+  winnerCode?: string;
 }

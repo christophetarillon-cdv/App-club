@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, doc, getDoc, getDocs, query, updateDoc, where, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import type { RaffleEntry } from '@cdv/types';
@@ -11,6 +11,14 @@ type Status = 'loading' | 'empty' | 'spinning' | 'winner';
 
 const PAGE_KEY = '/admin/tirage-au-sort';
 const CHIP_COUNT = 14; // répété x2 pour la boucle continue
+// Sans caractères ambigus (0/O, 1/I/L) : le code peut être annoncé à l'oral.
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+function generateWinnerCode(): string {
+  let code = '';
+  for (let i = 0; i < 8; i++) code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+  return code;
+}
 
 function TicketIcon() {
   return (
@@ -70,9 +78,15 @@ export default function TirageAuSortPage() {
   const handleStop = async () => {
     const picked = pool[Math.floor(Math.random() * pool.length)];
     if (!picked) return;
+    const code = generateWinnerCode();
     setStatus('winner');
-    setWinner(picked);
-    await updateDoc(doc(db, 'raffleEntries', picked.id), { hasWon: true, wonAt: serverTimestamp() });
+    setWinner({ ...picked, winnerCode: code });
+    await setDoc(doc(db, 'raffleWinnerCodes', code), {
+      raffleEntryId: picked.id,
+      redeemed: false,
+      createdAt: serverTimestamp(),
+    });
+    await updateDoc(doc(db, 'raffleEntries', picked.id), { hasWon: true, wonAt: serverTimestamp(), winnerCode: code });
   };
 
   if (authLoading || allowed === null) {
@@ -147,6 +161,15 @@ export default function TirageAuSortPage() {
               </div>
               <div className="text-4xl font-extrabold text-white leading-tight">{winner.prenom}</div>
               <div className="text-2xl font-bold text-white/85 tracking-wide mt-1">{winner.nom.toUpperCase()}</div>
+
+              <div className="mt-8 bg-white/10 border border-white/15 rounded-xl px-6 py-4">
+                <p className="text-xs text-white/60 uppercase tracking-wide mb-1">Code saison gratuite</p>
+                <p className="text-2xl font-mono font-bold text-white tracking-[0.2em]">{winner.winnerCode}</p>
+              </div>
+              <p className="text-xs text-white/50 mt-3 max-w-xs">
+                À communiquer au gagnant : il l&apos;utilisera sur la page cotisation.
+              </p>
+
               <button
                 onClick={loadPool}
                 className="mt-10 text-sm font-medium text-white/70 hover:text-white underline underline-offset-2"
