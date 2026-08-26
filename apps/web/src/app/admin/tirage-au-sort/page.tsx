@@ -126,8 +126,8 @@ export default function TirageAuSortAdminPage() {
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <table className="w-full text-sm" style={{ minWidth: 800 }}>
           <thead>
             <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
               <th className="px-4 py-2">Nom</th>
@@ -156,7 +156,7 @@ export default function TirageAuSortAdminPage() {
                     <span className="text-gray-400">—</span>
                   )}
                 </td>
-                <td className="px-4 py-2">
+                <td className="px-4 py-2 whitespace-nowrap">
                   {e.winnerCode ? (
                     <span className="inline-flex items-center gap-2">
                       <span className="font-mono text-gray-700">{e.winnerCode}</span>
@@ -170,7 +170,7 @@ export default function TirageAuSortAdminPage() {
                     <span className="text-gray-300">—</span>
                   )}
                 </td>
-                <td className="px-4 py-2 text-gray-500">{tsToDateStr(e.createdAt)}</td>
+                <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{tsToDateStr(e.createdAt)}</td>
               </tr>
             ))}
           </tbody>
