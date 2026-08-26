@@ -526,5 +526,27 @@ service cloud.firestore {
       allow read: if isAuth();
       allow write: if hasPagePermission('/admin/settings/custom-fields');
     }
+
+    // ── raffleEntries (jeu-concours tirage au sort, page publique /jeu) ──────
+    // Collection volontairement indépendante des comptes/adhérents : accessible
+    // sans authentification (scan QR) en écriture seule à la création, jamais
+    // en lecture (protège les emails des participants).
+    function isValidRaffleEntry() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['nom', 'prenom', 'email', 'isDancer', 'hasWon', 'createdAt']) &&
+        d.nom is string && d.nom.size() > 0 && d.nom.size() <= 100 &&
+        d.prenom is string && d.prenom.size() > 0 && d.prenom.size() <= 100 &&
+        d.email is string && d.email.matches('.+@.+[.].+') && d.email.size() <= 200 &&
+        d.isDancer is bool &&
+        d.hasWon == false;
+    }
+
+    match /raffleEntries/{id} {
+      allow read: if hasPagePermission('/admin/tirage-au-sort');
+      allow create: if isValidRaffleEntry();
+      allow update: if hasPagePermission('/admin/tirage-au-sort') &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasWon', 'wonAt']);
+      allow delete: if hasPagePermission('/admin/tirage-au-sort');
+    }
   }
 }
