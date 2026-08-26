@@ -162,12 +162,8 @@ export default function TirageAuSortPage() {
               <div className="text-4xl font-extrabold text-white leading-tight">{winner.prenom}</div>
               <div className="text-2xl font-bold text-white/85 tracking-wide mt-1">{winner.nom.toUpperCase()}</div>
 
-              <div className="mt-8 bg-white/10 border border-white/15 rounded-xl px-6 py-4">
-                <p className="text-xs text-white/60 uppercase tracking-wide mb-1">Code saison gratuite</p>
-                <p className="text-2xl font-mono font-bold text-white tracking-[0.2em]">{winner.winnerCode}</p>
-              </div>
-              <p className="text-xs text-white/50 mt-3 max-w-xs">
-                À communiquer au gagnant : il l&apos;utilisera sur la page cotisation.
+              <p className="text-xs text-white/50 mt-6 max-w-xs">
+                Le code de sa saison gratuite est disponible dans la page de gestion (admin).
               </p>
 
               <button
