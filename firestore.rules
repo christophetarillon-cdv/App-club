@@ -542,11 +542,11 @@ service cloud.firestore {
     }
 
     match /raffleEntries/{id} {
-      allow read: if hasPagePermission('/tirage-au-sort');
+      allow read: if hasPagePermission('/admin/tirage-au-sort');
       allow create: if isValidRaffleEntry();
-      allow update: if hasPagePermission('/tirage-au-sort') &&
+      allow update: if hasPagePermission('/admin/tirage-au-sort') &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasWon', 'wonAt']);
-      allow delete: if hasPagePermission('/tirage-au-sort');
+      allow delete: if hasPagePermission('/admin/tirage-au-sort');
     }
   }
 }

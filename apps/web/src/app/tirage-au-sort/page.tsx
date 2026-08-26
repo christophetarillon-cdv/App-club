@@ -9,7 +9,7 @@ import type { RaffleEntry } from '@cdv/types';
 
 type Status = 'loading' | 'empty' | 'spinning' | 'winner';
 
-const PAGE_KEY = '/tirage-au-sort';
+const PAGE_KEY = '/admin/tirage-au-sort';
 const CHIP_COUNT = 14; // répété x2 pour la boucle continue
 
 function TicketIcon() {
@@ -37,7 +37,9 @@ export default function TirageAuSortPage() {
 
   // Vérifie l'accès indépendamment de tout layout admin : cette page doit
   // pouvoir s'ouvrir seule (projection lors de l'événement), sans le cadre
-  // de navigation habituel.
+  // de navigation habituel. Même clé de permission que /admin/tirage-au-sort
+  // (la page de gestion des inscrits), pour une seule ligne à gérer dans
+  // "Accès pages".
   useEffect(() => {
     if (authLoading) return;
     if (!user) { router.replace('/login'); return; }

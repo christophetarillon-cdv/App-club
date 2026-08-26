@@ -113,7 +113,7 @@ export const ADMIN_NAV: NavGroup[] = [
       { label: 'Canaux notif.', href: '/admin/notification-channels' },
       { label: 'Envoyer notif.', href: '/admin/notifications/send' },
       { label: 'Messages privés', href: '/admin/private-messages' },
-      { label: 'Tirage au sort', href: '/tirage-au-sort' },
+      { label: 'Tirage au sort', href: '/admin/tirage-au-sort' },
     ],
   },
   {
