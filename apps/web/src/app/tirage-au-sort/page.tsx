@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { collection, doc, getDoc, getDocs, query, updateDoc, where, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -10,6 +10,19 @@ import type { RaffleEntry } from '@cdv/types';
 type Status = 'loading' | 'empty' | 'spinning' | 'winner';
 
 const PAGE_KEY = '/tirage-au-sort';
+const CHIP_COUNT = 14; // répété x2 pour la boucle continue
+
+function TicketIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 8a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 000 4v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2a2 2 0 000-4V8z"
+        stroke="#fff" strokeWidth="1.6" strokeLinejoin="round"
+      />
+      <path d="M14 6v12" stroke="#fff" strokeWidth="1.6" strokeDasharray="2 2" />
+    </svg>
+  );
+}
 
 export default function TirageAuSortPage() {
   const router = useRouter();
@@ -39,8 +52,6 @@ export default function TirageAuSortPage() {
   const [status, setStatus] = useState<Status>('loading');
   const [pool, setPool] = useState<RaffleEntry[]>([]);
   const [winner, setWinner] = useState<RaffleEntry | null>(null);
-  const [cursor, setCursor] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadPool = async () => {
     setStatus('loading');
@@ -54,21 +65,11 @@ export default function TirageAuSortPage() {
 
   useEffect(() => { if (allowed) loadPool(); }, [allowed]);
 
-  // Fait défiler rapidement un nom au hasard pendant le tirage
-  useEffect(() => {
-    if (status !== 'spinning' || pool.length === 0) return;
-    intervalRef.current = setInterval(() => {
-      setCursor(c => (c + 1) % pool.length);
-    }, 90);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [status, pool.length]);
-
   const handleStop = async () => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
     const picked = pool[Math.floor(Math.random() * pool.length)];
     if (!picked) return;
-    setWinner(picked);
     setStatus('winner');
+    setWinner(picked);
     await updateDoc(doc(db, 'raffleEntries', picked.id), { hasWon: true, wonAt: serverTimestamp() });
   };
 
@@ -82,6 +83,16 @@ export default function TirageAuSortPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+      <style>{`
+        @keyframes tirageMarquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+        @keyframes tirageStopGlow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.45), 0 8px 20px rgba(0,0,0,0.35); }
+          50% { box-shadow: 0 0 0 14px rgba(239,68,68,0), 0 8px 20px rgba(0,0,0,0.35); }
+        }
+        .tirage-track { animation: tirageMarquee 4s linear infinite; }
+        .tirage-stop-btn { animation: tirageStopGlow 1.8s ease-out infinite; }
+      `}</style>
+
       <div className="w-full max-w-3xl">
         <h1 className="text-xl font-semibold text-gray-800 mb-1 text-center">Tirage au sort</h1>
         <p className="text-sm text-gray-500 mb-6 text-center">Gagne une saison gratuite — passez cette page en plein écran pour la projeter.</p>
@@ -100,18 +111,27 @@ export default function TirageAuSortPage() {
 
           {status === 'spinning' && pool.length > 0 && (
             <>
-              <div className="text-white/50 text-xs font-semibold tracking-[0.3em] uppercase mb-4">
+              <div className="text-white/50 text-xs font-semibold tracking-[0.3em] uppercase mb-6">
                 Tirage au sort en cours…
               </div>
-              <div className="relative w-full max-w-xl h-24 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden mb-10">
-                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-56 border-l-2 border-r-2 border-orange bg-orange/10" />
-                <span className="relative text-2xl font-bold text-white">
-                  {pool[cursor]?.prenom} {pool[cursor]?.nom?.[0]}.
-                </span>
+
+              <div className="relative w-full max-w-xl h-24 rounded-2xl bg-white/5 border border-white/10 overflow-hidden mb-10 flex items-center">
+                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-24 border-l-2 border-r-2 border-orange bg-orange/10 z-20" />
+                <div className="absolute inset-y-0 left-0 w-16 z-10" style={{ background: 'linear-gradient(90deg, #12405C 0%, transparent 100%)' }} />
+                <div className="absolute inset-y-0 right-0 w-16 z-10" style={{ background: 'linear-gradient(270deg, #12405C 0%, transparent 100%)' }} />
+
+                <div className="tirage-track flex items-center gap-4" style={{ width: 'max-content' }}>
+                  {Array.from({ length: CHIP_COUNT * 2 }).map((_, i) => (
+                    <div key={i} className="flex-none w-16 h-16 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center">
+                      <TicketIcon />
+                    </div>
+                  ))}
+                </div>
               </div>
+
               <button
                 onClick={handleStop}
-                className="rounded-full px-12 py-5 text-lg font-extrabold tracking-wide text-white bg-orange hover:bg-orangeDark transition-colors shadow-lg"
+                className="tirage-stop-btn rounded-full px-12 py-5 text-lg font-extrabold tracking-wide text-white bg-orange hover:bg-orangeDark transition-colors"
               >
                 ARRÊTER
               </button>
