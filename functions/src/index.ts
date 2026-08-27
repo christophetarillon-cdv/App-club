@@ -2956,7 +2956,7 @@ export const createWebViewAuthToken = onCall(
 
 const googleOAuthClientId = '959510245510-0av0cahoc0n0jk4622accc5o90md0h8d.apps.googleusercontent.com';
 const googleOAuthClientSecret = defineSecret('GOOGLE_OAUTH_CLIENT_SECRET');
-const GOOGLE_OAUTH_REDIRECT_URI = 'https://europe-west3-clubvoiron-dev.cloudfunctions.net/googleOAuthCallback';
+const GOOGLE_OAUTH_REDIRECT_URI = `https://europe-west3-${process.env.GCLOUD_PROJECT}.cloudfunctions.net/googleOAuthCallback`;
 const GOOGLE_OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/contacts',
   'https://www.googleapis.com/auth/gmail.send',
