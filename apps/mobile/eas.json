@@ -8,12 +8,20 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "simulator": true
+        "simulator": true,
+        "env": {
+          "APP_VARIANT": "development"
+        }
       }
     },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "ios": {
+        "env": {
+          "APP_VARIANT": "development"
+        }
+      },
       "android": {
         "buildType": "apk"
       }
