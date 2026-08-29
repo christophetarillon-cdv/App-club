@@ -2,15 +2,30 @@
 // quoi que ce soit ne soit rendu (voir le commentaire du fichier).
 import '@/lib/androidFontFix';
 import { useEffect } from 'react';
-import { ActivityIndicator, View, Text } from 'react-native';
+import { ActivityIndicator, View, Text, StyleSheet } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { DancerProvider } from '@/contexts/DancerContext';
 import { PagePermissionsProvider } from '@/contexts/PagePermissionsContext';
 import { Colors } from '@/constants/Colors';
 import { registerForPushNotificationsAsync } from '@/lib/pushNotifications';
+import { isProdEnvironment } from '@/lib/firebase';
+
+// Repère visuel permanent tant qu'on n'est pas connecté aux vraies données
+// (clubvoiron-prod) — pour ne jamais confondre la version test et la vraie
+// app, même si les deux sont installées côte à côte sur le même téléphone.
+function DevBadge() {
+  const insets = useSafeAreaInsets();
+  if (isProdEnvironment) return null;
+  return (
+    <View style={[styles.devBadge, { top: insets.top + 6 }]} pointerEvents="none">
+      <Text style={styles.devBadgeText}>DEV</Text>
+    </View>
+  );
+}
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -70,8 +85,28 @@ export default function RootLayout() {
         <PagePermissionsProvider>
           <StatusBar style="dark" />
           <Gate />
+          <DevBadge />
         </PagePermissionsProvider>
       </DancerProvider>
     </AuthProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  devBadge: {
+    position: 'absolute',
+    right: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 20,
+    backgroundColor: '#EF4444',
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  devBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+});

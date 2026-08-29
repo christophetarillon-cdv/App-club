@@ -40,3 +40,7 @@ export const functions = getFunctions(app, 'europe-west3');
 // via httpsCallable, ex. sendPasswordReset. Même logique dev/prod que
 // firebaseConfig ci-dessus : rien à changer au code lors du bascule.
 export const functionsBaseUrl = `https://europe-west3-${firebaseConfig.projectId}.cloudfunctions.net`;
+
+// Utilisé pour afficher un repère visuel "DEV" dans l'app quand elle n'est
+// pas connectée aux vraies données (clubvoiron-prod) — voir app/_layout.tsx.
+export const isProdEnvironment = firebaseConfig.projectId === 'clubvoiron-prod';
