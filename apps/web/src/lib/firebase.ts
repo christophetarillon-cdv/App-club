@@ -36,3 +36,8 @@ export const db = createDb();
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app, 'europe-west3');
+
+// Utilisé pour afficher un repère visuel "DEV" quand le site n'est pas
+// connecté aux vraies données (clubvoiron-prod) — voir app/layout.tsx.
+// Même logique que le badge de l'app mobile (src/lib/firebase.ts).
+export const isProdEnvironment = firebaseConfig.projectId === 'clubvoiron-prod';
