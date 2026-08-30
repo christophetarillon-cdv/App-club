@@ -3,12 +3,13 @@ import {
   View, Text, Pressable, FlatList, ScrollView, StyleSheet, Dimensions, ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, orderBy, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
-import type { Course, Session, DanceStyle, Level, Room } from '@cdv/types';
+import type { Course, Session, DanceStyle, Level, Room, Season, Interruption } from '@cdv/types';
+import { courseAppliesOn, type PlanningRules } from '@/lib/planning';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const WEEK_COUNT = 9;
@@ -109,11 +110,27 @@ export default function WeekScreen() {
       getDocs(collection(db, 'danceStyles')),
       getDocs(collection(db, 'rooms')),
       getDocs(collection(db, 'levels')),
-    ]).then(([sessionsSnap, coursesSnap, stylesSnap, roomsSnap, levelsSnap]) => {
+      getDocs(collection(db, 'seasons')),
+      getDocs(collection(db, 'interruptions')),
+      getDocs(collection(db, 'publicHolidays')),
+      getDoc(doc(db, 'appSettings', 'main')),
+    ]).then(([sessionsSnap, coursesSnap, stylesSnap, roomsSnap, levelsSnap, seasonsSnap, interruptionsSnap, holidaysSnap, settingsSnap]) => {
       const courses = new Map(coursesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Course]));
       const styles = new Map(stylesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as DanceStyle]));
       const rooms = new Map(roomsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Room]));
       const levels = new Map(levelsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Level]));
+      const seasons = new Map(seasonsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Season]));
+      const interruptions = interruptionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Interruption));
+      const publicHolidayDates = new Set(holidaysSnap.docs.map(d => d.data().date as string));
+      const settings = settingsSnap.data() ?? {};
+      const rules: PlanningRules = {
+        seasons,
+        interruptions,
+        schoolZone: settings.schoolZone ?? 'A',
+        cancelOnPublicHolidays: settings.cancelOnPublicHolidays ?? true,
+        cancelOnlyDuringSchoolHolidays: settings.cancelOnPublicHolidaysOnlyDuringSchoolHolidays ?? false,
+        publicHolidayDates,
+      };
 
       const map = new Map<string, Slot[]>();
 
@@ -139,9 +156,8 @@ export default function WeekScreen() {
       for (let i = 0; i < WEEK_COUNT * 7; i++) {
         const date = addDays(weeks[0], i);
         const dateStr = toDateStr(date);
-        const dow = date.getDay();
         for (const [courseId, course] of courses) {
-          if (!course.isActive || course.dayOfWeek !== dow) continue;
+          if (!courseAppliesOn(course, date, rules)) continue;
           const existing = map.get(dateStr) ?? [];
           if (existing.some(s => s.courseId === courseId)) continue;
           existing.push({

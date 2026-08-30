@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,7 +11,8 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@/constants/Colors';
 import BottomTabBar from '@/components/BottomTabBar';
-import type { Course, Session, DanceStyle, Level, Room } from '@cdv/types';
+import type { Course, Session, DanceStyle, Level, Room, Season, Interruption } from '@cdv/types';
+import { courseAppliesOn, type PlanningRules } from '@/lib/planning';
 
 interface Slot {
   id?: string; // id du doc sessions — absent pour les créneaux virtuels générés côté client
@@ -82,7 +83,7 @@ export default function PlanningScreen() {
 
   useEffect(() => {
     const dateStr = todayIso();
-    const todayDow = new Date().getDay();
+    const today = new Date();
 
     Promise.all([
       getDocs(query(collection(db, 'sessions'), where('date', '==', dateStr))),
@@ -90,11 +91,27 @@ export default function PlanningScreen() {
       getDocs(collection(db, 'danceStyles')),
       getDocs(collection(db, 'levels')),
       getDocs(collection(db, 'rooms')),
-    ]).then(([sessionsSnap, coursesSnap, stylesSnap, levelsSnap, roomsSnap]) => {
+      getDocs(collection(db, 'seasons')),
+      getDocs(collection(db, 'interruptions')),
+      getDocs(collection(db, 'publicHolidays')),
+      getDoc(doc(db, 'appSettings', 'main')),
+    ]).then(([sessionsSnap, coursesSnap, stylesSnap, levelsSnap, roomsSnap, seasonsSnap, interruptionsSnap, holidaysSnap, settingsSnap]) => {
       const courses = new Map(coursesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Course]));
       const styles = new Map(stylesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as DanceStyle]));
       const levels = new Map(levelsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Level]));
       const rooms = new Map(roomsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Room]));
+      const seasons = new Map(seasonsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Season]));
+      const interruptions = interruptionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Interruption));
+      const publicHolidayDates = new Set(holidaysSnap.docs.map(d => d.data().date as string));
+      const settings = settingsSnap.data() ?? {};
+      const rules: PlanningRules = {
+        seasons,
+        interruptions,
+        schoolZone: settings.schoolZone ?? 'A',
+        cancelOnPublicHolidays: settings.cancelOnPublicHolidays ?? true,
+        cancelOnlyDuringSchoolHolidays: settings.cancelOnPublicHolidaysOnlyDuringSchoolHolidays ?? false,
+        publicHolidayDates,
+      };
 
       const result: Slot[] = [];
       const handled = new Set<string>();
@@ -120,7 +137,7 @@ export default function PlanningScreen() {
 
       for (const [courseId, course] of courses) {
         if (handled.has(courseId)) continue;
-        if (!course.isActive || course.dayOfWeek !== todayDow) continue;
+        if (!courseAppliesOn(course, today, rules)) continue;
         result.push({
           date: dateStr,
           courseId,
