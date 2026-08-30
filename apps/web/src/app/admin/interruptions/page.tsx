@@ -14,6 +14,7 @@ interface Interruption {
   endDate: string;
   type: 'school_holiday' | 'manual';
   zone?: 'A' | 'B' | 'C';
+  seasonId?: string;
 }
 
 type InterruptionType = 'school_holiday' | 'manual';
@@ -30,6 +31,12 @@ interface SchoolHolidayRecord {
   annee_scolaire: string;
 }
 
+interface SeasonOption {
+  id: string;
+  label: string;
+  isActive: boolean;
+}
+
 export default function InterruptionsPage() {
   const [interruptions, setInterruptions] = useState<Interruption[]>([]);
   const [form, setForm] = useState(emptyForm);
@@ -38,6 +45,8 @@ export default function InterruptionsPage() {
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [schoolZone, setSchoolZone] = useState<'A' | 'B' | 'C'>('A');
+  const [seasons, setSeasons] = useState<SeasonOption[]>([]);
+  const [selectedSeasonId, setSelectedSeasonId] = useState('');
 
   const load = async () => {
     const q = query(collection(db, 'interruptions'), orderBy('startDate'));
@@ -49,6 +58,7 @@ export default function InterruptionsPage() {
       endDate: d.data().endDate,
       type: d.data().type,
       zone: d.data().zone,
+      seasonId: d.data().seasonId,
     })));
     setLoading(false);
   };
@@ -58,7 +68,15 @@ export default function InterruptionsPage() {
     if (snap.exists()) setSchoolZone(snap.data().schoolZone ?? 'A');
   };
 
-  useEffect(() => { Promise.all([load(), loadSettings()]); }, []);
+  const loadSeasons = async () => {
+    const snap = await getDocs(query(collection(db, 'seasons'), orderBy('startDate', 'desc')));
+    const list = snap.docs.map(d => ({ id: d.id, label: d.data().label, isActive: !!d.data().isActive }));
+    setSeasons(list);
+    const active = list.find(s => s.isActive) ?? list[0];
+    if (active) setSelectedSeasonId(active.id);
+  };
+
+  useEffect(() => { Promise.all([load(), loadSettings(), loadSeasons()]); }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,10 +114,11 @@ export default function InterruptionsPage() {
     new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date(iso));
 
   const importSchoolHolidays = async () => {
+    const season = seasons.find(s => s.id === selectedSeasonId);
+    if (!season) { alert('Choisis une saison avant d\'importer.'); return; }
     setImporting(true);
     try {
-      const year = new Date().getFullYear();
-      const annee = `${year - 1}-${year}`;
+      const annee = season.label;
       const zone = `Zone ${schoolZone}`;
       const apiUrl = new URL('https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-calendrier-scolaire/records');
       apiUrl.searchParams.set('limit', '100');
@@ -130,13 +149,14 @@ export default function InterruptionsPage() {
           type: 'school_holiday',
           zone: schoolZone,
           annee_scolaire: r.annee_scolaire,
+          seasonId: season.id,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
       }
       await batch.commit();
       await load();
-      alert(`${unique.length} périodes importées pour la zone ${schoolZone} (${annee}).`);
+      alert(`${unique.length} périodes importées pour la zone ${schoolZone}, saison ${season.label}.`);
     } catch (err) {
       alert(`Erreur lors de l'import : ${err}`);
     }
@@ -204,15 +224,27 @@ export default function InterruptionsPage() {
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-blue-800">Import automatique — vacances scolaires</p>
-          <p className="text-xs text-blue-600 mt-0.5">Importe les vacances scolaires depuis data.education.gouv.fr (zone {schoolZone}, année courante)</p>
+          <p className="text-xs text-blue-600 mt-0.5">Importe les vacances scolaires depuis data.education.gouv.fr (zone {schoolZone})</p>
         </div>
-        <button
-          onClick={importSchoolHolidays}
-          disabled={importing}
-          className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm whitespace-nowrap"
-        >
-          {importing ? 'Import…' : `Importer zone ${schoolZone}`}
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedSeasonId}
+            onChange={e => setSelectedSeasonId(e.target.value)}
+            className="border border-blue-300 rounded-lg px-3 py-2 text-sm bg-white"
+          >
+            {seasons.length === 0 && <option value="">Aucune saison</option>}
+            {seasons.map(s => (
+              <option key={s.id} value={s.id}>{s.label}{s.isActive ? ' (active)' : ''}</option>
+            ))}
+          </select>
+          <button
+            onClick={importSchoolHolidays}
+            disabled={importing || !selectedSeasonId}
+            className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm whitespace-nowrap"
+          >
+            {importing ? 'Import…' : `Importer zone ${schoolZone}`}
+          </button>
+        </div>
       </div>
 
       {loading ? <p className="text-gray-500 text-sm">Chargement…</p> : (
