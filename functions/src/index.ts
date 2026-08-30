@@ -176,136 +176,151 @@ export const sendPasswordReset = onRequest({ region: 'europe-west3' }, async (re
 });
 
 // ── generateSessions — génère les séances d'un cours sur la saison ────────────
+// Réconcilie les séances existantes avec la config actuelle du cours (ou son
+// absence si le cours a été supprimé) : crée les séances manquantes, mais
+// supprime aussi celles qui ne correspondent plus (jour/horaire changé,
+// période retirée de la récurrence, cours supprimé) — à condition qu'elles
+// soient encore "scheduled" (jamais une annulation manuelle ni une séance
+// "extra" ajoutée à la main), dans le futur, et sans présence déjà pointée
+// (l'historique réel n'est jamais touché, même si la config a changé depuis).
 export const generateSessions = onDocumentWritten(
   { document: 'courses/{courseId}', region: 'europe-west3' },
   async (event) => {
     const after = event.data?.after?.data();
-    if (!after) return; // suppression — on ne touche pas aux séances
-
     const courseId = event.params.courseId;
     const db = getDb();
+    const todayStr = new Date().toISOString().slice(0, 10);
 
-    // Séance ponctuelle : une seule session à la date choisie, pas de
-    // récurrence hebdomadaire ni de logique d'annulation automatique
-    // (vacances/jours fériés) — l'admin a choisi cette date en connaissance
-    // de cause.
-    if (after.isOneOff) {
-      if (!after.oneOffDate) return;
-      const existingSnap = await db.collection('sessions')
-        .where('courseId', '==', courseId)
-        .where('date', '==', after.oneOffDate)
-        .get();
-      if (!existingSnap.empty) return;
-      await db.collection('sessions').add({
-        courseId,
-        date: after.oneOffDate,
-        startTime: after.startTime,
-        endTime: after.endTime,
-        status: 'scheduled',
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      return;
-    }
-
-    // Charge la saison
-    const seasonSnap = await db.doc(`seasons/${after.seasonId}`).get();
-    if (!seasonSnap.exists) return;
-    const season = seasonSnap.data()!;
-    const seasonStart: admin.firestore.Timestamp = season.startDate;
-    const seasonEnd: admin.firestore.Timestamp = season.endDate;
-
-    // Charge les interruptions
-    const interruptionsSnap = await db.collection('interruptions').get();
-    const interruptions = interruptionsSnap.docs.map(d => d.data());
-
-    // Charge les jours fériés
-    const holidaysSnap = await db.collection('publicHolidays').get();
-    const publicHolidayDates = new Set(holidaysSnap.docs.map(d => d.data().date as string));
-
-    // Charge appSettings
-    const settingsSnap = await db.doc('appSettings/main').get();
-    const settings = settingsSnap.data() ?? {};
-    const schoolZone: string = settings.schoolZone ?? 'A';
-    const cancelOnPublicHolidays: boolean = settings.cancelOnPublicHolidays ?? true;
-    const cancelOnlyDuringSchoolHolidays: boolean = settings.cancelOnPublicHolidaysOnlyDuringSchoolHolidays ?? false;
-
-    // Charge les séances existantes du cours (pour éviter les doublons)
+    // Séances existantes du cours, avec assez de champs pour décider quoi
+    // garder/supprimer/mettre à jour sans requête supplémentaire.
     const existingSnap = await db.collection('sessions').where('courseId', '==', courseId).get();
-    const existingDates = new Set(existingSnap.docs.map(d => d.data().date as string));
+    const existingByDate = new Map(existingSnap.docs.map(d => [d.data().date as string, d]));
 
-    const dayOfWeek: number = after.dayOfWeek;
-    const startTime: string = after.startTime;
-    const endTime: string = after.endTime;
+    // Calcule les dates encore valides pour ce cours (vide si le cours a été
+    // supprimé) — avec le startTime/endTime attendu à cette date.
+    const validDates = new Map<string, { startTime: string; endTime: string }>();
 
-    const start = seasonStart.toDate();
-    const end = seasonEnd.toDate();
+    if (after) {
+      if (after.isOneOff) {
+        // Séance ponctuelle : une seule date, pas de récurrence ni de
+        // logique d'annulation automatique (vacances/jours fériés) — l'admin
+        // a choisi cette date en connaissance de cause.
+        if (after.oneOffDate) {
+          validDates.set(after.oneOffDate, { startTime: after.startTime, endTime: after.endTime });
+        }
+      } else {
+        const seasonSnap = await db.doc(`seasons/${after.seasonId}`).get();
+        if (seasonSnap.exists) {
+          const season = seasonSnap.data()!;
+          const seasonStart: admin.firestore.Timestamp = season.startDate;
+          const seasonEnd: admin.firestore.Timestamp = season.endDate;
 
-    const isInInterruption = (dateStr: string): boolean => {
-      for (const intr of interruptions) {
-        if (intr.type === 'school_holiday' && intr.zone !== schoolZone) continue;
-        if (dateStr >= intr.startDate && dateStr <= intr.endDate) return true;
-      }
-      return false;
-    };
+          const interruptionsSnap = await db.collection('interruptions').get();
+          const interruptions = interruptionsSnap.docs.map(d => d.data());
 
-    const isSchoolHoliday = (dateStr: string): boolean => {
-      for (const intr of interruptions) {
-        if (intr.type !== 'school_holiday') continue;
-        if (intr.zone !== schoolZone) continue;
-        if (dateStr >= intr.startDate && dateStr <= intr.endDate) return true;
-      }
-      return false;
-    };
+          const holidaysSnap = await db.collection('publicHolidays').get();
+          const publicHolidayDates = new Set(holidaysSnap.docs.map(d => d.data().date as string));
 
-    console.log(`[generateSessions] courseId=${courseId} dayOfWeek=${dayOfWeek} season=${start.toISOString().slice(0,10)}→${end.toISOString().slice(0,10)} existingDates=${existingDates.size} holidays=${publicHolidayDates.size} interruptions=${interruptions.length} cancelOnHolidays=${cancelOnPublicHolidays} onlyDuringSchoolHolidays=${cancelOnlyDuringSchoolHolidays} zone=${schoolZone}`);
+          const settingsSnap = await db.doc('appSettings/main').get();
+          const settings = settingsSnap.data() ?? {};
+          const schoolZone: string = settings.schoolZone ?? 'A';
+          const cancelOnPublicHolidays: boolean = settings.cancelOnPublicHolidays ?? true;
+          const cancelOnlyDuringSchoolHolidays: boolean = settings.cancelOnPublicHolidaysOnlyDuringSchoolHolidays ?? false;
 
-    const batch = db.batch();
-    let count = 0;
-    const skippedLog: string[] = [];
+          const dayOfWeek: number = after.dayOfWeek;
+          const startTime: string = after.startTime;
+          const endTime: string = after.endTime;
 
-    const cursor = new Date(start);
-    cursor.setHours(0, 0, 0, 0);
-
-    while (cursor <= end) {
-      if (cursor.getDay() === dayOfWeek) {
-        const dateStr = cursor.toISOString().slice(0, 10);
-
-        if (!existingDates.has(dateStr)) {
-          let skip = false;
-          let skipReason = '';
-
-          if (isInInterruption(dateStr)) {
-            skip = true; skipReason = 'interruption';
-          } else if (cancelOnPublicHolidays && publicHolidayDates.has(dateStr)) {
-            if (cancelOnlyDuringSchoolHolidays) {
-              skip = isSchoolHoliday(dateStr);
-              skipReason = skip ? 'holiday+schoolholiday' : '';
-            } else {
-              skip = true; skipReason = 'holiday';
+          const isInInterruption = (dateStr: string): boolean => {
+            for (const intr of interruptions) {
+              if (intr.type === 'school_holiday' && intr.zone !== schoolZone) continue;
+              if (dateStr >= intr.startDate && dateStr <= intr.endDate) return true;
             }
-          }
+            return false;
+          };
 
-          if (skip) {
-            skippedLog.push(`${dateStr}(${skipReason})`);
-          } else {
-            const ref = db.collection('sessions').doc();
-            batch.set(ref, {
-              courseId,
-              date: dateStr,
-              startTime,
-              endTime,
-              status: 'scheduled',
-              createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
-            count++;
+          const isSchoolHoliday = (dateStr: string): boolean => {
+            for (const intr of interruptions) {
+              if (intr.type !== 'school_holiday') continue;
+              if (intr.zone !== schoolZone) continue;
+              if (dateStr >= intr.startDate && dateStr <= intr.endDate) return true;
+            }
+            return false;
+          };
+
+          const cursor = new Date(seasonStart.toDate());
+          cursor.setHours(0, 0, 0, 0);
+          const end = seasonEnd.toDate();
+
+          while (cursor <= end) {
+            if (cursor.getDay() === dayOfWeek) {
+              const dateStr = cursor.toISOString().slice(0, 10);
+              let skip = isInInterruption(dateStr);
+              if (!skip && cancelOnPublicHolidays && publicHolidayDates.has(dateStr)) {
+                skip = cancelOnlyDuringSchoolHolidays ? isSchoolHoliday(dateStr) : true;
+              }
+              if (!skip) validDates.set(dateStr, { startTime, endTime });
+            }
+            cursor.setDate(cursor.getDate() + 1);
           }
         }
       }
-      cursor.setDate(cursor.getDate() + 1);
     }
 
-    console.log(`[generateSessions] created=${count} skipped=[${skippedLog.join(', ')}]`);
-    if (count > 0) await batch.commit();
+    // Séances "scheduled", futures, à réconcilier (jamais les annulations
+    // manuelles, les séances "extra", ni le passé).
+    const reconcilable = existingSnap.docs.filter(d => {
+      const data = d.data();
+      return data.status === 'scheduled' && data.date >= todayStr;
+    });
+
+    const toDelete = reconcilable.filter(d => !validDates.has(d.data().date as string));
+    const toUpdate = reconcilable.filter(d => {
+      const data = d.data();
+      const valid = validDates.get(data.date as string);
+      return valid && (valid.startTime !== data.startTime || valid.endTime !== data.endTime);
+    });
+    const toCreate = [...validDates.entries()].filter(([dateStr]) => !existingByDate.has(dateStr));
+
+    // Ne jamais supprimer une séance qui a déjà des présences pointées, même
+    // future (scan en avance, ou séance du jour déjà commencée).
+    const deleteCandidateIds = toDelete.map(d => d.id);
+    const withAttendance = new Set<string>();
+    for (let i = 0; i < deleteCandidateIds.length; i += 10) {
+      const chunk = deleteCandidateIds.slice(i, i + 10);
+      if (chunk.length === 0) continue;
+      const attSnap = await db.collection('attendances').where('sessionId', 'in', chunk).get();
+      attSnap.docs.forEach(a => withAttendance.add(a.data().sessionId));
+    }
+
+    const batch = db.batch();
+    let created = 0, updated = 0, deleted = 0;
+
+    for (const [dateStr, times] of toCreate) {
+      const ref = db.collection('sessions').doc();
+      batch.set(ref, {
+        courseId,
+        date: dateStr,
+        startTime: times.startTime,
+        endTime: times.endTime,
+        status: 'scheduled',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      created++;
+    }
+    for (const d of toUpdate) {
+      const valid = validDates.get(d.data().date as string)!;
+      batch.update(d.ref, { startTime: valid.startTime, endTime: valid.endTime, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      updated++;
+    }
+    for (const d of toDelete) {
+      if (withAttendance.has(d.id)) continue;
+      batch.delete(d.ref);
+      deleted++;
+    }
+
+    console.log(`[generateSessions] courseId=${courseId} deleted=${!after} created=${created} updated=${updated} deleted=${deleted} skippedWithAttendance=${withAttendance.size}`);
+    if (created > 0 || updated > 0 || deleted > 0) await batch.commit();
   },
 );
 
