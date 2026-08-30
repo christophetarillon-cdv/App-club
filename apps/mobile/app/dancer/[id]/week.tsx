@@ -12,8 +12,9 @@ import type { Course, Session, DanceStyle, Level, Room, Season, Interruption } f
 import { courseAppliesOn, type PlanningRules } from '@/lib/planning';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const WEEK_COUNT = 9;
-const CENTER_INDEX = 4;
+// Repli si aucune saison n'est trouvee (ne devrait pas arriver en usage normal).
+const FALLBACK_WEEK_COUNT = 9;
+const FALLBACK_CENTER_INDEX = 4;
 
 const DAY_SHORT = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 const MONTH_SHORT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
@@ -61,12 +62,10 @@ export default function WeekScreen() {
   const insets = useSafeAreaInsets();
   const flatRef = useRef<FlatList>(null);
 
-  const weeks = useMemo(() => {
-    const base = getMondayOf(new Date());
-    return Array.from({ length: WEEK_COUNT }, (_, i) => addDays(base, (i - CENTER_INDEX) * 7));
-  }, []);
-
-  const [currentIndex, setCurrentIndex] = useState(CENTER_INDEX);
+  const [weeks, setWeeks] = useState<Date[]>([]);
+  const [initialIndex, setInitialIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [seasonsMap, setSeasonsMap] = useState<Map<string, Season> | null>(null);
   const [slotsByDate, setSlotsByDate] = useState<Map<string, Slot[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [openingSlot, setOpeningSlot] = useState<string | null>(null);
@@ -94,9 +93,58 @@ export default function WeekScreen() {
 
   const todayStr = useMemo(() => toDateStr(new Date()), []);
 
+  // Phase 1 : determine les semaines a afficher (saison active entiere, ou a
+  // defaut une fenetre de +/-4 semaines) et l'index de depart (semaine
+  // courante) avant de charger le contenu du planning sur cette plage.
   useEffect(() => {
-    const rangeStart = toDateStr(weeks[0]);
-    const rangeEnd = toDateStr(addDays(weeks[WEEK_COUNT - 1], 6));
+    getDocs(collection(db, 'seasons')).then(seasonsSnap => {
+      const seasons = new Map(seasonsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Season]));
+      setSeasonsMap(seasons);
+
+      const today = new Date();
+      const activeSeason = [...seasons.values()].find(s => s.isActive)
+        ?? [...seasons.values()].find(s => {
+          const start = toDateStr(s.startDate.toDate());
+          const end = toDateStr(s.endDate.toDate());
+          return toDateStr(today) >= start && toDateStr(today) <= end;
+        });
+
+      let weeksArr: Date[];
+      let startIndex: number;
+
+      if (activeSeason) {
+        const seasonStartMonday = getMondayOf(activeSeason.startDate.toDate());
+        const seasonEndMonday = getMondayOf(activeSeason.endDate.toDate());
+        const totalWeeks = Math.round((seasonEndMonday.getTime() - seasonStartMonday.getTime()) / (7 * 86400000)) + 1;
+        weeksArr = Array.from({ length: totalWeeks }, (_, i) => addDays(seasonStartMonday, i * 7));
+        const todayMonday = getMondayOf(today).getTime();
+        const idx = weeksArr.findIndex(w => w.getTime() === todayMonday);
+        startIndex = idx === -1
+          ? (todayMonday < weeksArr[0]!.getTime() ? 0 : weeksArr.length - 1)
+          : idx;
+      } else {
+        const base = getMondayOf(today);
+        weeksArr = Array.from({ length: FALLBACK_WEEK_COUNT }, (_, i) => addDays(base, (i - FALLBACK_CENTER_INDEX) * 7));
+        startIndex = FALLBACK_CENTER_INDEX;
+      }
+
+      setWeeks(weeksArr);
+      setInitialIndex(startIndex);
+      setCurrentIndex(startIndex);
+    }).catch(() => {
+      const base = getMondayOf(new Date());
+      const weeksArr = Array.from({ length: FALLBACK_WEEK_COUNT }, (_, i) => addDays(base, (i - FALLBACK_CENTER_INDEX) * 7));
+      setWeeks(weeksArr);
+      setInitialIndex(FALLBACK_CENTER_INDEX);
+      setCurrentIndex(FALLBACK_CENTER_INDEX);
+    });
+  }, []);
+
+  // Phase 2 : charge sessions/cours/etc. une fois la plage de semaines connue.
+  useEffect(() => {
+    if (weeks.length === 0) return;
+    const rangeStart = toDateStr(weeks[0]!);
+    const rangeEnd = toDateStr(addDays(weeks[weeks.length - 1]!, 6));
 
     Promise.all([
       getDocs(query(
@@ -110,16 +158,15 @@ export default function WeekScreen() {
       getDocs(collection(db, 'danceStyles')),
       getDocs(collection(db, 'rooms')),
       getDocs(collection(db, 'levels')),
-      getDocs(collection(db, 'seasons')),
       getDocs(collection(db, 'interruptions')),
       getDocs(collection(db, 'publicHolidays')),
       getDoc(doc(db, 'appSettings', 'main')),
-    ]).then(([sessionsSnap, coursesSnap, stylesSnap, roomsSnap, levelsSnap, seasonsSnap, interruptionsSnap, holidaysSnap, settingsSnap]) => {
+    ]).then(([sessionsSnap, coursesSnap, stylesSnap, roomsSnap, levelsSnap, interruptionsSnap, holidaysSnap, settingsSnap]) => {
       const courses = new Map(coursesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Course]));
       const styles = new Map(stylesSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as DanceStyle]));
       const rooms = new Map(roomsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Room]));
       const levels = new Map(levelsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Level]));
-      const seasons = new Map(seasonsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Season]));
+      const seasons = seasonsMap ?? new Map<string, Season>();
       const interruptions = interruptionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Interruption));
       const publicHolidayDates = new Set(holidaysSnap.docs.map(d => d.data().date as string));
       const settings = settingsSnap.data() ?? {};
@@ -153,8 +200,8 @@ export default function WeekScreen() {
         map.set(s.date, existing);
       }
 
-      for (let i = 0; i < WEEK_COUNT * 7; i++) {
-        const date = addDays(weeks[0], i);
+      for (let i = 0; i < weeks.length * 7; i++) {
+        const date = addDays(weeks[0]!, i);
         const dateStr = toDateStr(date);
         for (const [courseId, course] of courses) {
           if (!courseAppliesOn(course, date, rules)) continue;
@@ -251,10 +298,10 @@ export default function WeekScreen() {
           <View style={styles.handle} />
         </View>
         <View style={styles.weekHeader}>
-          <Text style={styles.weekLabelText}>{weekLabel(weeks[currentIndex])}</Text>
+          <Text style={styles.weekLabelText}>{weeks[currentIndex] ? weekLabel(weeks[currentIndex]) : ''}</Text>
           <Text style={styles.weekHint}>{"← swiper pour changer de semaine →"}</Text>
         </View>
-        {loading ? (
+        {loading || weeks.length === 0 ? (
           <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
         ) : (
           <FlatList
@@ -265,7 +312,7 @@ export default function WeekScreen() {
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
-            initialScrollIndex={CENTER_INDEX}
+            initialScrollIndex={initialIndex}
             getItemLayout={(_, index) => ({ length: SCREEN_W, offset: SCREEN_W * index, index })}
             onViewableItemsChanged={onViewableItemsChanged}
             viewabilityConfig={viewabilityConfig}
