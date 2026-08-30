@@ -200,7 +200,11 @@ export const generateSessions = onDocumentWritten(
     // supprimé) — avec le startTime/endTime attendu à cette date.
     const validDates = new Map<string, { startTime: string; endTime: string }>();
 
-    if (after) {
+    // Un cours desactive (isActive: false) doit etre traite comme supprime
+    // pour la reconciliation des seances a venir — l'admin retire un cours
+    // "qui n'est plus d'actualite" en le desactivant, pas forcement en le
+    // supprimant (garde la config pour reactivation ulterieure).
+    if (after && after.isActive !== false) {
       if (after.isOneOff) {
         // Séance ponctuelle : une seule date, pas de récurrence ni de
         // logique d'annulation automatique (vacances/jours fériés) — l'admin
@@ -319,7 +323,7 @@ export const generateSessions = onDocumentWritten(
       deleted++;
     }
 
-    console.log(`[generateSessions] courseId=${courseId} deleted=${!after} created=${created} updated=${updated} deleted=${deleted} skippedWithAttendance=${withAttendance.size}`);
+    console.log(`[generateSessions] courseId=${courseId} courseGone=${!after || after.isActive === false} created=${created} updated=${updated} deleted=${deleted} skippedWithAttendance=${withAttendance.size}`);
     if (created > 0 || updated > 0 || deleted > 0) await batch.commit();
   },
 );
