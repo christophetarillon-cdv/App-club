@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, functionsBaseUrl } from '@/lib/firebase';
 import { loginWithEmail } from '@/lib/auth';
 
 async function redirectAfterLogin(router: ReturnType<typeof useRouter>, uid: string) {
@@ -22,6 +22,38 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [resetLoading, setResetLoading] = useState(false);
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      setInfo(null);
+      setError('Renseignez votre email ci-dessus pour recevoir le lien de réinitialisation.');
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    setResetLoading(true);
+    try {
+      const res = await fetch(`${functionsBaseUrl}/sendPasswordReset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setInfo('Email envoyé — vérifiez votre boîte de réception.');
+      } else if (data.error === 'user_not_found') {
+        setError("Aucun compte n'est associé à cet email.");
+      } else {
+        setError("Impossible d'envoyer l'email pour le moment. Réessayez plus tard.");
+      }
+    } catch {
+      setError('Erreur réseau — vérifiez votre connexion.');
+    } finally {
+      setResetLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,6 +103,14 @@ export default function LoginPage() {
             </div>
           </div>
 
+          <div className="text-right -mt-2">
+            <button type="button" onClick={handleForgotPassword} disabled={resetLoading}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50">
+              {resetLoading ? 'Envoi en cours…' : 'Mot de passe oublié ?'}
+            </button>
+          </div>
+
+          {info && <p className="text-green-600 text-sm">{info}</p>}
           {error && <p className="text-red-600 text-sm">{error}</p>}
 
           <button type="submit" disabled={loading}

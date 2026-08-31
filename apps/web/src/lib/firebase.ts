@@ -37,6 +37,11 @@ export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app, 'europe-west3');
 
+// Base URL des Cloud Functions HTTP (onRequest) — pour celles non appelées
+// via httpsCallable, ex. sendPasswordReset. Même helper que côté mobile
+// (apps/mobile/src/lib/firebase.ts).
+export const functionsBaseUrl = `https://europe-west3-${firebaseConfig.projectId}.cloudfunctions.net`;
+
 // Utilisé pour afficher un repère visuel "DEV" quand le site n'est pas
 // connecté aux vraies données (clubvoiron-prod) — voir app/layout.tsx.
 // Même logique que le badge de l'app mobile (src/lib/firebase.ts).
