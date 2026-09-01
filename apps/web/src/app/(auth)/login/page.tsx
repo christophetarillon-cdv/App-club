@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, functionsBaseUrl } from '@/lib/firebase';
 import { loginWithEmail } from '@/lib/auth';
+import { AppStoreButtons } from '@/components/AppStoreButtons';
 
 async function redirectAfterLogin(router: ReturnType<typeof useRouter>, uid: string) {
   const accountSnap = await getDoc(doc(db, 'accounts', uid));
@@ -118,6 +119,13 @@ export default function LoginPage() {
             {loading ? 'Connexion…' : 'Se connecter'}
           </button>
         </form>
+      </div>
+
+      <div className="mt-6 text-center">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          📱 Téléchargez l'application
+        </p>
+        <AppStoreButtons />
       </div>
     </div>
   );
