@@ -10,6 +10,7 @@ import { logout } from '@/lib/auth';
 import Link from 'next/link';
 import type { Dancer } from '@cdv/types';
 import { ADMIN_NAV } from '@/lib/admin-nav';
+import { AppStoreButtons } from '@/components/AppStoreButtons';
 
 // ── Avatar ───────────────────────────────────────────────────────────────────────
 function Avatar({ dancer, size = 'md' }: { dancer: Dancer; size?: 'lg' | 'md' | 'sm' }) {
@@ -338,6 +339,14 @@ export default function DancerHubPage() {
                   </div>
                 </button>
               </div>
+            </div>
+
+            {/* Téléchargement de l'application mobile */}
+            <div className="text-center pb-2">
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2.5">
+                📱 Téléchargez l'application
+              </p>
+              <AppStoreButtons />
             </div>
 
           </div>
