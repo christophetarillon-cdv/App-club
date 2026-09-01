@@ -38,6 +38,16 @@
           "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "556748254588",
           "EXPO_PUBLIC_FIREBASE_APP_ID": "1:556748254588:web:28e35dc08d99d1657c08f9"
         }
+      },
+      "android": {
+        "env": {
+          "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCKIDFu3Ds2cJPgHiqVJdmQfZ3eGMOE71Q",
+          "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "clubvoiron-prod.firebaseapp.com",
+          "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "clubvoiron-prod",
+          "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "clubvoiron-prod.firebasestorage.app",
+          "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "556748254588",
+          "EXPO_PUBLIC_FIREBASE_APP_ID": "1:556748254588:web:28e35dc08d99d1657c08f9"
+        }
       }
     }
   },
