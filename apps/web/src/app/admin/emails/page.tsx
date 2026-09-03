@@ -25,10 +25,15 @@ export default function EmailsPage() {
   const [seasonId, setSeasonId] = useState<string>('all');
   const [selectedRoles, setSelectedRoles] = useState<DancerRole[]>([]);
 
-  const [mode, setMode] = useState<'filters' | 'individual'>('filters');
+  const [mode, setMode] = useState<'filters' | 'individual' | 'google-groups'>('filters');
   const [allDancers, setAllDancers] = useState<Dancer[]>([]);
   const [dancerSearch, setDancerSearch] = useState('');
   const [selectedDancerIds, setSelectedDancerIds] = useState<Set<string>>(new Set());
+
+  const [googleGroups, setGoogleGroups] = useState<{ resourceName: string; name: string; memberCount: number }[] | null>(null);
+  const [loadingGoogleGroups, setLoadingGoogleGroups] = useState(false);
+  const [selectedGroupResourceName, setSelectedGroupResourceName] = useState('');
+  const [loadingGroupEmails, setLoadingGroupEmails] = useState(false);
 
   const [recipientEmails, setRecipientEmails] = useState<string[] | null>(null);
   const [resolving, setResolving] = useState(false);
@@ -81,12 +86,48 @@ export default function EmailsPage() {
 
   const recipientDescription = useMemo(() => {
     if (mode === 'individual') return `${selectedDancerIds.size} danseur(s) sélectionné(s) individuellement`;
+    if (mode === 'google-groups') {
+      const g = googleGroups?.find(g => g.resourceName === selectedGroupResourceName);
+      return g ? `Dossier Google : ${g.name}` : 'Aucun dossier sélectionné';
+    }
     const seasonLabel = seasonId === 'all' ? 'Tous les danseurs' : `Saison ${seasons.find(s => s.id === seasonId)?.label ?? seasonId}`;
     const roleLabel = selectedRoles.length > 0 ? `Rôle(s): ${selectedRoles.map(r => ROLE_LABELS[r]).join(', ')}` : null;
     return [seasonLabel, roleLabel].filter(Boolean).join(' · ');
-  }, [mode, selectedDancerIds, seasonId, seasons, selectedRoles]);
+  }, [mode, selectedDancerIds, seasonId, seasons, selectedRoles, googleGroups, selectedGroupResourceName]);
+
+  const loadGoogleGroups = async () => {
+    setLoadingGoogleGroups(true);
+    try {
+      const fn = httpsCallable<void, { groups: { resourceName: string; name: string; memberCount: number }[] }>(functions, 'listGoogleContactGroups');
+      const res = await fn();
+      setGoogleGroups(res.data.groups);
+    } catch (err) {
+      console.error('listGoogleContactGroups failed:', err);
+      setGoogleGroups([]);
+    } finally {
+      setLoadingGoogleGroups(false);
+    }
+  };
+
+  const handleSelectGroup = async (resourceName: string) => {
+    setSelectedGroupResourceName(resourceName);
+    setRecipientEmails(null);
+    if (!resourceName) return;
+    setLoadingGroupEmails(true);
+    try {
+      const fn = httpsCallable<{ resourceName: string }, { emails: string[] }>(functions, 'getGoogleContactGroupEmails');
+      const res = await fn({ resourceName });
+      setRecipientEmails(res.data.emails);
+    } catch (err) {
+      console.error('getGoogleContactGroupEmails failed:', err);
+      setRecipientEmails([]);
+    } finally {
+      setLoadingGroupEmails(false);
+    }
+  };
 
   const resolveRecipients = async (): Promise<string[]> => {
+    if (mode === 'google-groups') return recipientEmails ?? [];
     setResolving(true);
     try {
       let dancerIds: string[];
@@ -167,6 +208,10 @@ export default function EmailsPage() {
                 className={`text-sm px-3 py-1.5 rounded-lg border ${mode === 'individual' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-600'}`}>
                 Sélection individuelle
               </button>
+              <button onClick={() => { setMode('google-groups'); if (googleGroups === null) loadGoogleGroups(); }}
+                className={`text-sm px-3 py-1.5 rounded-lg border ${mode === 'google-groups' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-600'}`}>
+                Dossiers Google
+              </button>
             </div>
 
             {mode === 'filters' ? (
@@ -191,7 +236,7 @@ export default function EmailsPage() {
                   </div>
                 </div>
               </div>
-            ) : (
+            ) : mode === 'individual' ? (
               <div>
                 <input type="text" placeholder="Rechercher un danseur…" value={dancerSearch}
                   onChange={e => setDancerSearch(e.target.value)}
@@ -207,12 +252,34 @@ export default function EmailsPage() {
                 </div>
                 <p className="text-xs text-gray-500 mt-1">{selectedDancerIds.size} sélectionné(s)</p>
               </div>
+            ) : (
+              <div>
+                {loadingGoogleGroups ? (
+                  <p className="text-sm text-gray-500">Récupération des dossiers du compte Google connecté…</p>
+                ) : googleGroups !== null && googleGroups.length === 0 ? (
+                  <p className="text-sm text-gray-400">Aucun dossier trouvé sur ce compte.</p>
+                ) : googleGroups !== null ? (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-800 mb-1">Dossier Google</label>
+                    <select value={selectedGroupResourceName} onChange={e => handleSelectGroup(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50">
+                      <option value="">Choisir un dossier…</option>
+                      {googleGroups.map(g => (
+                        <option key={g.resourceName} value={g.resourceName}>{g.name} ({g.memberCount})</option>
+                      ))}
+                    </select>
+                    {loadingGroupEmails && <p className="text-xs text-gray-500 mt-2">Récupération des adresses du dossier…</p>}
+                  </div>
+                ) : null}
+              </div>
             )}
 
-            <button onClick={handlePreviewCount} disabled={resolving}
-              className="text-sm text-blue-600 hover:underline mt-2 disabled:opacity-50">
-              {resolving ? 'Calcul…' : 'Voir le nombre de destinataires'}
-            </button>
+            {mode !== 'google-groups' && (
+              <button onClick={handlePreviewCount} disabled={resolving}
+                className="text-sm text-blue-600 hover:underline mt-2 disabled:opacity-50">
+                {resolving ? 'Calcul…' : 'Voir le nombre de destinataires'}
+              </button>
+            )}
             {recipientEmails !== null && (
               <p className="text-sm text-gray-600 mt-1">{recipientEmails.length} destinataire(s).</p>
             )}

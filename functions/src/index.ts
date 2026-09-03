@@ -21,6 +21,84 @@ admin.initializeApp();
 const getDb = () => admin.firestore();
 const getAuth = () => admin.auth();
 
+// ── Helpers Google OAuth partagés (contacts, envoi d'emails, mot de passe
+// oublié) — déclarés ici pour être utilisables avant leur section dédiée
+// plus bas dans le fichier (Intégration Google).
+const googleOAuthClientId = '959510245510-0av0cahoc0n0jk4622accc5o90md0h8d.apps.googleusercontent.com';
+const googleOAuthClientSecret = defineSecret('GOOGLE_OAUTH_CLIENT_SECRET');
+const GOOGLE_OAUTH_REDIRECT_URI = `https://europe-west3-${process.env.GCLOUD_PROJECT}.cloudfunctions.net/googleOAuthCallback`;
+
+function getGoogleOAuthClient(clientSecret: string) {
+  return new google.auth.OAuth2(googleOAuthClientId, clientSecret, GOOGLE_OAUTH_REDIRECT_URI);
+}
+
+async function getGoogleAccessToken(clientSecret: string): Promise<string | null> {
+  const db = getDb();
+  const tokenSnap = await db.doc('googleTokens/main').get();
+  if (!tokenSnap.exists) return null;
+  const data = tokenSnap.data()!;
+  if (!data.refreshToken) return null;
+
+  const oauth2Client = getGoogleOAuthClient(clientSecret);
+  oauth2Client.setCredentials({
+    access_token: data.accessToken,
+    refresh_token: data.refreshToken,
+    expiry_date: data.expiryDate,
+  });
+
+  // Rafraîchit si le token expire dans moins de 5 minutes.
+  const expiresSoon = !data.expiryDate || data.expiryDate < Date.now() + 5 * 60 * 1000;
+  if (expiresSoon) {
+    try {
+      const { credentials } = await oauth2Client.refreshAccessToken();
+      await db.doc('googleTokens/main').set({
+        accessToken: credentials.access_token ?? null,
+        expiryDate: credentials.expiry_date ?? null,
+      }, { merge: true });
+      return credentials.access_token ?? null;
+    } catch (err) {
+      console.error('getGoogleAccessToken refresh failed:', err);
+      await db.doc('appSettings/googleIntegration').set({
+        lastSyncError: 'Le rafraîchissement du token a échoué, reconnecte le compte Google.',
+      }, { merge: true });
+      return null;
+    }
+  }
+  return data.accessToken ?? null;
+}
+
+function base64UrlEncode(input: string): string {
+  return Buffer.from(input, 'utf-8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function sendEmailViaGmail(to: string, subject: string, bodyHtml: string, clientSecret: string): Promise<void> {
+  const db = getDb();
+  const settingsSnap = await db.doc('appSettings/googleIntegration').get();
+  const settings = settingsSnap.data() ?? {};
+  if (!settings.connected) throw new Error('google_not_connected');
+
+  const accessToken = await getGoogleAccessToken(clientSecret);
+  if (!accessToken) throw new Error('google_token_invalid');
+
+  const oauth2Client = getGoogleOAuthClient(clientSecret);
+  oauth2Client.setCredentials({ access_token: accessToken });
+  const gmailClient = google.gmail({ version: 'v1', auth: oauth2Client });
+
+  const senderName: string = settings.senderDisplayName || 'Club de Danse Voiron / Coublevie';
+  const fromAddress: string = settings.connectedEmail;
+
+  const headers = [
+    `From: "${senderName}" <${fromAddress}>`,
+    `To: <${to}>`,
+    `Subject: =?UTF-8?B?${Buffer.from(subject, 'utf-8').toString('base64')}?=`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset="UTF-8"',
+  ].join('\r\n');
+
+  const raw = base64UrlEncode(`${headers}\r\n\r\n${bodyHtml}`);
+  await gmailClient.users.messages.send({ userId: 'me', requestBody: { raw } });
+}
+
 // ── createWebSessionToken — génère un token pour authentifier le web sans login
 export const createWebSessionToken = onCall({ region: 'europe-west3' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -128,52 +206,48 @@ export const notifyTrialLimitReached = onDocumentUpdated(
 );
 
 // ── sendPasswordReset ─────────────────────────────────────────────────────────
-export const sendPasswordReset = onRequest({ region: 'europe-west3' }, async (req, res) => {
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
-  if (req.method !== 'POST') { res.status(405).json({ error: 'method_not_allowed' }); return; }
+// Envoie via le compte Google connecté (appSettings/googleIntegration), comme
+// sendClubEmail — remplace l'ancien envoi SMTP (config/email) qui n'a jamais
+// été configuré ni sur clubvoiron-dev ni sur clubvoiron-prod.
+export const sendPasswordReset = onRequest(
+  { region: 'europe-west3', secrets: [googleOAuthClientSecret] },
+  async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+    if (req.method !== 'POST') { res.status(405).json({ error: 'method_not_allowed' }); return; }
 
-  const { email } = req.body ?? {};
-  if (!email) { res.status(400).json({ error: 'email_required' }); return; }
+    const { email } = req.body ?? {};
+    if (!email) { res.status(400).json({ error: 'email_required' }); return; }
 
-  try {
-    const db = getDb();
-    const configSnap = await db.doc('config/email').get();
-    if (!configSnap.exists) { res.status(500).json({ error: 'email_not_configured' }); return; }
-    const cfg = configSnap.data() as any;
-
-    const nodemailer = await import('nodemailer');
-    const resetLink = await getAuth().generatePasswordResetLink(email);
-    const transporter = nodemailer.createTransport({
-      host: cfg.smtpHost ?? 'smtp.gmail.com',
-      port: cfg.smtpPort ?? 587,
-      secure: false,
-      auth: { user: cfg.smtpUser, pass: cfg.smtpPass },
-    });
-    await transporter.sendMail({
-      from: `"${cfg.fromName ?? 'CDV'}" <${cfg.smtpUser}>`,
-      to: email,
-      subject: 'Réinitialisation de votre mot de passe',
-      html: `<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;">
-        <h2>Mot de passe oublié ?</h2>
-        <p>Cliquez sur le bouton ci-dessous pour réinitialiser votre mot de passe. Ce lien est valable <strong>1 heure</strong>.</p>
-        <a href="${resetLink}" style="display:inline-block;margin:24px 0;padding:14px 28px;background:#1B3A6B;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;">
-          Réinitialiser mon mot de passe
-        </a>
-        <p style="color:#999;font-size:12px;">Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
-      </div>`,
-    });
-    res.json({ success: true });
-  } catch (e: any) {
-    const code = e?.code;
-    if (code === 'auth/user-not-found' || code === 'auth/invalid-email') {
-      res.status(404).json({ error: 'user_not_found' });
-    } else {
-      res.status(500).json({ error: 'send_failed', detail: e?.message });
+    try {
+      const resetLink = await getAuth().generatePasswordResetLink(email);
+      await sendEmailViaGmail(
+        email,
+        'Réinitialisation de votre mot de passe',
+        `<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;">
+          <h2>Mot de passe oublié ?</h2>
+          <p>Cliquez sur le bouton ci-dessous pour réinitialiser votre mot de passe. Ce lien est valable <strong>1 heure</strong>.</p>
+          <a href="${resetLink}" style="display:inline-block;margin:24px 0;padding:14px 28px;background:#1B3A6B;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;">
+            Réinitialiser mon mot de passe
+          </a>
+          <p style="color:#999;font-size:12px;">Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
+        </div>`,
+        googleOAuthClientSecret.value(),
+      );
+      res.json({ success: true });
+    } catch (e: any) {
+      const code = e?.code;
+      if (code === 'auth/user-not-found' || code === 'auth/invalid-email') {
+        res.status(404).json({ error: 'user_not_found' });
+      } else if (e?.message === 'google_not_connected' || e?.message === 'google_token_invalid') {
+        res.status(500).json({ error: 'email_not_configured' });
+      } else {
+        res.status(500).json({ error: 'send_failed', detail: e?.message });
+      }
     }
-  }
-});
+  },
+);
 
 // ── generateSessions — génère les séances d'un cours sur la saison ────────────
 // Réconcilie les séances existantes avec la config actuelle du cours (ou son
@@ -2972,10 +3046,9 @@ export const createWebViewAuthToken = onCall(
 );
 
 // ── Intégration Google (contacts + envoi d'emails) ──────────────────────────
+// (googleOAuthClientId/Secret, GOOGLE_OAUTH_REDIRECT_URI, getGoogleOAuthClient,
+// getGoogleAccessToken sont déclarés plus haut, réutilisés aussi par sendPasswordReset)
 
-const googleOAuthClientId = '959510245510-0av0cahoc0n0jk4622accc5o90md0h8d.apps.googleusercontent.com';
-const googleOAuthClientSecret = defineSecret('GOOGLE_OAUTH_CLIENT_SECRET');
-const GOOGLE_OAUTH_REDIRECT_URI = `https://europe-west3-${process.env.GCLOUD_PROJECT}.cloudfunctions.net/googleOAuthCallback`;
 const GOOGLE_OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/contacts',
   'https://www.googleapis.com/auth/gmail.send',
@@ -3001,10 +3074,6 @@ async function callerHasGoogleSettingsAccess(callerUid: string): Promise<boolean
   const pagePermissions = (settingsSnap.data()?.pagePermissions ?? {}) as Record<string, string[]>;
   const allowed = pagePermissions['/admin/settings/google-integration'] ?? ['admin'];
   return roles.some(r => allowed.includes(r));
-}
-
-function getGoogleOAuthClient(clientSecret: string) {
-  return new google.auth.OAuth2(googleOAuthClientId, clientSecret, GOOGLE_OAUTH_REDIRECT_URI);
 }
 
 export const getGoogleAuthUrl = onCall(
@@ -3080,41 +3149,7 @@ export const disconnectGoogleAccount = onCall(
 );
 
 // ── Synchronisation contacts Google (Phase 2 : groupe global uniquement) ────
-
-async function getGoogleAccessToken(clientSecret: string): Promise<string | null> {
-  const db = getDb();
-  const tokenSnap = await db.doc('googleTokens/main').get();
-  if (!tokenSnap.exists) return null;
-  const data = tokenSnap.data()!;
-  if (!data.refreshToken) return null;
-
-  const oauth2Client = getGoogleOAuthClient(clientSecret);
-  oauth2Client.setCredentials({
-    access_token: data.accessToken,
-    refresh_token: data.refreshToken,
-    expiry_date: data.expiryDate,
-  });
-
-  // Rafraîchit si le token expire dans moins de 5 minutes.
-  const expiresSoon = !data.expiryDate || data.expiryDate < Date.now() + 5 * 60 * 1000;
-  if (expiresSoon) {
-    try {
-      const { credentials } = await oauth2Client.refreshAccessToken();
-      await db.doc('googleTokens/main').set({
-        accessToken: credentials.access_token ?? null,
-        expiryDate: credentials.expiry_date ?? null,
-      }, { merge: true });
-      return credentials.access_token ?? null;
-    } catch (err) {
-      console.error('getGoogleAccessToken refresh failed:', err);
-      await db.doc('appSettings/googleIntegration').set({
-        lastSyncError: 'Le rafraîchissement du token a échoué, reconnecte le compte Google.',
-      }, { merge: true });
-      return null;
-    }
-  }
-  return data.accessToken ?? null;
-}
+// (getGoogleAccessToken est déclarée plus haut, réutilisée aussi par sendPasswordReset)
 
 async function removeGoogleContact(resourceName: string, clientSecret: string): Promise<void> {
   const accessToken = await getGoogleAccessToken(clientSecret);
@@ -3413,9 +3448,7 @@ async function callerHasEmailsPageAccess(callerUid: string): Promise<boolean> {
   return roles.some(r => allowed.includes(r));
 }
 
-function base64UrlEncode(input: string): string {
-  return Buffer.from(input, 'utf-8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
+// (base64UrlEncode est déclarée plus haut, réutilisée aussi par sendPasswordReset)
 
 export const sendClubEmail = onCall(
   { region: 'europe-west3', secrets: [googleOAuthClientSecret] },
@@ -3474,5 +3507,77 @@ export const sendClubEmail = onCall(
     });
 
     return { sent: cleanRecipients.length, campaignId: campaignRef.id };
+  },
+);
+
+// ── listGoogleContactGroups — dossiers (labels) de contacts du compte connecté
+export const listGoogleContactGroups = onCall(
+  { region: 'europe-west3', secrets: [googleOAuthClientSecret] },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const hasAccess = await callerHasEmailsPageAccess(request.auth.uid);
+    if (!hasAccess) throw new HttpsError('permission-denied', "Vous n'avez pas accès à cette action");
+
+    const db = getDb();
+    const settingsSnap = await db.doc('appSettings/googleIntegration').get();
+    if (!settingsSnap.data()?.connected) throw new HttpsError('failed-precondition', 'Aucun compte Google connecté');
+
+    const accessToken = await getGoogleAccessToken(googleOAuthClientSecret.value());
+    if (!accessToken) throw new HttpsError('failed-precondition', 'Impossible de récupérer un token Google valide, reconnecte le compte');
+
+    const oauth2Client = getGoogleOAuthClient(googleOAuthClientSecret.value());
+    oauth2Client.setCredentials({ access_token: accessToken });
+    const peopleClient = google.people({ version: 'v1', auth: oauth2Client });
+
+    const { data } = await peopleClient.contactGroups.list({ pageSize: 200 });
+    const groups = (data.contactGroups ?? [])
+      .filter(g => (g.memberCount ?? 0) > 0)
+      .map(g => ({
+        resourceName: g.resourceName!,
+        name: g.formattedName ?? g.name ?? 'Sans nom',
+        memberCount: g.memberCount ?? 0,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    return { groups };
+  },
+);
+
+// ── getGoogleContactGroupEmails — emails des membres d'un dossier de contacts
+export const getGoogleContactGroupEmails = onCall(
+  { region: 'europe-west3', secrets: [googleOAuthClientSecret] },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const hasAccess = await callerHasEmailsPageAccess(request.auth.uid);
+    if (!hasAccess) throw new HttpsError('permission-denied', "Vous n'avez pas accès à cette action");
+
+    const { resourceName } = request.data as { resourceName: string };
+    if (!resourceName) throw new HttpsError('invalid-argument', 'resourceName requis');
+
+    const accessToken = await getGoogleAccessToken(googleOAuthClientSecret.value());
+    if (!accessToken) throw new HttpsError('failed-precondition', 'Impossible de récupérer un token Google valide, reconnecte le compte');
+
+    const oauth2Client = getGoogleOAuthClient(googleOAuthClientSecret.value());
+    oauth2Client.setCredentials({ access_token: accessToken });
+    const peopleClient = google.people({ version: 'v1', auth: oauth2Client });
+
+    const { data: groupData } = await peopleClient.contactGroups.get({ resourceName, maxMembers: 5000 });
+    const memberResourceNames = groupData.memberResourceNames ?? [];
+    if (memberResourceNames.length === 0) return { emails: [] };
+
+    const emails = new Set<string>();
+    for (let i = 0; i < memberResourceNames.length; i += 200) {
+      const chunk = memberResourceNames.slice(i, i + 200);
+      const { data: batch } = await peopleClient.people.getBatchGet({
+        resourceNames: chunk,
+        personFields: 'emailAddresses',
+      });
+      for (const resp of batch.responses ?? []) {
+        for (const e of resp.person?.emailAddresses ?? []) {
+          if (e.value) emails.add(e.value);
+        }
+      }
+    }
+    return { emails: [...emails] };
   },
 );
