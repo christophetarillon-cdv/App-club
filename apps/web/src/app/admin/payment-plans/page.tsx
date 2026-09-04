@@ -82,7 +82,10 @@ export default function AdminPaymentPlansPage() {
     const snap = await getDocs(query(collection(db, 'memberships'), where('paymentPlanStatus', '==', filter), where('seasonId', '==', selectedSeasonId)));
     const mems = snap.docs
       .map(d => ({ id: d.id, ...d.data() as Omit<Membership, 'id'> }))
-      .filter(m => !m.paymentGroupId);
+      .filter(m => !m.paymentGroupId)
+      // Tant que le danseur n'a pas validé son échéancier (dernier écran), la
+      // demande n'est pas encore prête à être examinée par l'association.
+      .filter(m => filter !== 'pending' || (m.installmentIds ?? []).length > 0);
 
     const enriched = await Promise.all(mems.map(async (m) => {
       const [accountSnap, seasonSnap, planSnap] = await Promise.all([
@@ -128,7 +131,9 @@ export default function AdminPaymentPlansPage() {
 
     // Payment groups
     const groupSnap = await getDocs(query(collection(db, 'paymentGroups'), where('paymentPlanStatus', '==', filter), where('seasonId', '==', selectedSeasonId)));
-    const groups = groupSnap.docs.map(d => ({ id: d.id, ...d.data() as Omit<PaymentGroupDoc, 'id'> }));
+    const groups = groupSnap.docs
+      .map(d => ({ id: d.id, ...d.data() as Omit<PaymentGroupDoc, 'id'> }))
+      .filter(g => filter !== 'pending' || (g.installmentIds ?? []).length > 0);
 
     const enrichedGroups = await Promise.all(groups.map(async (g) => {
       const [accountSnap, seasonSnap] = await Promise.all([

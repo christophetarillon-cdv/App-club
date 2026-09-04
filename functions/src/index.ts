@@ -699,31 +699,77 @@ async function getStaffAccountIds(db: admin.firestore.Firestore): Promise<string
   return [...ids];
 }
 
-export const notifyNewPaymentPlan = onDocumentCreated(
+// Le danseur choisit son plan/mode de paiement (memberships créé en 'pending')
+// PUIS renseigne l'échéancier (installmentIds) sur un écran séparé : la
+// notification doit partir a ce moment-la, pas a la creation du document.
+async function notifyStaffPaymentPlanReady(
+  db: admin.firestore.Firestore,
+  opts: { payerName: string; dancerNames: string[]; idField: 'membershipId' | 'paymentGroupId'; id: string },
+) {
+  const staffAccountIds = await getStaffAccountIds(db);
+  if (staffAccountIds.length === 0) return;
+
+  const staffSnaps = await Promise.all(staffAccountIds.map(id => db.doc(`accounts/${id}`).get()));
+  const tokens = staffSnaps.flatMap(s => (Array.isArray(s.data()?.fcmTokens) ? s.data()!.fcmTokens as string[] : []));
+  if (tokens.length === 0) return;
+
+  const names = opts.dancerNames.join(', ');
+  const who = opts.payerName ? `${opts.payerName} ` : '';
+  await sendPushToTokens(tokens, {
+    title: 'Nouveau plan de paiement',
+    body: `${who}a proposé un plan de paiement pour ${names} — en attente de validation.`,
+    data: { type: 'payment_plan_pending', [opts.idField]: opts.id },
+  });
+}
+
+function installmentsJustSet(
+  before: admin.firestore.DocumentData | undefined,
+  after: admin.firestore.DocumentData | undefined,
+): boolean {
+  if (!before || !after || after.paymentPlanStatus !== 'pending') return false;
+  const had = Array.isArray(before.installmentIds) && before.installmentIds.length > 0;
+  const has = Array.isArray(after.installmentIds) && after.installmentIds.length > 0;
+  return !had && has;
+}
+
+export const notifyNewPaymentPlan = onDocumentUpdated(
   { document: 'memberships/{membershipId}', region: 'europe-west3' },
   async (event) => {
-    const data = event.data?.data();
-    if (!data || data.paymentPlanStatus !== 'pending') return;
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    // Les memberships d'une cotisation groupée n'ont pas leur propre
+    // échéancier (voir notifyNewGroupPaymentPlan) : rien a faire ici.
+    if (after?.paymentGroupId) return;
+    if (!installmentsJustSet(before, after)) return;
+
+    await notifyStaffPaymentPlanReady(getDb(), {
+      payerName: (after!.payerName as string | undefined) ?? '',
+      dancerNames: [(after!.dancerName as string | undefined) ?? 'Un danseur'],
+      idField: 'membershipId',
+      id: event.params.membershipId,
+    });
+  },
+);
+
+// ── notifyNewGroupPaymentPlan — meme chose pour une cotisation groupée ───────
+export const notifyNewGroupPaymentPlan = onDocumentUpdated(
+  { document: 'paymentGroups/{groupId}', region: 'europe-west3' },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!installmentsJustSet(before, after)) return;
 
     const db = getDb();
-    const [dancerSnap, staffAccountIds] = await Promise.all([
-      data.dancerId ? db.doc(`dancers/${data.dancerId}`).get() : Promise.resolve(null),
-      getStaffAccountIds(db),
-    ]);
-    if (staffAccountIds.length === 0) return;
+    const membershipIds: string[] = Array.isArray(after!.membershipIds) ? after!.membershipIds : [];
+    const memberSnaps = await Promise.all(membershipIds.map(id => db.doc(`memberships/${id}`).get()));
+    const dancerNames = memberSnaps.map(s => (s.data()?.dancerName as string | undefined) ?? 'Un danseur');
+    const payerName = memberSnaps.find(s => s.exists)?.data()?.payerName as string | undefined;
 
-    const dancerName = dancerSnap?.exists
-      ? `${dancerSnap.data()!.firstName ?? ''} ${dancerSnap.data()!.lastName ?? ''}`.trim()
-      : 'Un danseur';
-
-    const staffSnaps = await Promise.all(staffAccountIds.map(id => db.doc(`accounts/${id}`).get()));
-    const tokens = staffSnaps.flatMap(s => (Array.isArray(s.data()?.fcmTokens) ? s.data()!.fcmTokens as string[] : []));
-    if (tokens.length === 0) return;
-
-    await sendPushToTokens(tokens, {
-      title: 'Nouveau plan de paiement',
-      body: `${dancerName} a proposé un plan de paiement en attente de validation.`,
-      data: { type: 'payment_plan_pending', membershipId: event.params.membershipId },
+    await notifyStaffPaymentPlanReady(db, {
+      payerName: payerName ?? '',
+      dancerNames: dancerNames.length > 0 ? dancerNames : ['un groupe de danseurs'],
+      idField: 'paymentGroupId',
+      id: event.params.groupId,
     });
   },
 );
