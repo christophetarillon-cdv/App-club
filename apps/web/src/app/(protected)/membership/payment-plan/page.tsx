@@ -10,6 +10,12 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { type Installment, emptyInstallment, MAX_INSTALLMENTS, chequeFields, type PaymentMethod } from '@/lib/payment-constants';
 
+// Si le danseur quitte/rafraîchit la page avant de valider, les versements
+// déjà tapés ne doivent pas être perdus.
+function draftKey(id: string) {
+  return `paymentPlanDraft:${id}`;
+}
+
 interface Membership {
   id: string;
   pricingPlanId: string;
@@ -100,6 +106,27 @@ export default function PaymentPlanPage() {
     load();
   }, [user, membershipId, groupId]);
 
+  const entityId = group?.id ?? membership?.id ?? null;
+
+  // Restaure les versements déjà tapés lors d'une précédente visite.
+  useEffect(() => {
+    if (!entityId) return;
+    try {
+      const raw = localStorage.getItem(draftKey(entityId));
+      if (!raw) return;
+      const draft = JSON.parse(raw) as Installment[];
+      if (Array.isArray(draft) && draft.length > 0) setInstallments(draft);
+    } catch { /* brouillon illisible, on garde la valeur par défaut */ }
+  }, [entityId]);
+
+  // Sauvegarde locale au fil de la saisie.
+  useEffect(() => {
+    if (!entityId) return;
+    try {
+      localStorage.setItem(draftKey(entityId), JSON.stringify(installments));
+    } catch { /* stockage indisponible (navigation privée, quota...) */ }
+  }, [entityId, installments]);
+
   const totalDue = group?.totalDue ?? membership?.totalDue ?? 0;
   const paymentMethod = group?.paymentMethod ?? membership?.paymentMethod ?? '';
 
@@ -173,6 +200,9 @@ export default function PaymentPlanPage() {
     }
 
     await batch.commit();
+    if (entityId) {
+      try { localStorage.removeItem(draftKey(entityId)); } catch { /* ignore */ }
+    }
     setSaving(false);
     window.location.href = '/membership';
   };

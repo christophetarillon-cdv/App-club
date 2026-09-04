@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
-  collection, query, where, getDocs, doc, getDoc, orderBy,
+  collection, query, where, getDocs, doc, getDoc, orderBy, deleteDoc, writeBatch,
 } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Colors } from '@/constants/Colors';
@@ -190,10 +191,26 @@ function RefundInfo({ amount, method, reference }: { amount?: number; method?: s
   );
 }
 
-function SoloCard({ entry }: { entry: SoloEntry }) {
+function AbandonedActions({ onContinue, onCancel }: { onContinue: () => void; onCancel: () => void }) {
+  return (
+    <View style={styles.abandonedRow}>
+      <TouchableOpacity style={[styles.continueBtn, { flex: 3 }]} onPress={onContinue} activeOpacity={0.8}>
+        <Text style={styles.continueBtnText}>Continuer l'échéancier →</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.8}>
+        <Text style={styles.cancelBtnText}>Annuler</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function SoloCard({ entry, onContinue, onCancel }: { entry: SoloEntry; onContinue: () => void; onCancel: () => void }) {
   const { membership: m, dancer, plan, installments } = entry;
   const pStatus = PLAN_STATUS[m.paymentPlanStatus] ?? PLAN_STATUS.pending;
   const mStatus = m.paymentPlanStatus === 'cancelled' ? pStatus : (MEMBERSHIP_STATUS[m.status] ?? MEMBERSHIP_STATUS.pending);
+  // Demande créée mais jamais soumise (dernier écran non validé) : rien à
+  // afficher côté échéancier, on propose de reprendre là où c'était resté.
+  const abandoned = m.paymentPlanStatus === 'pending' && (m.installmentIds ?? []).length === 0;
 
   return (
     <View style={styles.card}>
@@ -215,13 +232,15 @@ function SoloCard({ entry }: { entry: SoloEntry }) {
       <StatusBadge cfg={pStatus} />
 
       <InstallmentsList installments={installments} />
+      {abandoned && <AbandonedActions onContinue={onContinue} onCancel={onCancel} />}
     </View>
   );
 }
 
-function GroupCard({ entry }: { entry: GroupEntry }) {
+function GroupCard({ entry, onContinue, onCancel }: { entry: GroupEntry; onContinue: () => void; onCancel: () => void }) {
   const { group: g, rows, installments } = entry;
   const pStatus = PLAN_STATUS[g.paymentPlanStatus] ?? PLAN_STATUS.pending;
+  const abandoned = g.paymentPlanStatus === 'pending' && (g.installmentIds ?? []).length === 0;
 
   return (
     <View style={styles.card}>
@@ -251,6 +270,7 @@ function GroupCard({ entry }: { entry: GroupEntry }) {
       <RefundInfo amount={g.refundAmount} method={g.refundMethod} reference={g.refundReference} />
       <StatusBadge cfg={pStatus} />
       <InstallmentsList installments={installments} />
+      {abandoned && <AbandonedActions onContinue={onContinue} onCancel={onCancel} />}
     </View>
   );
 }
@@ -397,6 +417,60 @@ export default function MembershipScreen() {
     loadForSeason(s);
   };
 
+  // Annuler une demande jamais soumise : supprime le/les document(s) — les
+  // règles Firestore n'autorisent cette suppression par le titulaire que si
+  // le plan est encore "pending" avec un échéancier vide, ce qui est
+  // exactement le cas "abandonné" affiché ici — et efface le brouillon
+  // local pour "libérer" complètement le danseur.
+  const handleCancelSolo = (membershipId: string) => {
+    Alert.alert(
+      'Annuler cette demande ?',
+      'La demande de cotisation en cours sera définitivement supprimée. Vous pourrez recommencer une nouvelle demande ensuite.',
+      [
+        { text: 'Retour', style: 'cancel' },
+        {
+          text: 'Annuler la demande', style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, 'memberships', membershipId));
+              await AsyncStorage.removeItem(`paymentPlanDraft:${membershipId}`);
+              setEntries(prev => prev.filter(e => e.kind !== 'solo' || e.membership.id !== membershipId));
+            } catch (err) {
+              console.error('handleCancelSolo:', err);
+              Alert.alert('Erreur', 'Impossible d\'annuler cette demande. Réessayez.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleCancelGroup = (group: PaymentGroup) => {
+    Alert.alert(
+      'Annuler cette demande groupée ?',
+      'La demande de cotisation en cours pour ce groupe sera définitivement supprimée. Vous pourrez recommencer une nouvelle demande ensuite.',
+      [
+        { text: 'Retour', style: 'cancel' },
+        {
+          text: 'Annuler la demande', style: 'destructive',
+          onPress: async () => {
+            try {
+              const batch = writeBatch(db);
+              for (const mId of group.membershipIds) batch.delete(doc(db, 'memberships', mId));
+              batch.delete(doc(db, 'paymentGroups', group.id));
+              await batch.commit();
+              await AsyncStorage.removeItem(`paymentPlanDraft:${group.id}`);
+              setEntries(prev => prev.filter(e => e.kind !== 'group' || e.group.id !== group.id));
+            } catch (err) {
+              console.error('handleCancelGroup:', err);
+              Alert.alert('Erreur', 'Impossible d\'annuler cette demande. Réessayez.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <View style={styles.root}>
       {/* Header */}
@@ -484,8 +558,12 @@ export default function MembershipScreen() {
           ) : (
             entries.map((entry, i) =>
               entry.kind === 'solo'
-                ? <SoloCard key={entry.membership.id} entry={entry} />
-                : <GroupCard key={entry.group.id} entry={entry} />,
+                ? <SoloCard key={entry.membership.id} entry={entry}
+                    onContinue={() => router.push(`/dancer/${id}/membership-create?resumeMembershipId=${entry.membership.id}` as any)}
+                    onCancel={() => handleCancelSolo(entry.membership.id)} />
+                : <GroupCard key={entry.group.id} entry={entry}
+                    onContinue={() => router.push(`/dancer/${id}/membership-create?resumeGroupId=${entry.group.id}` as any)}
+                    onCancel={() => handleCancelGroup(entry.group)} />,
             )
           )}
         </ScrollView>
@@ -602,4 +680,23 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   emptyPayBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+
+  abandonedRow: { flexDirection: 'row', gap: 8 },
+  continueBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  continueBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  cancelBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  cancelBtnText: { color: '#DC2626', fontSize: 14, fontWeight: '700' },
 });

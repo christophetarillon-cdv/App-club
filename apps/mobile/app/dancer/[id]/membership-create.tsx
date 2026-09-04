@@ -3,12 +3,13 @@ import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput,
   ActivityIndicator, Alert, Linking, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   collection, query, where, getDocs, doc, getDoc, addDoc, setDoc, writeBatch,
   serverTimestamp, updateDoc,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db, functions } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
@@ -97,6 +98,14 @@ function newInstallment(iso?: string): InstallmentForm {
   return { id: String(Date.now() + Math.random()), date, dateDisplay: isoToDisplay(date), amount: '', chequeNumber: '', draweeBank: '', draweeCity: '' };
 }
 
+// ── Brouillon de l'échéancier (AsyncStorage) ────────────────────────────────
+// Si le danseur quitte l'écran avant d'appuyer sur "Envoyer pour validation",
+// les versements déjà tapés ne doivent pas être perdus quand il revient via
+// le bouton "Continuer" de l'écran Ma cotisation.
+function installmentsDraftKey(target: { kind: 'solo'; membershipId: string } | { kind: 'group'; groupId: string }) {
+  return `paymentPlanDraft:${target.kind === 'solo' ? target.membershipId : target.groupId}`;
+}
+
 // ── Champs du formulaire de complétion de profil ───────────────────────────
 
 function TextField({ label, value, onChangeText, placeholder, keyboardType, multiline, maxLength }: {
@@ -137,6 +146,13 @@ export default function MembershipCreateScreen() {
   const insets = useSafeAreaInsets();
   const { user, account, dancers: myDancers } = useAuth();
   const { selectedDancer } = useDancer();
+  const { resumeMembershipId, resumeGroupId } = useLocalSearchParams<{
+    resumeMembershipId?: string; resumeGroupId?: string;
+  }>();
+  const [resuming, setResuming] = useState(!!(resumeMembershipId || resumeGroupId));
+  // Figé à l'ouverture : contrairement à "resuming", ne doit pas retomber à
+  // false une fois la reprise chargée — sert à adapter le bouton "retour".
+  const [resumedEntry] = useState(!!(resumeMembershipId || resumeGroupId));
 
   // ── Données de base
   const [availableSeasons, setAvailableSeasons] = useState<Season[]>([]);
@@ -251,6 +267,54 @@ export default function MembershipCreateScreen() {
       }
     })();
   }, [user]);
+
+  // ── Reprise d'une demande commencée puis abandonnée ─────────────────────
+  // Arrivée depuis le bouton "Continuer" de l'écran Ma cotisation : le
+  // membership/group existe déjà (créé à l'étape "payment-info"), on saute
+  // directement à l'échéancier au lieu de tout recommencer depuis "who".
+  useEffect(() => {
+    if (!user || !resumeMembershipId && !resumeGroupId) { setResuming(false); return; }
+    (async () => {
+      try {
+        let result: CreationResult;
+        if (resumeMembershipId) {
+          const snap = await getDoc(doc(db, 'memberships', resumeMembershipId));
+          if (!snap.exists() || snap.data().paymentPlanStatus !== 'pending') { setResuming(false); return; }
+          const d = snap.data();
+          result = { kind: 'solo', membershipId: snap.id, totalDue: d.totalDue, method: d.paymentMethod };
+        } else {
+          const snap = await getDoc(doc(db, 'paymentGroups', resumeGroupId!));
+          if (!snap.exists() || snap.data().paymentPlanStatus !== 'pending') { setResuming(false); return; }
+          const d = snap.data();
+          result = { kind: 'group', groupId: snap.id, totalDue: d.totalDue, method: d.paymentMethod };
+        }
+        setCreationResult(result);
+
+        const draftKey = installmentsDraftKey(result);
+        const draftRaw = await AsyncStorage.getItem(draftKey);
+        if (draftRaw) {
+          try {
+            const draft = JSON.parse(draftRaw) as InstallmentForm[];
+            if (Array.isArray(draft) && draft.length > 0) setInstallments(draft);
+          } catch { /* brouillon illisible, on garde la valeur par défaut */ }
+        }
+
+        setStep('installments');
+      } catch (err) {
+        console.error('membership-create resume:', err);
+      } finally {
+        setResuming(false);
+      }
+    })();
+  }, [user, resumeMembershipId, resumeGroupId]);
+
+  // Sauvegarde locale de l'échéancier en cours de saisie, pour ne rien
+  // perdre si le danseur quitte l'écran avant de valider.
+  useEffect(() => {
+    if (!creationResult || step !== 'installments') return;
+    const key = installmentsDraftKey(creationResult);
+    AsyncStorage.setItem(key, JSON.stringify(installments)).catch(() => {});
+  }, [creationResult, installments, step]);
 
   // ── Chargement danseurs autres comptes ──────────────────────────────────
 
@@ -756,6 +820,7 @@ export default function MembershipCreateScreen() {
       }
 
       await batch.commit();
+      AsyncStorage.removeItem(installmentsDraftKey(creationResult)).catch(() => {});
       Alert.alert(
         'Cotisation envoyée',
         'Votre plan de paiement est en attente de validation par l\'association.',
@@ -775,7 +840,12 @@ export default function MembershipCreateScreen() {
     else if (step === 'incomplete-profile') setStep('who');
     else if (step === 'plan') setStep(hasIncompleteEditableProfile ? 'incomplete-profile' : 'who');
     else if (step === 'payment-info') setStep('plan');
-    else if (step === 'installments') setStep('payment-info');
+    else if (step === 'installments') {
+      // Arrivé via "Continuer" : il n'y a pas d'étape "payment-info" à
+      // afficher (on a sauté directement ici), retour = sortie de l'écran.
+      if (resumedEntry) router.back();
+      else setStep('payment-info');
+    }
     else router.back();
   };
 
@@ -803,7 +873,7 @@ export default function MembershipCreateScreen() {
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  if (loading) {
+  if (loading || resuming) {
     return (
       <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
         <ActivityIndicator color={Colors.primary} size="large" />
@@ -823,7 +893,7 @@ export default function MembershipCreateScreen() {
     );
   }
 
-  if (plans.length === 0) {
+  if (plans.length === 0 && !(step === 'installments' && creationResult)) {
     return (
       <View style={[styles.root, { alignItems: 'center', justifyContent: 'center', padding: 32 }]}>
         <Text style={styles.emptyTitle}>Aucun forfait disponible</Text>

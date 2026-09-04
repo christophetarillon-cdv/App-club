@@ -1675,6 +1675,13 @@ export const flagProfileCompletion = onCall(
 // comptent tous les deux comme "déjà engagé" — un plan en attente de
 // validation ne doit pas pouvoir être dupliqué. Nécessite l'Admin SDK car un
 // membre normal n'a le droit de lire que ses propres cotisations côté client.
+//
+// Exception : un membership "pending" sans échéancier validé (installmentIds
+// vide — et, pour un plan groupé, celui du paymentGroup associé, puisque
+// l'échéancier y est enregistré et non sur chaque membership) correspond à
+// une demande abandonnée avant la dernière étape. Comme elle n'a jamais été
+// transmise à l'association (cf. notifyNewPaymentPlan/page admin), elle ne
+// doit pas bloquer une nouvelle tentative pour ce danseur.
 export const getEnrolledDancerIds = onCall(
   { region: 'europe-west3' },
   async (request) => {
@@ -1686,18 +1693,42 @@ export const getEnrolledDancerIds = onCall(
     const snap = await db.collection('memberships')
       .where('seasonId', '==', seasonId)
       .where('paymentPlanStatus', 'in', ['approved', 'pending'])
-      .select('dancerId', 'userId')
+      .select('dancerId', 'userId', 'paymentPlanStatus', 'installmentIds', 'paymentGroupId')
       .get();
+
+    const groupIdsToCheck = new Set<string>();
+    for (const d of snap.docs) {
+      const x = d.data();
+      if (x.paymentGroupId && x.paymentPlanStatus === 'pending') groupIdsToCheck.add(x.paymentGroupId as string);
+    }
+    const groupSnaps = await Promise.all([...groupIdsToCheck].map(id => db.doc(`paymentGroups/${id}`).get()));
+    const groupHasInstallments = new Map<string, boolean>();
+    groupSnaps.forEach(s => {
+      const ids = s.data()?.installmentIds;
+      groupHasInstallments.set(s.id, Array.isArray(ids) && ids.length > 0);
+    });
 
     const enrolledIds = new Set<string>();
     const userIdsToLookup: string[] = [];
 
     for (const d of snap.docs) {
-      const dancerId = d.data().dancerId as string | undefined;
+      const x = d.data();
+      const status = x.paymentPlanStatus as string;
+      const paymentGroupId = x.paymentGroupId as string | undefined;
+
+      if (status === 'pending') {
+        const installmentIds = x.installmentIds as string[] | undefined;
+        const hasInstallments = paymentGroupId
+          ? (groupHasInstallments.get(paymentGroupId) ?? false)
+          : Array.isArray(installmentIds) && installmentIds.length > 0;
+        if (!hasInstallments) continue;
+      }
+
+      const dancerId = x.dancerId as string | undefined;
       if (dancerId) {
         enrolledIds.add(dancerId);
       } else {
-        const userId = d.data().userId as string | undefined;
+        const userId = x.userId as string | undefined;
         if (userId) userIdsToLookup.push(userId);
       }
     }
