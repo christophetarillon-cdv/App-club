@@ -261,6 +261,10 @@ export default function DancerDetailPage() {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelConfirmText, setCancelConfirmText] = useState('');
 
+  const [activeSeason, setActiveSeason] = useState<{ id: string; label: string } | null>(null);
+  const [grantingFree, setGrantingFree] = useState(false);
+  const [grantFreeError, setGrantFreeError] = useState<string | null>(null);
+
   const handleSaveInfo = async () => {
     if (!dancerId || !pendingInfo) return;
     // Même règle que l'app mobile (packages/types) : une saisie refusée d'un
@@ -583,6 +587,47 @@ export default function DancerDetailPage() {
     }
   };
 
+  // Cotisation à 0€ directement approuvée — pour un bureau/admin/bénévole
+  // (ou tout autre cas décidé par l'admin), sans passer par le formulaire
+  // d'échéancier qui n'accepte pas de montant nul. Une fois créée c'est une
+  // adhésion normale : elle apparaît dans le trombinoscope, et peut être
+  // annulée plus tard dans la saison via le bouton "Annuler l'adhésion"
+  // ci-dessous comme n'importe quelle autre cotisation.
+  const handleGrantFreeMembership = async () => {
+    if (!dancer || !account || !activeSeason) return;
+    setGrantingFree(true);
+    setGrantFreeError(null);
+    try {
+      const ref = await addDoc(collection(db, 'memberships'), {
+        userId: account.id,
+        dancerId: dancer.id,
+        seasonId: activeSeason.id,
+        totalDue: 0,
+        totalPaid: 0,
+        paymentMethod: 'exempt',
+        paymentPlanStatus: 'approved',
+        installmentIds: [],
+        status: 'active',
+        payerEmail: account.email ?? '',
+        payerName: account.displayName ?? '',
+        dancerName: `${dancer.firstName} ${dancer.lastName}`,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setEntries(prev => [{
+        id: ref.id, kind: 'solo',
+        seasonId: activeSeason.id, seasonLabel: activeSeason.label,
+        planLabel: 'Exempté(e) de cotisation', paymentMethod: 'exempt',
+        totalDue: 0, totalPaid: 0, status: 'approved',
+        installmentIds: [], installments: [], groupDancerNames: [],
+      }, ...prev]);
+    } catch (err) {
+      setGrantFreeError(err instanceof Error ? err.message : 'Erreur lors de la validation.');
+    } finally {
+      setGrantingFree(false);
+    }
+  };
+
   useEffect(() => {
     if (!dancerId) return;
     (async () => {
@@ -663,6 +708,9 @@ export default function DancerDetailPage() {
 
         const seasonLabelMap = new Map<string, string>();
         seasonSnap.docs.forEach(s => seasonLabelMap.set(s.id, s.data().label ?? s.id));
+
+        const activeSeasonDoc = seasonSnap.docs.find(s => s.data().isActive === true);
+        setActiveSeason(activeSeasonDoc ? { id: activeSeasonDoc.id, label: activeSeasonDoc.data().label ?? activeSeasonDoc.id } : null);
 
         const planLabelMap = new Map<string, string>();
         planSnap.docs.forEach(p => planLabelMap.set(p.id, p.data().label ?? p.data().name ?? ''));
@@ -1156,7 +1204,19 @@ export default function DancerDetailPage() {
       )}
 
       {/* Cotisations */}
-      <h2 className="text-base font-semibold text-gray-900 mb-3">Cotisations</h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-base font-semibold text-gray-900">Cotisations</h2>
+        {activeSeason && !entries.some(e => e.seasonId === activeSeason.id) && (
+          <button
+            onClick={handleGrantFreeMembership}
+            disabled={grantingFree}
+            className="text-xs font-medium text-blue-600 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-50 disabled:opacity-50"
+          >
+            {grantingFree ? 'Validation…' : `Valider sans cotisation (${activeSeason.label})`}
+          </button>
+        )}
+      </div>
+      {grantFreeError && <p className="text-xs text-red-600 mb-3">{grantFreeError}</p>}
 
       {entries.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center text-sm text-gray-400">
