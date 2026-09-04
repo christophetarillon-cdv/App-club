@@ -12,6 +12,7 @@ import ffmpegPath from 'ffmpeg-static';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { google } from 'googleapis';
 import { Expo } from 'expo-server-sdk';
+import * as QRCode from 'qrcode';
 
 const helloassoClientId = defineSecret('HELLOASSO_CLIENT_ID');
 const helloassoClientSecret = defineSecret('HELLOASSO_CLIENT_SECRET');
@@ -3025,6 +3026,68 @@ async function callerHasDancersPageAccess(callerUid: string): Promise<boolean> {
     return roles.some(r => allowed.includes(r));
   });
 }
+
+// ── sendDancerQrCode — envoie par email le QR code personnel d'un danseur ────
+// Le QR encode l'id du danseur, exactement le format lu par recordAttendance
+// au pointage (voir plus bas dans ce fichier).
+export const sendDancerQrCode = onCall(
+  { region: 'europe-west3', secrets: [googleOAuthClientSecret] },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Non authentifié');
+    const hasAccess = await callerHasDancersPageAccess(request.auth.uid);
+    if (!hasAccess) throw new HttpsError('permission-denied', "Vous n'avez pas accès à cette action");
+
+    const { dancerId } = request.data as { dancerId: string };
+    if (!dancerId) throw new HttpsError('invalid-argument', 'dancerId requis');
+
+    const db = getDb();
+    const dancerSnap = await db.doc(`dancers/${dancerId}`).get();
+    if (!dancerSnap.exists) throw new HttpsError('not-found', 'Danseur introuvable');
+    const dancer = dancerSnap.data()!;
+
+    const accountId: string | undefined = dancer.accountId;
+    if (!accountId) throw new HttpsError('failed-precondition', "Ce danseur n'est rattaché à aucun compte");
+    const accountSnap = await db.doc(`accounts/${accountId}`).get();
+    const email: string | undefined = accountSnap.data()?.email as string | undefined;
+    if (!email) throw new HttpsError('failed-precondition', 'Aucun email associé à ce compte');
+
+    const dancerName = `${dancer.firstName ?? ''} ${dancer.lastName ?? ''}`.trim() || 'Danseur';
+
+    const qrBuffer = await QRCode.toBuffer(dancerId, { type: 'png', width: 500, margin: 2 });
+
+    const bucket = admin.storage().bucket();
+    const fileName = `qr-${dancerId}.png`;
+    const storagePath = `documents/${accountId}/qrcodes/${fileName}`;
+    const tempPath = path.join(os.tmpdir(), fileName);
+    fs.writeFileSync(tempPath, qrBuffer);
+
+    const downloadToken = crypto.randomUUID();
+    await bucket.upload(tempPath, {
+      destination: storagePath,
+      metadata: {
+        contentType: 'image/png',
+        metadata: { firebaseStorageDownloadTokens: downloadToken },
+      },
+    });
+    fs.unlinkSync(tempPath);
+
+    const qrUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+
+    await sendEmailViaGmail(
+      email,
+      `Votre QR code — ${dancerName}`,
+      `<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;text-align:center;">
+        <h2 style="color:#1B3A6B;">Voici le QR code de ${dancerName}</h2>
+        <p style="color:#555;">Présentez ce code au professeur pour être pointé(e) en cours, ou retrouvez-le à tout moment dans votre carte de membre sur l'application.</p>
+        <img src="${qrUrl}" alt="QR code" width="260" height="260" style="margin:24px 0;border:1px solid #eee;border-radius:12px;padding:16px;">
+        <p style="color:#999;font-size:12px;">Club de Danse Coublevie/Voiron</p>
+      </div>`,
+      googleOAuthClientSecret.value(),
+    );
+
+    return { success: true, email };
+  },
+);
 
 export const adminCreateAccount = onCall(
   { region: 'europe-west3' },

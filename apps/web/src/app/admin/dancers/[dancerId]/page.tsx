@@ -5,7 +5,8 @@ import {
   collection, doc, getDoc, getDocs, limit, orderBy, query, updateDoc, where,
   writeBatch, serverTimestamp, arrayRemove, addDoc,
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/lib/firebase';
 import { GENDER_OPTIONS, genderLabel } from '@/lib/gender-constants';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
@@ -264,6 +265,9 @@ export default function DancerDetailPage() {
   const [activeSeason, setActiveSeason] = useState<{ id: string; label: string } | null>(null);
   const [grantingFree, setGrantingFree] = useState(false);
   const [grantFreeError, setGrantFreeError] = useState<string | null>(null);
+
+  const [sendingQr, setSendingQr] = useState(false);
+  const [qrResult, setQrResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const handleSaveInfo = async () => {
     if (!dancerId || !pendingInfo) return;
@@ -628,6 +632,21 @@ export default function DancerDetailPage() {
     }
   };
 
+  const handleSendQrCode = async () => {
+    if (!dancer) return;
+    setSendingQr(true);
+    setQrResult(null);
+    try {
+      const send = httpsCallable<{ dancerId: string }, { success: boolean; email: string }>(functions, 'sendDancerQrCode');
+      const res = await send({ dancerId: dancer.id });
+      setQrResult({ ok: true, message: `QR code envoyé à ${res.data.email}.` });
+    } catch (err) {
+      setQrResult({ ok: false, message: err instanceof Error ? err.message : 'Échec de l\'envoi.' });
+    } finally {
+      setSendingQr(false);
+    }
+  };
+
   useEffect(() => {
     if (!dancerId) return;
     (async () => {
@@ -867,8 +886,20 @@ export default function DancerDetailPage() {
             {dancer.isMinor && (
               <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">Mineur</span>
             )}
+            <button
+              onClick={handleSendQrCode}
+              disabled={sendingQr || !dancer.accountId}
+              title={!dancer.accountId ? "Ce danseur n'est rattaché à aucun compte" : undefined}
+              className="text-xs font-medium text-blue-600 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {sendingQr ? 'Envoi…' : 'Envoyer le QR code par email'}
+            </button>
           </div>
         </div>
+
+        {qrResult && (
+          <p className={`text-xs mb-2 ${qrResult.ok ? 'text-green-600' : 'text-red-600'}`}>{qrResult.message}</p>
+        )}
 
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Informations personnelles</p>
