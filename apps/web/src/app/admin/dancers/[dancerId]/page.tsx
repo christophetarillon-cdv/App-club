@@ -7,6 +7,9 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
+import {
+  type PaymentMethod, type Installment as InstallmentForm, MAX_INSTALLMENTS, emptyInstallment, chequeFields,
+} from '@/lib/payment-constants';
 import { GENDER_OPTIONS, genderLabel } from '@/lib/gender-constants';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
@@ -268,6 +271,11 @@ export default function DancerDetailPage() {
 
   const [sendingQr, setSendingQr] = useState(false);
   const [qrResult, setQrResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const [completingEntryId, setCompletingEntryId] = useState<string | null>(null);
+  const [completeInstallments, setCompleteInstallments] = useState<InstallmentForm[]>([emptyInstallment()]);
+  const [completeSaving, setCompleteSaving] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
 
   const handleSaveInfo = async () => {
     if (!dancerId || !pendingInfo) return;
@@ -629,6 +637,75 @@ export default function DancerDetailPage() {
       setGrantFreeError(err instanceof Error ? err.message : 'Erreur lors de la validation.');
     } finally {
       setGrantingFree(false);
+    }
+  };
+
+  // ── Compléter l'échéancier d'un plan commencé par le danseur ────────────
+  // Le danseur a choisi son forfait/mode de paiement (memberships/paymentGroups
+  // créé en 'pending', installmentIds vide) mais n'a jamais validé le dernier
+  // écran des dates. Plutôt que de le laisser bloqué (ou de tout annuler),
+  // l'admin peut saisir l'échéancier à sa place — le plan suit ensuite
+  // exactement le même chemin qu'une demande soumise normalement (visible et
+  // approuvable depuis "Plans de paiement", cf. notifyNewPaymentPlan / la
+  // page de la liste des plans en attente).
+  const openCompletePanel = (entryId: string) => {
+    setCompletingEntryId(entryId);
+    setCompleteInstallments([emptyInstallment()]);
+    setCompleteError(null);
+  };
+
+  const handleCompleteInstallments = async (entry: Entry) => {
+    if (!account) return;
+    const method = entry.paymentMethod as PaymentMethod;
+    const maxInst = MAX_INSTALLMENTS[method] ?? 1;
+    if (completeInstallments.length > maxInst) {
+      setCompleteError(`Maximum ${maxInst} versement${maxInst > 1 ? 's' : ''} pour ce mode de paiement.`);
+      return;
+    }
+    for (const i of completeInstallments) {
+      if (!i.expectedDate || !i.amount || parseFloat(i.amount) <= 0) {
+        setCompleteError('Tous les versements doivent avoir une date et un montant valide.');
+        return;
+      }
+    }
+    const totalCents = completeInstallments.reduce((sum, i) => sum + Math.round(parseFloat(i.amount) * 100), 0);
+    if (totalCents !== entry.totalDue) {
+      setCompleteError(`Le total des versements (${(totalCents / 100).toFixed(2)} €) doit être égal au montant dû (${(entry.totalDue / 100).toFixed(2)} €).`);
+      return;
+    }
+
+    setCompleteSaving(true);
+    setCompleteError(null);
+    try {
+      const batch = writeBatch(db);
+      const installmentRefs = completeInstallments.map(() => doc(collection(db, 'paymentInstallments')));
+      const installmentIds = installmentRefs.map(r => r.id);
+
+      for (let i = 0; i < completeInstallments.length; i++) {
+        const inst = completeInstallments[i]!;
+        batch.set(installmentRefs[i]!, {
+          ...(entry.kind === 'group' ? { paymentGroupId: entry.id } : { membershipId: entry.id }),
+          userId: account.id,
+          amount: Math.round(parseFloat(inst.amount) * 100),
+          method,
+          expectedDate: inst.expectedDate,
+          status: 'pending',
+          ...chequeFields(method, inst),
+        });
+      }
+
+      batch.update(doc(db, entry.kind === 'group' ? 'paymentGroups' : 'memberships', entry.id), {
+        installmentIds,
+        updatedAt: serverTimestamp(),
+      });
+
+      await batch.commit();
+      setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, installmentIds } : e));
+      setCompletingEntryId(null);
+    } catch (err) {
+      setCompleteError(err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement.');
+    } finally {
+      setCompleteSaving(false);
     }
   };
 
@@ -1273,6 +1350,14 @@ export default function DancerDetailPage() {
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[entry.status] ?? 'bg-gray-100 text-gray-500'}`}>
                     {STATUS_LABEL[entry.status] ?? entry.status}
                   </span>
+                  {entry.status === 'pending' && entry.installmentIds.length === 0 && (
+                    <button
+                      onClick={() => openCompletePanel(entry.id)}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      Compléter l'échéancier
+                    </button>
+                  )}
                   {(entry.status === 'pending' || entry.status === 'approved') && (
                     <button
                       onClick={() => openCancelPanel(entry.id)}
@@ -1283,6 +1368,89 @@ export default function DancerDetailPage() {
                   )}
                 </div>
               </div>
+
+              {completingEntryId === entry.id && (() => {
+                const method = entry.paymentMethod as PaymentMethod;
+                const maxInst = MAX_INSTALLMENTS[method] ?? 1;
+                const totalCents = completeInstallments.reduce((sum, i) => {
+                  const v = parseFloat(i.amount);
+                  return sum + (isNaN(v) ? 0 : Math.round(v * 100));
+                }, 0);
+                const remaining = entry.totalDue - totalCents;
+                return (
+                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl space-y-3">
+                    <p className="text-sm font-semibold text-blue-900">
+                      Échéancier — {entry.seasonLabel} · {(entry.totalDue / 100).toFixed(2)} € dû · {entry.planLabel}
+                    </p>
+                    <p className="text-xs text-blue-700">
+                      Le danseur a choisi son forfait mais n'a jamais validé les dates de versement. Saisissez-les ici à sa place.
+                    </p>
+
+                    <div className="space-y-2">
+                      {completeInstallments.map((inst, idx) => (
+                        <div key={idx} className="space-y-2 pb-2 border-b border-blue-100 last:border-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-blue-400 w-5">{idx + 1}.</span>
+                            <input type="date" value={inst.expectedDate}
+                              onChange={e => setCompleteInstallments(prev => prev.map((x, i) => i === idx ? { ...x, expectedDate: e.target.value } : x))}
+                              className="flex-1 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                            <div className="relative w-28">
+                              <input type="number" step="0.01" min="0" value={inst.amount} placeholder="0.00"
+                                onChange={e => setCompleteInstallments(prev => prev.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))}
+                                className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 pr-6" />
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">€</span>
+                            </div>
+                            {completeInstallments.length > 1 && (
+                              <button type="button" onClick={() => setCompleteInstallments(prev => prev.filter((_, i) => i !== idx))}
+                                className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                            )}
+                          </div>
+                          {method === 'cheque' && (
+                            <div className="ml-7 grid grid-cols-3 gap-2">
+                              <input type="text" placeholder="N° chèque" value={inst.chequeNumber ?? ''}
+                                onChange={e => setCompleteInstallments(prev => prev.map((x, i) => i === idx ? { ...x, chequeNumber: e.target.value } : x))}
+                                className="border border-gray-200 rounded-lg px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                              <input type="text" placeholder="Banque" value={inst.draweeBank ?? ''}
+                                onChange={e => setCompleteInstallments(prev => prev.map((x, i) => i === idx ? { ...x, draweeBank: e.target.value } : x))}
+                                className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                              <input type="text" placeholder="Ville" value={inst.draweeCity ?? ''}
+                                onChange={e => setCompleteInstallments(prev => prev.map((x, i) => i === idx ? { ...x, draweeCity: e.target.value } : x))}
+                                className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <button type="button" onClick={() => setCompleteInstallments(prev => [...prev, emptyInstallment()])}
+                        disabled={completeInstallments.length >= maxInst}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+                        + Ajouter un versement
+                      </button>
+                      <span className="text-xs text-blue-400">{completeInstallments.length}/{maxInst} versement{maxInst > 1 ? 's' : ''}</span>
+                    </div>
+
+                    <div className={`flex justify-between items-center text-xs font-semibold pt-1 border-t border-blue-100 ${Math.abs(remaining) > 0 ? 'text-orange-600' : 'text-green-700'}`}>
+                      <span>Total saisi</span>
+                      <span>{(totalCents / 100).toFixed(2)} € {remaining !== 0 && `(reste ${(remaining / 100).toFixed(2)} €)`}</span>
+                    </div>
+
+                    {completeError && <p className="text-xs text-red-600">{completeError}</p>}
+
+                    <div className="flex gap-2">
+                      <button onClick={() => handleCompleteInstallments(entry)} disabled={completeSaving || Math.abs(remaining) > 0}
+                        className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
+                        {completeSaving ? 'Enregistrement…' : 'Enregistrer l\'échéancier'}
+                      </button>
+                      <button onClick={() => setCompletingEntryId(null)} disabled={completeSaving}
+                        className="text-xs text-gray-500 hover:text-gray-700">
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {cancelingEntryId === entry.id && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl space-y-3">
