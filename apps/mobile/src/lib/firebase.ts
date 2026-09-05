@@ -10,7 +10,7 @@ import { getFunctions } from 'firebase/functions';
 // eas.json). Le jour où l'app bascule vers clubvoiron-prod, il suffira de
 // renseigner ces variables dans le profil "production" d'eas.json — aucun
 // changement de code nécessaire.
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? 'AIzaSyDpKbSvSu5CM3wdoBhCyaZyEAGGbtPs9dQ',
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN ?? 'clubvoiron-dev.firebaseapp.com',
   projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ?? 'clubvoiron-dev',

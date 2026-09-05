@@ -12,17 +12,21 @@ import { DancerProvider } from '@/contexts/DancerContext';
 import { PagePermissionsProvider } from '@/contexts/PagePermissionsContext';
 import { Colors } from '@/constants/Colors';
 import { registerForPushNotificationsAsync } from '@/lib/pushNotifications';
-import { isProdEnvironment } from '@/lib/firebase';
+import { isProdEnvironment, firebaseConfig } from '@/lib/firebase';
 
 // Repère visuel permanent tant qu'on n'est pas connecté aux vraies données
 // (clubvoiron-prod) — pour ne jamais confondre la version test et la vraie
 // app, même si les deux sont installées côte à côte sur le même téléphone.
+// Affiche le projectId en clair (pas juste "DEV") : ça a servi à diagnostiquer
+// un cas où l'app "CDCV Dev" basculait sur les données de prod apres une
+// mise a jour OTA — avec juste "DEV" on ne pouvait pas confirmer a l'oeil
+// quel projet Firebase etait reellement charge.
 function DevBadge() {
   const insets = useSafeAreaInsets();
   if (isProdEnvironment) return null;
   return (
     <View style={[styles.devBadge, { top: insets.top + 6 }]} pointerEvents="none">
-      <Text style={styles.devBadgeText}>DEV</Text>
+      <Text style={styles.devBadgeText}>DEV · {firebaseConfig.projectId}</Text>
     </View>
   );
 }
