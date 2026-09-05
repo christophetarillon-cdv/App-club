@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { logEvent } from '@/lib/analytics';
 import { db, functions } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
@@ -725,6 +726,8 @@ export default function MembershipCreateScreen() {
         Promise.all(nonEditableMissing.map(x => flagFn({ dancerId: x.dancer.id }))).catch(() => {});
       }
 
+      logEvent('membership_started', { userId: user.uid });
+
       if (method === 'helloasso') {
         await handleHelloAsso(result);
       } else {
@@ -749,6 +752,7 @@ export default function MembershipCreateScreen() {
         : { groupId: result.groupId, amount: result.totalDue };
       const res = await createCheckout(payload);
       const { redirectUrl } = res.data as { redirectUrl: string };
+      if (user) logEvent('helloasso_payment_initiated', { userId: user.uid });
       setCreationResult(result);
       setStep('helloasso-pending');
       await Linking.openURL(redirectUrl);
@@ -821,6 +825,7 @@ export default function MembershipCreateScreen() {
 
       await batch.commit();
       AsyncStorage.removeItem(installmentsDraftKey(creationResult)).catch(() => {});
+      if (user) logEvent('membership_completed', { userId: user.uid });
       Alert.alert(
         'Cotisation envoyée',
         'Votre plan de paiement est en attente de validation par l\'association.',

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { logEvent } from '@/lib/analytics';
 import { getApp } from 'firebase/app';
 import {
   collection, getDocs, query, where, orderBy, addDoc, doc, getDoc, setDoc, updateDoc,
@@ -391,6 +392,7 @@ export default function MembershipPage() {
         ...(membershipId ? { membershipId } : { groupId: groupId! }),
         amount,
       });
+      if (user) logEvent('helloasso_payment_initiated', { userId: user.uid });
       window.location.href = result.data.redirectUrl;
     } catch (err) {
       console.error('Erreur paiement en ligne:', err);
@@ -751,6 +753,7 @@ export default function MembershipPage() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+        logEvent('membership_started', { userId: user.uid });
         if (selectedMethod === 'helloasso') {
           await handlePayOnline(ref.id, null, plan.amount);
         } else {
@@ -807,6 +810,7 @@ export default function MembershipPage() {
         });
 
         await batch.commit();
+        logEvent('membership_started', { userId: user.uid });
         if (selectedMethod === 'helloasso') {
           await handlePayOnline(null, groupRef.id, totalDue);
         } else {

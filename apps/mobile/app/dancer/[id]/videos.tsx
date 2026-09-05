@@ -17,6 +17,7 @@ import VideoThumbnail from '@/components/VideoThumbnail';
 import VideoPlayerSheet from '@/components/VideoPlayerSheet';
 import VideoUploadSheet from '@/components/VideoUploadSheet';
 import type { Media } from '@cdv/types';
+import { logEvent } from '@/lib/analytics';
 
 interface Season { id: string; label: string; isActive: boolean; }
 interface DanceStyle { id: string; name: string; color: string; }
@@ -350,7 +351,10 @@ export default function VideosScreen() {
                       color={color}
                       seasonBadge={seasonBadge(v.seasonId)}
                       tag={tag || undefined}
-                      onPress={() => setActiveVideo(v)}
+                      onPress={() => {
+                        setActiveVideo(v);
+                        if (user) logEvent('media_played', { userId: user.uid, mediaId: v.id, mediaType: 'video', danceStyleId: v.danceStyleId ?? undefined });
+                      }}
                     />
                   );
                 })}

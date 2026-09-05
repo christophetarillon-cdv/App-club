@@ -6,6 +6,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppShell } from '@/components/AppShell';
 import type { Media } from '@cdv/types';
+import { logEvent } from '@/lib/analytics';
 
 interface Season   { id: string; label: string; isActive: boolean; }
 interface DanceStyle { id: string; name: string; color?: string; }
@@ -215,7 +216,10 @@ export default function MediaPage() {
                     <div className="relative w-full aspect-video overflow-hidden">
                       <VideoThumbnail src={m.sourceUrl} bg={bg} />
                       <button
-                        onClick={() => setExpanded(isOpen ? null : m.id)}
+                        onClick={() => {
+                          setExpanded(isOpen ? null : m.id);
+                          if (!isOpen && user) logEvent('media_played', { userId: user.uid, mediaId: m.id, mediaType: 'video', danceStyleId: m.danceStyleId ?? undefined });
+                        }}
                         className="absolute inset-0 flex items-center justify-center group"
                       >
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-opacity bg-black/40 ${isOpen ? 'opacity-60' : 'opacity-80 group-hover:opacity-100'}`}>

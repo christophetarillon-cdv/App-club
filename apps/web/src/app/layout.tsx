@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { DancerProvider } from '@/contexts/DancerContext';
 import { ProfileCompletionGate } from '@/components/ProfileCompletionGate';
+import { AnalyticsTracker } from '@/components/AnalyticsTracker';
 import { isProdEnvironment } from '@/lib/firebase';
 import './globals.css';
 
@@ -43,6 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AuthProvider>
           <DancerProvider>
             <ProfileCompletionGate>{children}</ProfileCompletionGate>
+            <AnalyticsTracker />
           </DancerProvider>
         </AuthProvider>
         <DevBadge />

@@ -563,5 +563,24 @@ service cloud.firestore {
         request.resource.data.redeemed == true;
       allow delete: if hasPagePermission('/admin/tirage-au-sort');
     }
+
+    // ── analyticsEvents (tracing usage : sessions, écrans, cotisation, médias)
+    // Écriture libre pour tout utilisateur connecté (l'événement ne peut être
+    // rattaché qu'à lui-même), jamais de lecture/modif/suppression côté
+    // client — seule la fonction planifiée d'agrégation (Admin SDK, contourne
+    // les règles) lit ces documents bruts. La page admin ne lit que les
+    // résumés agrégés (analyticsDailySummaries), jamais les événements bruts.
+    match /analyticsEvents/{eventId} {
+      allow create: if isAuth() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.type is string;
+      allow read, update, delete: if false;
+    }
+
+    // ── analyticsDailySummaries (résumés agrégés lus par le tableau de bord)
+    match /analyticsDailySummaries/{date} {
+      allow read: if hasPagePermission('/admin/analytics');
+      allow write: if false; // uniquement écrit par la fonction planifiée (Admin SDK)
+    }
   }
 }

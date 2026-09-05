@@ -1,9 +1,9 @@
 // Doit rester le tout premier import : surcharge react-native.Text avant que
 // quoi que ce soit ne soit rendu (voir le commentaire du fichier).
 import '@/lib/androidFontFix';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { ActivityIndicator, View, Text, StyleSheet } from 'react-native';
-import { Slot, useRouter, useSegments } from 'expo-router';
+import { Slot, useRouter, useSegments, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +13,7 @@ import { PagePermissionsProvider } from '@/contexts/PagePermissionsContext';
 import { Colors } from '@/constants/Colors';
 import { registerForPushNotificationsAsync } from '@/lib/pushNotifications';
 import { isProdEnvironment, firebaseConfig } from '@/lib/firebase';
+import { logEvent, trackedScreenFromPathname } from '@/lib/analytics';
 
 // Repère visuel permanent tant qu'on n'est pas connecté aux vraies données
 // (clubvoiron-prod) — pour ne jamais confondre la version test et la vraie
@@ -37,6 +38,7 @@ function Gate() {
   const { user, account, dancers, loading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
+  const pathname = usePathname();
 
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
@@ -45,6 +47,25 @@ function Gate() {
   useEffect(() => {
     if (user) registerForPushNotificationsAsync(user.uid);
   }, [user]);
+
+  // Tracing d'usage — un session_start par connexion, un screen_view par
+  // écran principal ouvert (voir @/lib/analytics pour la liste suivie).
+  const sessionLoggedRef = useRef(false);
+  const lastScreenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!user || sessionLoggedRef.current) return;
+    sessionLoggedRef.current = true;
+    logEvent('session_start', { userId: user.uid });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const screen = trackedScreenFromPathname(pathname);
+    if (!screen || screen === lastScreenRef.current) return;
+    lastScreenRef.current = screen;
+    logEvent('screen_view', { userId: user.uid, screen });
+  }, [user, pathname]);
 
   // Verrou permanent (pas juste au login) : un danseur peut être marqué
   // "profil à compléter" pendant que l'app est déjà ouverte (cotisation

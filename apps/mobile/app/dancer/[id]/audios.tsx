@@ -13,6 +13,7 @@ import { Colors } from '@/constants/Colors';
 import BottomTabBar from '@/components/BottomTabBar';
 import AudioPlayerSheet from '@/components/AudioPlayerSheet';
 import type { Media } from '@cdv/types';
+import { logEvent } from '@/lib/analytics';
 
 interface Season { id: string; label: string; isActive: boolean; }
 interface DanceStyle { id: string; name: string; color: string; usedInMedia: boolean; }
@@ -289,6 +290,7 @@ export default function AudiosScreen() {
                       } else {
                         setQueue({ list: audios, index: i, color: style.color });
                       }
+                      if (user) logEvent('media_played', { userId: user.uid, mediaId: a.id, mediaType: 'audio', danceStyleId: a.danceStyleId ?? undefined });
                     }}
                   />
                 ))}

@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { type Installment, emptyInstallment, MAX_INSTALLMENTS, chequeFields, type PaymentMethod } from '@/lib/payment-constants';
+import { logEvent } from '@/lib/analytics';
 
 // Si le danseur quitte/rafraîchit la page avant de valider, les versements
 // déjà tapés ne doivent pas être perdus.
@@ -203,6 +204,7 @@ export default function PaymentPlanPage() {
     if (entityId) {
       try { localStorage.removeItem(draftKey(entityId)); } catch { /* ignore */ }
     }
+    if (user) logEvent('membership_completed', { userId: user.uid });
     setSaving(false);
     window.location.href = '/membership';
   };

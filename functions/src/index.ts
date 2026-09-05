@@ -1332,6 +1332,82 @@ export const detectIdleKiosks = onSchedule(
   },
 );
 
+// ── aggregateAnalyticsDaily — résumé quotidien du tracing d'usage ────────────
+// Tourne chaque nuit sur les événements de la veille (analyticsEvents) et
+// écrit UN document résumé par jour (analyticsDailySummaries/{date}). Le
+// tableau de bord admin ne lit jamais les événements bruts, seulement ces
+// résumés — ça garde les coûts Firestore bornés quel que soit le volume
+// d'événements accumulé. Les événements bruts s'auto-suppriment via la
+// politique TTL Firestore sur le champ `expiresAt` (configurée une fois par
+// projet via `gcloud firestore fields ttls update`, pas dans ce fichier).
+export const aggregateAnalyticsDaily = onSchedule(
+  { schedule: '30 3 * * *', timeZone: 'Europe/Paris', region: 'europe-west3' },
+  async () => {
+    const db = getDb();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const dateStr = yesterday.toISOString().slice(0, 10);
+    const start = new Date(`${dateStr}T00:00:00`);
+    const end = new Date(`${dateStr}T23:59:59.999`);
+
+    const snap = await db.collection('analyticsEvents')
+      .where('createdAt', '>=', start)
+      .where('createdAt', '<=', end)
+      .get();
+
+    const counts = {
+      session_start: { total: 0, ios: 0, android: 0, web: 0 },
+      screen_view: { total: 0, byScreen: {} as Record<string, number> },
+      membership_started: 0,
+      membership_completed: 0,
+      helloasso_payment_initiated: 0,
+      media_played: { total: 0, byType: { audio: 0, video: 0 }, byMediaId: {} as Record<string, number> },
+    };
+    const uniqueUserIds = new Set<string>();
+
+    snap.docs.forEach((doc) => {
+      const d = doc.data();
+      const type = d.type as string;
+      if (d.userId) uniqueUserIds.add(d.userId as string);
+
+      if (type === 'session_start') {
+        counts.session_start.total++;
+        const p = d.platform as string;
+        if (p === 'ios') counts.session_start.ios++;
+        else if (p === 'android') counts.session_start.android++;
+        else if (p === 'web') counts.session_start.web++;
+      } else if (type === 'screen_view') {
+        counts.screen_view.total++;
+        const screen = (d.screen as string | undefined) ?? 'inconnu';
+        counts.screen_view.byScreen[screen] = (counts.screen_view.byScreen[screen] ?? 0) + 1;
+      } else if (type === 'membership_started') {
+        counts.membership_started++;
+      } else if (type === 'membership_completed') {
+        counts.membership_completed++;
+      } else if (type === 'helloasso_payment_initiated') {
+        counts.helloasso_payment_initiated++;
+      } else if (type === 'media_played') {
+        counts.media_played.total++;
+        const mt = d.mediaType as string | undefined;
+        if (mt === 'audio') counts.media_played.byType.audio++;
+        else if (mt === 'video') counts.media_played.byType.video++;
+        const mid = d.mediaId as string | undefined;
+        if (mid) counts.media_played.byMediaId[mid] = (counts.media_played.byMediaId[mid] ?? 0) + 1;
+      }
+    });
+
+    await db.doc(`analyticsDailySummaries/${dateStr}`).set({
+      date: dateStr,
+      counts,
+      uniqueUsers: uniqueUserIds.size,
+      rawEventCount: snap.size,
+      computedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log(`[aggregateAnalyticsDaily] ${dateStr} : ${snap.size} événement(s), ${uniqueUserIds.size} utilisateur(s) unique(s)`);
+  },
+);
+
 // Rôles combinés (compte + tous les danseurs) de l'appelant — utilisé pour
 // comparer à une liste de rôles configurable (ex: sessionVideoUploadRoles).
 async function getCallerRoles(db: FirebaseFirestore.Firestore, uid: string): Promise<string[]> {

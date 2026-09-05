@@ -122,4 +122,10 @@ export const ADMIN_NAV: NavGroup[] = [
       { label: 'Export de données', href: '/admin/exports' },
     ],
   },
+  {
+    label: 'Statistiques',
+    items: [
+      { label: 'Utilisation de l\'app', href: '/admin/analytics' },
+    ],
+  },
 ];

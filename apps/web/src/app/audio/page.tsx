@@ -6,6 +6,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppShell } from '@/components/AppShell';
 import type { Media } from '@cdv/types';
+import { logEvent } from '@/lib/analytics';
 
 interface Season   { id: string; label: string; isActive: boolean; }
 interface DanceStyle { id: string; name: string; color?: string; usedInMedia: boolean; }
@@ -212,7 +213,10 @@ export default function AudioPage() {
                 const label  = [style?.name, level?.name].filter(Boolean).join(' · ');
                 return (
                   <div key={m.id} className={`${i > 0 ? 'border-t border-gray-100' : ''}`}>
-                    <button onClick={() => setExpanded(isOpen ? null : m.id)}
+                    <button onClick={() => {
+                        setExpanded(isOpen ? null : m.id);
+                        if (!isOpen && user) logEvent('media_played', { userId: user.uid, mediaId: m.id, mediaType: 'audio', danceStyleId: m.danceStyleId ?? undefined });
+                      }}
                       className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors text-left">
                       {/* Play indicator */}
                       <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
