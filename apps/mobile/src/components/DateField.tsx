@@ -36,7 +36,14 @@ interface DateFieldProps {
 
 // Sélecteur de date natif (calendrier iOS/Android) — remplace la saisie
 // libre au clavier qui n'affichait aucun calendrier sur iOS.
-export default function DateField({ label, value, onChangeText, required, maximumDate, minimumDate }: DateFieldProps) {
+// Sans minimumDate explicite, le picker Android (mode "spinner") limite la
+// molette annee a une plage qui ne remonte pas avant 1969-1970 (comportement
+// par defaut lie a l'epoch Unix) — inutilisable pour une date de naissance.
+// On impose donc un plancher large par defaut plutot que de laisser chaque
+// appelant y penser.
+const DEFAULT_MINIMUM_DATE = new Date(1900, 0, 1);
+
+export default function DateField({ label, value, onChangeText, required, maximumDate, minimumDate = DEFAULT_MINIMUM_DATE }: DateFieldProps) {
   const [showPicker, setShowPicker] = useState(false);
   const currentDate = displayToDate(value) ?? new Date();
 
