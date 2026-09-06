@@ -44,7 +44,9 @@ export default function InstructorAddMediaPage() {
     setUploading(true); setError(null);
 
     try {
-      const path = `media/${crypto.randomUUID()}/${Date.now()}_${file.name}`;
+      const ext = file.name.split('.').pop() ?? '';
+      const safeTitle = title.trim().replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `media/${crypto.randomUUID()}/${Date.now()}_${safeTitle}.${ext}`;
       const sRef = storageRef(storage, path);
       const task = uploadBytesResumable(sRef, file);
 

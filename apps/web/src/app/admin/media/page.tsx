@@ -94,8 +94,9 @@ export default function AdminMediaPage() {
 
     try {
       const ext = file.name.split('.').pop() ?? '';
+      const safeTitle = form.title.trim().replace(/[^a-zA-Z0-9._-]/g, '_');
       const uuid = crypto.randomUUID();
-      const path = `media/${uuid}/${Date.now()}_${file.name}`;
+      const path = `media/${uuid}/${Date.now()}_${safeTitle}.${ext}`;
       const sRef = storageRef(storage, path);
       const task = uploadBytesResumable(sRef, file);
 

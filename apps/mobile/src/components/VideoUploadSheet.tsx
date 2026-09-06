@@ -113,8 +113,9 @@ export default function VideoUploadSheet({
     try {
       const res = await fetch(file.uri);
       const blob = await res.blob();
-      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const path = `media/${uniqueId()}/${Date.now()}_${safe}`;
+      const ext = file.name.split('.').pop() ?? 'mp4';
+      const safeTitle = title.trim().replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `media/${uniqueId()}/${Date.now()}_${safeTitle}.${ext}`;
       const task = uploadBytesResumable(storageRef(storage, path), blob, { contentType: file.mimeType });
 
       const sourceUrl = await new Promise<string>((resolve, reject) => {
