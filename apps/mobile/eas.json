@@ -12,6 +12,11 @@
         "env": {
           "APP_VARIANT": "development"
         }
+      },
+      "android": {
+        "env": {
+          "APP_VARIANT": "development"
+        }
       }
     },
     "preview": {
@@ -23,7 +28,10 @@
         }
       },
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "env": {
+          "APP_VARIANT": "development"
+        }
       }
     },
     "production": {

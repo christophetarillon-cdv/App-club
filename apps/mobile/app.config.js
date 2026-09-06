@@ -27,7 +27,9 @@ module.exports = {
       },
     },
     android: {
-      package: 'fr.clubdansecoublevievoiron.app',
+      package: IS_DEV_VARIANT
+        ? 'fr.clubdansecoublevievoiron.app.dev'
+        : 'fr.clubdansecoublevievoiron.app',
       googleServicesFile: './google-services.json',
       adaptiveIcon: {
         backgroundColor: '#FFFFFF',
