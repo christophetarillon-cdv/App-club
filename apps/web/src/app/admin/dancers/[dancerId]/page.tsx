@@ -8,7 +8,7 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import {
-  type PaymentMethod, type Installment as InstallmentForm, MAX_INSTALLMENTS, emptyInstallment, chequeFields,
+  type PaymentMethod, type Installment as InstallmentForm, MAX_INSTALLMENTS, emptyInstallment, nextInstallment, chequeFields,
 } from '@/lib/payment-constants';
 import { GENDER_OPTIONS, genderLabel } from '@/lib/gender-constants';
 import { useAuth } from '@/contexts/AuthContext';
@@ -788,8 +788,12 @@ export default function DancerDetailPage() {
         } : null;
         setAccount(accountData);
 
-        const [membershipSnap, groupSnap, seasonSnap, planSnap, allDancerSnap, regSnap, styleSnap, levelSnap, docsSnap] = await Promise.all([
+        const [membershipSnap, membershipByDancerSnap, groupSnap, seasonSnap, planSnap, allDancerSnap, regSnap, styleSnap, levelSnap, docsSnap] = await Promise.all([
           getDocs(query(collection(db, 'memberships'), where('userId', '==', dancerData.accountId))),
+          // Un plan peut avoir été créé sous un autre compte payeur (ex: le danseur a été
+          // rattaché à un autre compte depuis, ou un proche a payé pour lui) — sans cette
+          // requête complémentaire par dancerId, ce plan resterait invisible ici.
+          getDocs(query(collection(db, 'memberships'), where('dancerId', '==', dancerId))),
           getDocs(query(collection(db, 'paymentGroups'), where('userId', '==', dancerData.accountId))),
           getDocs(collection(db, 'seasons')),
           getDocs(collection(db, 'pricingPlans')),
@@ -822,8 +826,10 @@ export default function DancerDetailPage() {
         const levelLabelMap = new Map<string, string>();
         levelSnap.docs.forEach(d => levelLabelMap.set(d.id, d.data().name ?? d.data().label ?? ''));
 
+        // Fusion des deux requêtes (par compte + par danseur), dédupliquée par id de doc
         const membershipById = new Map<string, any>();
         membershipSnap.docs.forEach(d => membershipById.set(d.id, { id: d.id, ...d.data() }));
+        membershipByDancerSnap.docs.forEach(d => membershipById.set(d.id, { id: d.id, ...d.data() }));
 
         const isThisDancer = (m: any): boolean => {
           if (m.dancerId) return m.dancerId === dancerId;
@@ -833,8 +839,7 @@ export default function DancerDetailPage() {
         // ── Cotisations ────────────────────────────────────────────────
         const allEntries: Entry[] = [];
 
-        membershipSnap.docs.forEach(d => {
-          const m = { id: d.id, ...d.data() } as any;
+        membershipById.forEach(m => {
           if (m.paymentGroupId) return;
           if (!isThisDancer(m)) return;
           allEntries.push({
@@ -850,8 +855,19 @@ export default function DancerDetailPage() {
           });
         });
 
-        for (const d of groupSnap.docs) {
-          const g = { id: d.id, ...d.data() } as any;
+        // Groupes trouvés via la requête par compte, + ceux référencés par une
+        // adhésion de ce danseur mais payés par un autre compte (non couverts ci-dessus)
+        const groupById = new Map<string, any>();
+        groupSnap.docs.forEach(d => groupById.set(d.id, { id: d.id, ...d.data() }));
+        const missingGroupIds = [...new Set(
+          [...membershipById.values()]
+            .map(m => m.paymentGroupId as string | undefined)
+            .filter((gid): gid is string => !!gid && !groupById.has(gid))
+        )];
+        const extraGroupSnaps = await Promise.all(missingGroupIds.map(gid => getDoc(doc(db, 'paymentGroups', gid))));
+        extraGroupSnaps.forEach(s => { if (s.exists()) groupById.set(s.id, { id: s.id, ...s.data() }); });
+
+        for (const g of groupById.values()) {
           const membershipIds: string[] = g.membershipIds ?? [];
           const myMembership = membershipIds.map(id => membershipById.get(id)).filter(Boolean).find(m => isThisDancer(m));
           if (!myMembership) continue;
@@ -1423,7 +1439,7 @@ export default function DancerDetailPage() {
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <button type="button" onClick={() => setCompleteInstallments(prev => [...prev, emptyInstallment()])}
+                      <button type="button" onClick={() => setCompleteInstallments(prev => [...prev, nextInstallment(prev)])}
                         disabled={completeInstallments.length >= maxInst}
                         className="text-xs text-blue-600 hover:text-blue-800 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
                         + Ajouter un versement

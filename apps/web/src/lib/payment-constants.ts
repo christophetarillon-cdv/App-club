@@ -61,6 +61,16 @@ export const emptyInstallment = (): Installment => ({
   expectedDate: '', amount: '', chequeNumber: '', draweeBank: '', draweeCity: '',
 });
 
+// Reprend banque/ville du dernier versement pour éviter de les ressaisir à chaque chèque
+export function nextInstallment(prev: Installment[]): Installment {
+  const last = prev[prev.length - 1];
+  return {
+    ...emptyInstallment(),
+    draweeBank: last?.draweeBank ?? '',
+    draweeCity: last?.draweeCity ?? '',
+  };
+}
+
 export function chequeFields(method: PaymentMethod, inst: Installment) {
   if (method !== 'cheque') return {};
   return {

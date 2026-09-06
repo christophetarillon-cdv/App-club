@@ -8,7 +8,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { type Installment, emptyInstallment, MAX_INSTALLMENTS, chequeFields, type PaymentMethod } from '@/lib/payment-constants';
+import { type Installment, emptyInstallment, nextInstallment, MAX_INSTALLMENTS, chequeFields, type PaymentMethod } from '@/lib/payment-constants';
 import { logEvent } from '@/lib/analytics';
 
 // Si le danseur quitte/rafraîchit la page avant de valider, les versements
@@ -299,7 +299,7 @@ export default function PaymentPlanPage() {
 
           <div className="flex items-center justify-between">
             <button type="button"
-              onClick={() => setInstallments(prev => [...prev, emptyInstallment()])}
+              onClick={() => setInstallments(prev => [...prev, nextInstallment(prev)])}
               disabled={installments.length >= maxInstallments}
               className="text-sm text-blue-600 hover:text-blue-800 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
               + Ajouter un versement
