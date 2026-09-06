@@ -99,6 +99,12 @@ function newInstallment(iso?: string): InstallmentForm {
   return { id: String(Date.now() + Math.random()), date, dateDisplay: isoToDisplay(date), amount: '', chequeNumber: '', draweeBank: '', draweeCity: '' };
 }
 
+// Reprend banque/ville du dernier versement pour éviter de les ressaisir à chaque chèque
+function nextInstallment(prev: InstallmentForm[]): InstallmentForm {
+  const last = prev[prev.length - 1];
+  return { ...newInstallment(), draweeBank: last?.draweeBank ?? '', draweeCity: last?.draweeCity ?? '' };
+}
+
 // ── Brouillon de l'échéancier (AsyncStorage) ────────────────────────────────
 // Si le danseur quitte l'écran avant d'appuyer sur "Envoyer pour validation",
 // les versements déjà tapés ne doivent pas être perdus quand il revient via
@@ -1386,7 +1392,7 @@ export default function MembershipCreateScreen() {
 
     const addInst = () => {
       if (installments.length >= maxInst) return;
-      setInstallments(prev => [...prev, newInstallment()]);
+      setInstallments(prev => [...prev, nextInstallment(prev)]);
     };
 
     const removeInst = (id: string) => {
