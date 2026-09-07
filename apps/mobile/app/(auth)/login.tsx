@@ -3,8 +3,8 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Alert,
 } from 'react-native';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth, functionsBaseUrl } from '@/lib/firebase';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -106,21 +106,14 @@ export default function LoginScreen() {
     setInfo(null);
     setResetLoading(true);
     try {
-      const res = await fetch(`${functionsBaseUrl}/sendPasswordReset`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setInfo('Email envoyé — vérifiez votre boîte de réception.');
-      } else if (data.error === 'user_not_found') {
+      await sendPasswordResetEmail(auth, email.trim());
+      setInfo('Email envoyé — vérifiez votre boîte de réception.');
+    } catch (err: any) {
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-email') {
         setError("Aucun compte n'est associé à cet email.");
       } else {
         setError("Impossible d'envoyer l'email pour le moment. Réessayez plus tard.");
       }
-    } catch {
-      setError('Erreur réseau — vérifiez votre connexion.');
     } finally {
       setResetLoading(false);
     }
