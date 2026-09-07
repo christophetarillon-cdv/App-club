@@ -8,7 +8,7 @@ import { db } from '@/lib/firebase';
 import { useAuth, useIsBureau } from '@/contexts/AuthContext';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { type Installment, emptyInstallment, nextInstallment, getMaxInstallments, chequeFields, type PaymentMethod } from '@/lib/payment-constants';
+import { type Installment, emptyInstallment, nextInstallment, getMaxInstallments, canAddInstallment, methodCounts, METHOD_LABEL, chequeFields, type PaymentMethod } from '@/lib/payment-constants';
 import { logEvent } from '@/lib/analytics';
 
 // Si le danseur quitte/rafraîchit la page avant de valider, les versements
@@ -144,8 +144,12 @@ export default function PaymentPlanPage() {
     if (!user || (!membership && !group)) return;
     setError(null);
 
-    if (installments.length > maxInstallments) {
-      setError(`Maximum ${maxInstallments} versement${maxInstallments > 1 ? 's' : ''} autorisé${maxInstallments > 1 ? 's' : ''} pour ce mode de paiement.`);
+    const submitCounts = methodCounts(installments, paymentMethod as PaymentMethod);
+    const overCapMethod = (['cheque', 'transfer', 'cash', 'helloasso'] as PaymentMethod[])
+      .find(m => (submitCounts[m] ?? 0) > getMaxInstallments(m, isBureau));
+    if (overCapMethod) {
+      const cap = getMaxInstallments(overCapMethod, isBureau);
+      setError(`Maximum ${cap} versement${cap > 1 ? 's' : ''} en ${METHOD_LABEL[overCapMethod].toLowerCase()}.`);
       return;
     }
     if (Math.abs(remaining) > 0) {
@@ -162,41 +166,47 @@ export default function PaymentPlanPage() {
     setSaving(true);
     const batch = writeBatch(db);
     const ids: string[] = [];
+    const usedMethods = new Set(installments.map(i => i.method ?? (paymentMethod as PaymentMethod)));
+    const planPaymentMethod: PaymentMethod | 'mixed' = usedMethods.size === 1 ? [...usedMethods][0]! : 'mixed';
 
     if (group) {
       for (const i of installments) {
+        const instMethod = i.method ?? (paymentMethod as PaymentMethod);
         const ref = doc(collection(db, 'paymentInstallments'));
         ids.push(ref.id);
         batch.set(ref, {
           paymentGroupId: group.id,
           userId: user.uid,
           amount: Math.round(parseFloat(i.amount) * 100),
-          method: paymentMethod,
+          method: instMethod,
           expectedDate: i.expectedDate,
           status: 'pending',
-          ...chequeFields(paymentMethod as PaymentMethod, i),
+          ...chequeFields(instMethod, i),
         });
       }
       batch.update(doc(db, 'paymentGroups', group.id), {
         installmentIds: ids,
+        paymentMethod: planPaymentMethod,
         updatedAt: serverTimestamp(),
       });
     } else if (membership) {
       for (const i of installments) {
+        const instMethod = i.method ?? (paymentMethod as PaymentMethod);
         const ref = doc(collection(db, 'paymentInstallments'));
         ids.push(ref.id);
         batch.set(ref, {
           membershipId: membership.id,
           userId: user.uid,
           amount: Math.round(parseFloat(i.amount) * 100),
-          method: paymentMethod,
+          method: instMethod,
           expectedDate: i.expectedDate,
           status: 'pending',
-          ...chequeFields(paymentMethod as PaymentMethod, i),
+          ...chequeFields(instMethod, i),
         });
       }
       batch.update(doc(db, 'memberships', membership.id), {
         installmentIds: ids,
+        paymentMethod: planPaymentMethod,
         updatedAt: serverTimestamp(),
       });
     }
@@ -273,7 +283,18 @@ export default function PaymentPlanPage() {
                     className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
                 )}
               </div>
-              {paymentMethod === 'cheque' && (
+              {isBureau && (
+                <div className="ml-8 flex gap-1.5">
+                  {(['cheque', 'transfer', 'cash'] as PaymentMethod[]).map(m => (
+                    <button key={m} type="button"
+                      onClick={() => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, method: m } : x))}
+                      className={`text-xs px-2.5 py-1 rounded-md font-medium border transition-colors ${(inst.method ?? paymentMethod) === m ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+                      {METHOD_LABEL[m]}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {(inst.method ?? paymentMethod) === 'cheque' && (
                 <div className="ml-8 grid grid-cols-3 gap-2">
                   <input
                     type="text" placeholder="N° chèque"
@@ -298,17 +319,31 @@ export default function PaymentPlanPage() {
             </div>
           ))}
 
-          <div className="flex items-center justify-between">
-            <button type="button"
-              onClick={() => setInstallments(prev => [...prev, nextInstallment(prev)])}
-              disabled={installments.length >= maxInstallments}
-              className="text-sm text-blue-600 hover:text-blue-800 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
-              + Ajouter un versement
-            </button>
-            <span className="text-xs text-gray-400">
-              {installments.length}/{maxInstallments} versement{maxInstallments > 1 ? 's' : ''}
-            </span>
-          </div>
+          {(() => {
+            const counts = methodCounts(installments, paymentMethod as PaymentMethod);
+            const breakdown = isBureau
+              ? (['cheque', 'transfer', 'cash', 'helloasso'] as PaymentMethod[])
+                  .filter(m => counts[m])
+                  .map(m => `${counts[m]} ${METHOD_LABEL[m].toLowerCase()}${counts[m]! > 1 ? 's' : ''}`)
+                  .join(' + ')
+              : '';
+            const canAdd = isBureau
+              ? canAddInstallment(installments, paymentMethod as PaymentMethod, true)
+              : installments.length < maxInstallments;
+            return (
+              <div className="flex items-center justify-between">
+                <button type="button"
+                  onClick={() => setInstallments(prev => [...prev, nextInstallment(prev, isBureau)])}
+                  disabled={!canAdd}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+                  + Ajouter un versement
+                </button>
+                <span className="text-xs text-gray-400">
+                  {breakdown || `${installments.length}/${maxInstallments} versement${maxInstallments > 1 ? 's' : ''}`}
+                </span>
+              </div>
+            );
+          })()}
 
           <div className={`flex justify-between items-center text-sm font-semibold pt-2 border-t border-gray-100 ${Math.abs(remaining) > 0 ? 'text-orange-600' : 'text-green-700'}`}>
             <span>Total saisi</span>

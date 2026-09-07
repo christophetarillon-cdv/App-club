@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
-import { type PaymentMethod, type Installment, METHOD_LABEL, emptyInstallment, nextInstallment, getMaxInstallments, chequeFields } from '@/lib/payment-constants';
+import { type PaymentMethod, type Installment, METHOD_LABEL, emptyInstallment, nextInstallment, canAddInstallment, methodCounts, chequeFields } from '@/lib/payment-constants';
 
 interface Account { id: string; displayName: string; email: string; }
 interface Dancer { id: string; firstName: string; lastName: string; accountId: string; roles: string[]; }
@@ -154,6 +154,8 @@ export default function AdminCreatePaymentPlanPage() {
       const batch = writeBatch(db);
       const installmentRefs = installments.map(() => doc(collection(db, 'paymentInstallments')));
       const installmentIds = installmentRefs.map(r => r.id);
+      const usedMethods = new Set(installments.map(i => i.method ?? selectedMethod));
+      const planPaymentMethod: PaymentMethod | 'mixed' = usedMethods.size === 1 ? [...usedMethods][0]! : 'mixed';
 
       if (selectedDancers.length === 1) {
         const dancer = selectedDancers[0]!;
@@ -162,14 +164,15 @@ export default function AdminCreatePaymentPlanPage() {
 
         for (let i = 0; i < installments.length; i++) {
           const inst = installments[i]!;
+          const instMethod = inst.method ?? selectedMethod;
           batch.set(installmentRefs[i]!, {
             membershipId: mRef.id,
             userId: targetUserId,
             amount: Math.round(parseFloat(inst.amount) * 100),
-            method: selectedMethod,
+            method: instMethod,
             expectedDate: inst.expectedDate,
             status: 'pending',
-            ...chequeFields(selectedMethod, inst),
+            ...chequeFields(instMethod, inst),
           });
         }
 
@@ -180,7 +183,7 @@ export default function AdminCreatePaymentPlanPage() {
           pricingPlanId: selectedPlanIds[dancer.id]!,
           totalDue: plan.amount,
           totalPaid: 0,
-          paymentMethod: selectedMethod,
+          paymentMethod: planPaymentMethod,
           paymentPlanStatus: 'approved',
           installmentIds,
           status: 'active',
@@ -202,7 +205,7 @@ export default function AdminCreatePaymentPlanPage() {
             pricingPlanId: selectedPlanIds[dancer.id]!,
             totalDue: plan.amount,
             totalPaid: 0,
-            paymentMethod: selectedMethod,
+            paymentMethod: planPaymentMethod,
             paymentPlanStatus: 'approved',
             installmentIds: [],
             status: 'active',
@@ -214,14 +217,15 @@ export default function AdminCreatePaymentPlanPage() {
 
         for (let i = 0; i < installments.length; i++) {
           const inst = installments[i]!;
+          const instMethod = inst.method ?? selectedMethod;
           batch.set(installmentRefs[i]!, {
             paymentGroupId: groupRef.id,
             userId: targetUserId,
             amount: Math.round(parseFloat(inst.amount) * 100),
-            method: selectedMethod,
+            method: instMethod,
             expectedDate: inst.expectedDate,
             status: 'pending',
-            ...chequeFields(selectedMethod, inst),
+            ...chequeFields(instMethod, inst),
           });
         }
 
@@ -230,7 +234,7 @@ export default function AdminCreatePaymentPlanPage() {
           membershipIds,
           totalDue,
           totalPaid: 0,
-          paymentMethod: selectedMethod,
+          paymentMethod: planPaymentMethod,
           paymentPlanStatus: 'approved',
           installmentIds,
           seasonId: season.id,
@@ -288,7 +292,10 @@ export default function AdminCreatePaymentPlanPage() {
             {account && ` · ${account.email}`}
           </p>
           <p className="text-sm text-green-700 mt-0.5">
-            {(totalDue / 100).toFixed(2)} € · {METHOD_LABEL[selectedMethod]} · {installments.length} versement{installments.length > 1 ? 's' : ''}
+            {(totalDue / 100).toFixed(2)} € · {(() => {
+              const used = new Set(installments.map(i => i.method ?? selectedMethod));
+              return METHOD_LABEL[used.size === 1 ? [...used][0]! : 'mixed'];
+            })()} · {installments.length} versement{installments.length > 1 ? 's' : ''}
           </p>
         </div>
         <div className="flex gap-3">
@@ -481,7 +488,16 @@ export default function AdminCreatePaymentPlanPage() {
                         className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
                     )}
                   </div>
-                  {selectedMethod === 'cheque' && (
+                  <div className="ml-8 flex gap-1.5">
+                    {(['cheque', 'transfer', 'cash'] as PaymentMethod[]).map(m => (
+                      <button key={m} type="button"
+                        onClick={() => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, method: m } : x))}
+                        className={`text-xs px-2.5 py-1 rounded-md font-medium border transition-colors ${(inst.method ?? selectedMethod) === m ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+                        {METHOD_LABEL[m]}
+                      </button>
+                    ))}
+                  </div>
+                  {(inst.method ?? selectedMethod) === 'cheque' && (
                     <div className="ml-8 grid grid-cols-3 gap-2">
                       <input
                         type="text" placeholder="N° chèque"
@@ -507,16 +523,23 @@ export default function AdminCreatePaymentPlanPage() {
               ))}
             </div>
 
-            {(() => { const maxInst = getMaxInstallments(selectedMethod, true); return (
-              <div className="flex items-center justify-between">
-                <button type="button" onClick={() => setInstallments(prev => [...prev, nextInstallment(prev)])}
-                  disabled={installments.length >= maxInst}
-                  className="text-sm text-blue-600 hover:text-blue-800 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
-                  + Ajouter un versement
-                </button>
-                <span className="text-xs text-gray-400">{installments.length}/{maxInst} versement{maxInst > 1 ? 's' : ''}</span>
-              </div>
-            ); })()}
+            {(() => {
+              const counts = methodCounts(installments, selectedMethod);
+              const breakdown = (['cheque', 'transfer', 'cash', 'helloasso'] as PaymentMethod[])
+                .filter(m => counts[m])
+                .map(m => `${counts[m]} ${METHOD_LABEL[m].toLowerCase()}${counts[m]! > 1 ? 's' : ''}`)
+                .join(' + ');
+              return (
+                <div className="flex items-center justify-between">
+                  <button type="button" onClick={() => setInstallments(prev => [...prev, nextInstallment(prev, true)])}
+                    disabled={!canAddInstallment(installments, selectedMethod, true)}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+                    + Ajouter un versement
+                  </button>
+                  <span className="text-xs text-gray-400">{breakdown || `${installments.length} versement${installments.length > 1 ? 's' : ''}`}</span>
+                </div>
+              );
+            })()}
 
             <div className={`flex justify-between items-center text-sm font-semibold pt-2 border-t border-gray-100 ${Math.abs(remaining) > 0 ? 'text-orange-600' : 'text-green-700'}`}>
               <span>Total saisi</span>

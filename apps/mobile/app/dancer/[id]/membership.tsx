@@ -89,6 +89,7 @@ const METHOD_LABEL: Record<string, string> = {
   transfer:  'Virement',
   cash:      'Espèces',
   helloasso: 'CB / En ligne',
+  mixed:     'Mixte',
 };
 
 // ── Utilitaires ──────────────────────────────────────────────────────────────

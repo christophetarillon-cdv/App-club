@@ -1476,7 +1476,7 @@ function MembershipCard({ membership, season, payingOnline, onPayOnline, onCance
   readOnly?: boolean;
 }) {
   const METHOD_LABEL: Record<string, string> = {
-    cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces',
+    cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', mixed: 'Mixte',
   };
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
@@ -1570,7 +1570,7 @@ function GroupMembershipCard({ group, season, payingOnline, onPayOnline, onCance
   readOnly?: boolean;
 }) {
   const METHOD_LABEL: Record<string, string> = {
-    cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces',
+    cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', mixed: 'Mixte',
   };
   const statusLabel = group.paymentPlanStatus === 'approved' ? 'Approuvé' :
     group.paymentPlanStatus === 'rejected' ? 'Refusé' : 'En attente';
@@ -1659,8 +1659,7 @@ function GroupMembershipCard({ group, season, payingOnline, onPayOnline, onCance
   );
 }
 
-function InstallmentsTable({ installments, method }: { installments: InstallmentDetail[]; method: string }) {
-  const isCheque = method === 'cheque';
+function InstallmentsTable({ installments }: { installments: InstallmentDetail[]; method: string }) {
   return (
     <div className="mt-4 border-t border-gray-100 pt-4">
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Échéancier</p>
@@ -1684,7 +1683,7 @@ function InstallmentsTable({ installments, method }: { installments: Installment
                   </span>
                 </div>
               </div>
-              {isCheque && (inst.chequeNumber || inst.draweeBank || inst.draweeCity) && (
+              {inst.method === 'cheque' && (inst.chequeNumber || inst.draweeBank || inst.draweeCity) && (
                 <p className="text-gray-400 mt-0.5">
                   {[
                     inst.chequeNumber ? `N° ${inst.chequeNumber}` : null,

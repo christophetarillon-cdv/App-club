@@ -62,7 +62,7 @@ interface GroupRow extends PaymentGroupDoc {
   installments: Installment[];
 }
 
-const METHOD_LABEL: Record<string, string> = { cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces' };
+const METHOD_LABEL: Record<string, string> = { cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', mixed: 'Mixte' };
 
 export default function AdminPaymentPlansPage() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -74,9 +74,12 @@ export default function AdminPaymentPlansPage() {
   const [backfilling, setBackfilling] = useState(false);
   const [seasons, setSeasons] = useState<{ id: string; label: string }[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
+    setError(null);
+    try {
 
     // Solo memberships (not part of a group)
     const snap = await getDocs(query(collection(db, 'memberships'), where('paymentPlanStatus', '==', filter), where('seasonId', '==', selectedSeasonId)));
@@ -91,7 +94,9 @@ export default function AdminPaymentPlansPage() {
       const [accountSnap, seasonSnap, planSnap] = await Promise.all([
         getDoc(doc(db, 'accounts', m.userId)),
         getDoc(doc(db, 'seasons', m.seasonId)),
-        getDoc(doc(db, 'pricingPlans', m.pricingPlanId)),
+        // Une adhésion validée sans cotisation ("Valider sans cotisation") n'a
+        // pas de pricingPlanId — doc() plante si on lui passe undefined.
+        m.pricingPlanId ? getDoc(doc(db, 'pricingPlans', m.pricingPlanId)) : Promise.resolve(null),
       ]);
 
       let dancerName = '';
@@ -123,7 +128,7 @@ export default function AdminPaymentPlansPage() {
         resolvedDancerId: dancerId,
         resolvedDancerRoles,
         seasonLabel: seasonSnap.exists() ? seasonSnap.data().label : m.seasonId,
-        planLabel: planSnap.exists() ? planSnap.data().label : m.pricingPlanId,
+        planLabel: planSnap?.exists() ? planSnap.data().label : (m.pricingPlanId ?? 'Sans cotisation'),
         installments,
       };
     }));
@@ -183,7 +188,12 @@ export default function AdminPaymentPlansPage() {
       };
     }));
     setGroupRows(enrichedGroups);
-    setLoading(false);
+    } catch (err) {
+      console.error('[admin/payment-plans] load failed:', err);
+      setError(err instanceof Error ? err.message : 'Erreur lors du chargement des plans de paiement.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -353,6 +363,10 @@ export default function AdminPaymentPlansPage() {
         ))}
         </div>
       </div>
+
+      {error && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">{error}</p>
+      )}
 
       {loading ? <p className="text-gray-500 text-sm">Chargement…</p> : totalItems === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-12 text-center">

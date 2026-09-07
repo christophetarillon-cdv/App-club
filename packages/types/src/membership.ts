@@ -1,6 +1,6 @@
 import type { WithTimestamps, FirestoreTimestamp } from './common';
 
-export type PaymentMethod = 'cheque' | 'transfer' | 'cash' | 'helloasso' | 'free';
+export type PaymentMethod = 'cheque' | 'transfer' | 'cash' | 'helloasso' | 'free' | 'mixed';
 export type PaymentPlanStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 export type MembershipStatus = 'pending' | 'active' | 'complete';
 export type RefundMethod = 'cheque' | 'transfer' | 'cash';

@@ -40,14 +40,35 @@ type PayScope = 'me' | 'myAccount' | 'otherAccount';
 const MAX_INSTALLMENTS: Record<string, number> = {
   cheque: 10, transfer: 1, cash: 1, helloasso: 1,
 };
-const MAX_CHEQUE_INSTALLMENTS_EXTENDED = 11; // rôle "bureau"
+const MAX_INSTALLMENTS_EXTENDED = 11; // rôle "bureau"
+const EXTENDABLE_METHODS = ['cheque', 'transfer'];
+const ALL_METHODS = ['cheque', 'transfer', 'cash', 'helloasso'];
 
 function getMaxInstallments(method: string, extended: boolean): number {
-  if (method === 'cheque' && extended) return MAX_CHEQUE_INSTALLMENTS_EXTENDED;
+  if (extended && EXTENDABLE_METHODS.includes(method)) return MAX_INSTALLMENTS_EXTENDED;
   return MAX_INSTALLMENTS[method] ?? 1;
 }
+
+// Nombre de versements par mode (le mode absent d'une ligne compte comme
+// `fallbackMethod`, le mode du plan pour les plans à mode unique).
+function methodCounts(installments: InstallmentForm[], fallbackMethod: string): Record<string, number> {
+  const counts: Record<string, number> = {};
+  installments.forEach(i => {
+    const m = i.method ?? fallbackMethod;
+    counts[m] = (counts[m] ?? 0) + 1;
+  });
+  return counts;
+}
+
+// Un plan mixte (bureau) reste ajoutable tant qu'au moins un mode n'a pas
+// atteint son propre plafond — pas le total des versements du plan.
+function canAddInstallment(installments: InstallmentForm[], fallbackMethod: string, extended: boolean): boolean {
+  const counts = methodCounts(installments, fallbackMethod);
+  return ALL_METHODS.some(m => (counts[m] ?? 0) < getMaxInstallments(m, extended));
+}
+
 const METHOD_LABEL: Record<string, string> = {
-  cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', helloasso: 'CB / En ligne',
+  cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', helloasso: 'CB / En ligne', mixed: 'Mixte',
 };
 
 interface InstallmentForm {
@@ -55,6 +76,9 @@ interface InstallmentForm {
   date: string;         // YYYY-MM-DD interne
   dateDisplay: string;  // JJ/MM/AAAA affiché
   amount: string;       // "150.00" en string
+  // Mode de ce versement précis — optionnel : seuls les plans mixtes
+  // (bureau) le renseignent, un plan à mode unique utilise le mode global.
+  method?: string;
   chequeNumber: string;
   draweeBank: string;
   draweeCity: string;
@@ -105,10 +129,19 @@ function newInstallment(iso?: string): InstallmentForm {
   return { id: String(Date.now() + Math.random()), date, dateDisplay: isoToDisplay(date), amount: '', chequeNumber: '', draweeBank: '', draweeCity: '' };
 }
 
-// Reprend banque/ville du dernier versement pour éviter de les ressaisir à chaque chèque
-function nextInstallment(prev: InstallmentForm[]): InstallmentForm {
+// Reprend banque/ville (et le mode, pour les plans mixtes) du dernier
+// versement — si le mode du dernier versement a atteint son plafond,
+// bascule sur le premier mode encore disponible.
+function nextInstallment(prev: InstallmentForm[], extended = false): InstallmentForm {
   const last = prev[prev.length - 1];
-  return { ...newInstallment(), draweeBank: last?.draweeBank ?? '', draweeCity: last?.draweeCity ?? '' };
+  let method = last?.method;
+  if (method) {
+    const counts = methodCounts(prev, method);
+    if ((counts[method] ?? 0) >= getMaxInstallments(method, extended)) {
+      method = ALL_METHODS.find(m => (counts[m] ?? 0) < getMaxInstallments(m, extended));
+    }
+  }
+  return { ...newInstallment(), method, draweeBank: last?.draweeBank ?? '', draweeCity: last?.draweeCity ?? '' };
 }
 
 // ── Brouillon de l'échéancier (AsyncStorage) ────────────────────────────────
@@ -780,9 +813,11 @@ export default function MembershipCreateScreen() {
     if (!user || !creationResult) return;
     setSubmitError(null);
 
-    const maxInst = getMaxInstallments(creationResult.method, isBureau);
-    if (installments.length > maxInst) {
-      setSubmitError(`Maximum ${maxInst} versement(s) pour ce mode de paiement.`);
+    const submitCounts = methodCounts(installments, creationResult.method);
+    const overCapMethod = ALL_METHODS.find(m => (submitCounts[m] ?? 0) > getMaxInstallments(m, isBureau));
+    if (overCapMethod) {
+      const cap = getMaxInstallments(overCapMethod, isBureau);
+      setSubmitError(`Maximum ${cap} versement(s) en ${METHOD_LABEL[overCapMethod].toLowerCase()}.`);
       return;
     }
 
@@ -802,10 +837,13 @@ export default function MembershipCreateScreen() {
     try {
       const batch = writeBatch(db);
       const ids: string[] = [];
+      const usedMethods = new Set(installments.map(i => i.method ?? creationResult.method));
+      const planPaymentMethod = usedMethods.size === 1 ? [...usedMethods][0]! : 'mixed';
 
       for (const inst of installments) {
+        const instMethod = inst.method ?? creationResult.method;
         const ref = doc(collection(db, 'paymentInstallments'));
-        const chequeData = creationResult.method === 'cheque' ? {
+        const chequeData = instMethod === 'cheque' ? {
           ...(inst.chequeNumber ? { chequeNumber: inst.chequeNumber } : {}),
           ...(inst.draweeBank   ? { draweeBank: inst.draweeBank }     : {}),
           ...(inst.draweeCity   ? { draweeCity: inst.draweeCity }     : {}),
@@ -816,7 +854,7 @@ export default function MembershipCreateScreen() {
             : { paymentGroupId: creationResult.groupId }),
           userId: user.uid,
           amount: Math.round(parseFloat(inst.amount) * 100),
-          method: creationResult.method,
+          method: instMethod,
           expectedDate: inst.date,
           status: 'pending',
           ...chequeData,
@@ -827,11 +865,13 @@ export default function MembershipCreateScreen() {
       if (creationResult.kind === 'solo') {
         batch.update(doc(db, 'memberships', creationResult.membershipId), {
           installmentIds: ids,
+          paymentMethod: planPaymentMethod,
           updatedAt: serverTimestamp(),
         });
       } else {
         batch.update(doc(db, 'paymentGroups', creationResult.groupId), {
           installmentIds: ids,
+          paymentMethod: planPaymentMethod,
           updatedAt: serverTimestamp(),
         });
       }
@@ -1397,9 +1437,13 @@ export default function MembershipCreateScreen() {
       }));
     };
 
+    const canAdd = isBureau
+      ? canAddInstallment(installments, creationResult.method, true)
+      : installments.length < maxInst;
+
     const addInst = () => {
-      if (installments.length >= maxInst) return;
-      setInstallments(prev => [...prev, nextInstallment(prev)]);
+      if (!canAdd) return;
+      setInstallments(prev => [...prev, nextInstallment(prev, isBureau)]);
     };
 
     const removeInst = (id: string) => {
@@ -1410,7 +1454,14 @@ export default function MembershipCreateScreen() {
     return (
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 120 }]} showsVerticalScrollIndicator={false}>
         <View style={styles.instHeader}>
-          <Text style={styles.sectionTitle}>Versements ({installments.length}/{maxInst} max)</Text>
+          <Text style={styles.sectionTitle}>
+            Versements ({isBureau
+              ? (() => {
+                  const counts = methodCounts(installments, creationResult.method);
+                  return ALL_METHODS.filter(m => counts[m]).map(m => `${counts[m]} ${METHOD_LABEL[m].toLowerCase()}`).join(' + ') || `${installments.length}`;
+                })()
+              : `${installments.length}/${maxInst} max`})
+          </Text>
           <View style={[styles.balanceBadge, { backgroundColor: isBalanced ? '#D1FAE5' : '#FEF3C7' }]}>
             <Text style={[styles.balanceBadgeText, { color: isBalanced ? '#065F46' : '#92400E' }]}>
               {isBalanced ? 'Équilibré' : `Reste : ${fmtCents(Math.abs(remaining))}`}
@@ -1443,7 +1494,20 @@ export default function MembershipCreateScreen() {
                   placeholder="0.00" placeholderTextColor={Colors.textLight} keyboardType="decimal-pad" />
               </View>
             </View>
-            {creationResult.method === 'cheque' && (
+            {isBureau && (
+              <View style={styles.methodChipRow}>
+                {(['cheque', 'transfer', 'cash'] as const).map(m => (
+                  <TouchableOpacity key={m}
+                    style={[styles.methodChip, (inst.method ?? creationResult.method) === m && styles.methodChipActive]}
+                    onPress={() => setInstallments(prev => prev.map(i => i.id === inst.id ? { ...i, method: m } : i))}>
+                    <Text style={[styles.methodChipText, (inst.method ?? creationResult.method) === m && styles.methodChipTextActive]}>
+                      {METHOD_LABEL[m]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {(inst.method ?? creationResult.method) === 'cheque' && (
               <View style={styles.instFields}>
                 <View style={styles.instField}>
                   <Text style={styles.fieldLabel}>N° chèque</Text>
@@ -1465,7 +1529,7 @@ export default function MembershipCreateScreen() {
           </View>
         ))}
 
-        {installments.length < maxInst && (
+        {canAdd && (
           <TouchableOpacity style={styles.addInstBtn} onPress={addInst} activeOpacity={0.75}>
             <Text style={styles.addInstBtnText}>+ Ajouter un versement</Text>
           </TouchableOpacity>
@@ -1579,6 +1643,11 @@ const styles = StyleSheet.create({
   methodLabel: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
   methodLabelActive: { color: '#fff' },
   helloassoHint: { fontSize: 12, color: Colors.textSecondary, marginBottom: 12, fontStyle: 'italic' },
+  methodChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  methodChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white },
+  methodChipActive: { borderColor: Colors.primary, backgroundColor: Colors.primary },
+  methodChipText: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary },
+  methodChipTextActive: { color: '#fff' },
 
   // Total
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.white, borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: Colors.border },

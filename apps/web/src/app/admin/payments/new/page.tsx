@@ -24,7 +24,7 @@ interface Plan {
   label: string;
 }
 
-interface Installment { id: string; expectedDate: string; amount: number; status: string; }
+interface Installment { id: string; expectedDate: string; amount: number; status: string; method?: string; }
 interface Season { id: string; label: string; }
 
 export default function AdminNewPaymentPage() {
@@ -151,7 +151,7 @@ export default function AdminNewPaymentPage() {
       const insts = await Promise.all(
         plan.installmentIds.map(async id => {
           const snap = await getDoc(doc(db, 'paymentInstallments', id));
-          return snap.exists() ? { id, expectedDate: snap.data().expectedDate, amount: snap.data().amount, status: snap.data().status } : null;
+          return snap.exists() ? { id, expectedDate: snap.data().expectedDate, amount: snap.data().amount, status: snap.data().status, method: snap.data().method } : null;
         })
       );
       setInstallments(insts.filter(Boolean) as Installment[]);
@@ -169,6 +169,10 @@ export default function AdminNewPaymentPage() {
     const inst = installments.find(i => i.id === instId);
     if (inst) setAmount((inst.amount / 100).toFixed(2));
   };
+
+  // Sur un plan mixte, chaque versement a son propre mode — on ne peut pas
+  // se fier au mode du plan pour savoir quels champs de détail afficher/écrire.
+  const selectedInstallmentMethod = installments.find(i => i.id === selectedInstallmentId)?.method ?? selectedPlan?.paymentMethod;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -206,7 +210,7 @@ export default function AdminNewPaymentPage() {
       }
 
       const batch = writeBatch(db);
-      const method = selectedPlan.paymentMethod;
+      const method = selectedInstallmentMethod;
 
       const paymentRef = doc(collection(db, 'payments'));
       batch.set(paymentRef, {
@@ -365,7 +369,7 @@ export default function AdminNewPaymentPage() {
         })()}
 
         {/* Cheque upload + infos */}
-        {selectedPlan?.paymentMethod === 'cheque' && (
+        {selectedInstallmentMethod === 'cheque' && (
           <>
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Photo du chèque (optionnel)</label>
@@ -430,7 +434,7 @@ export default function AdminNewPaymentPage() {
         )}
 
         {/* Virement */}
-        {selectedPlan?.paymentMethod === 'transfer' && (
+        {selectedInstallmentMethod === 'transfer' && (
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Référence virement <span className="normal-case font-normal text-gray-400">(optionnel)</span></label>
@@ -447,7 +451,7 @@ export default function AdminNewPaymentPage() {
         )}
 
         {/* Espèces */}
-        {selectedPlan?.paymentMethod === 'cash' && (
+        {selectedInstallmentMethod === 'cash' && (
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">N° reçu <span className="normal-case font-normal text-gray-400">(optionnel)</span></label>

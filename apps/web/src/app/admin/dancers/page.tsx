@@ -60,7 +60,7 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled: 'bg-gray-100 text-gray-500',
 };
 const METHOD_LABEL: Record<string, string> = {
-  cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', online: 'En ligne',
+  cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', online: 'En ligne', mixed: 'Mixte',
 };
 
 export default function AdminDancersPage() {
