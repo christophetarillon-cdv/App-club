@@ -49,6 +49,15 @@ export const MAX_INSTALLMENTS: Record<PaymentMethod, number> = {
   helloasso: 1,
 };
 
+// Plafond étendu pour l'admin (saisie manuelle/complétion) et les danseurs
+// du rôle "bureau" en auto-inscription — les autres restent à MAX_INSTALLMENTS.
+const MAX_CHEQUE_INSTALLMENTS_EXTENDED = 11;
+
+export function getMaxInstallments(method: PaymentMethod, extended = false): number {
+  if (method === 'cheque' && extended) return MAX_CHEQUE_INSTALLMENTS_EXTENDED;
+  return MAX_INSTALLMENTS[method] ?? 1;
+}
+
 export interface Installment {
   expectedDate: string;
   amount: string;

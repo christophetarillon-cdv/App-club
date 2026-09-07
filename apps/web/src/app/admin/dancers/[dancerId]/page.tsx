@@ -8,7 +8,7 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import {
-  type PaymentMethod, type Installment as InstallmentForm, MAX_INSTALLMENTS, emptyInstallment, nextInstallment, chequeFields,
+  type PaymentMethod, type Installment as InstallmentForm, getMaxInstallments, emptyInstallment, nextInstallment, chequeFields,
 } from '@/lib/payment-constants';
 import { GENDER_OPTIONS, genderLabel } from '@/lib/gender-constants';
 import { useAuth } from '@/contexts/AuthContext';
@@ -657,7 +657,7 @@ export default function DancerDetailPage() {
   const handleCompleteInstallments = async (entry: Entry) => {
     if (!account) return;
     const method = entry.paymentMethod as PaymentMethod;
-    const maxInst = MAX_INSTALLMENTS[method] ?? 1;
+    const maxInst = getMaxInstallments(method, true);
     if (completeInstallments.length > maxInst) {
       setCompleteError(`Maximum ${maxInst} versement${maxInst > 1 ? 's' : ''} pour ce mode de paiement.`);
       return;
@@ -1387,7 +1387,7 @@ export default function DancerDetailPage() {
 
               {completingEntryId === entry.id && (() => {
                 const method = entry.paymentMethod as PaymentMethod;
-                const maxInst = MAX_INSTALLMENTS[method] ?? 1;
+                const maxInst = getMaxInstallments(method, true);
                 const totalCents = completeInstallments.reduce((sum, i) => {
                   const v = parseFloat(i.amount);
                   return sum + (isNaN(v) ? 0 : Math.round(v * 100));

@@ -40,6 +40,12 @@ type PayScope = 'me' | 'myAccount' | 'otherAccount';
 const MAX_INSTALLMENTS: Record<string, number> = {
   cheque: 10, transfer: 1, cash: 1, helloasso: 1,
 };
+const MAX_CHEQUE_INSTALLMENTS_EXTENDED = 11; // rôle "bureau"
+
+function getMaxInstallments(method: string, extended: boolean): number {
+  if (method === 'cheque' && extended) return MAX_CHEQUE_INSTALLMENTS_EXTENDED;
+  return MAX_INSTALLMENTS[method] ?? 1;
+}
 const METHOD_LABEL: Record<string, string> = {
   cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', helloasso: 'CB / En ligne',
 };
@@ -387,6 +393,7 @@ export default function MembershipCreateScreen() {
   // on laisse la cotisation se créer, mais on marque leur fiche pour que
   // leur titulaire soit obligé de compléter à sa prochaine connexion.
   const isAdmin = selectedDancer?.roles.includes('admin') ?? false;
+  const isBureau = selectedDancer?.roles.includes('bureau') ?? false;
 
   const editableDancers = useMemo(
     () => allSelected.filter(d => d.accountId === user?.uid || isAdmin),
@@ -773,7 +780,7 @@ export default function MembershipCreateScreen() {
     if (!user || !creationResult) return;
     setSubmitError(null);
 
-    const maxInst = MAX_INSTALLMENTS[creationResult.method] ?? 1;
+    const maxInst = getMaxInstallments(creationResult.method, isBureau);
     if (installments.length > maxInst) {
       setSubmitError(`Maximum ${maxInst} versement(s) pour ce mode de paiement.`);
       return;
@@ -1376,7 +1383,7 @@ export default function MembershipCreateScreen() {
 
   function renderInstallments() {
     if (!creationResult) return null;
-    const maxInst = MAX_INSTALLMENTS[creationResult.method] ?? 1;
+    const maxInst = getMaxInstallments(creationResult.method, isBureau);
     const isBalanced = remaining === 0;
 
     const updateInst = (id: string, field: keyof InstallmentForm, value: string) => {

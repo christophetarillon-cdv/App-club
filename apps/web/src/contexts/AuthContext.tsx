@@ -104,3 +104,11 @@ export const useIsAdmin = () => {
     dancers.some(d => d.roles.includes('admin'))
   );
 };
+
+export const useIsBureau = () => {
+  const { account, dancers } = useAuth();
+  return (
+    (account?.roles?.includes('bureau') ?? false) ||
+    dancers.some(d => d.roles.includes('bureau'))
+  );
+};

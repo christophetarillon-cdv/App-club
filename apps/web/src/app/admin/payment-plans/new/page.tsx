@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
-import { type PaymentMethod, type Installment, METHOD_LABEL, emptyInstallment, nextInstallment, MAX_INSTALLMENTS, chequeFields } from '@/lib/payment-constants';
+import { type PaymentMethod, type Installment, METHOD_LABEL, emptyInstallment, nextInstallment, getMaxInstallments, chequeFields } from '@/lib/payment-constants';
 
 interface Account { id: string; displayName: string; email: string; }
 interface Dancer { id: string; firstName: string; lastName: string; accountId: string; roles: string[]; }
@@ -507,7 +507,7 @@ export default function AdminCreatePaymentPlanPage() {
               ))}
             </div>
 
-            {(() => { const maxInst = MAX_INSTALLMENTS[selectedMethod]; return (
+            {(() => { const maxInst = getMaxInstallments(selectedMethod, true); return (
               <div className="flex items-center justify-between">
                 <button type="button" onClick={() => setInstallments(prev => [...prev, nextInstallment(prev)])}
                   disabled={installments.length >= maxInst}

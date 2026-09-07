@@ -5,10 +5,10 @@ import {
   collection, getDocs, query, where, doc, getDoc, writeBatch, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, useIsBureau } from '@/contexts/AuthContext';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { type Installment, emptyInstallment, nextInstallment, MAX_INSTALLMENTS, chequeFields, type PaymentMethod } from '@/lib/payment-constants';
+import { type Installment, emptyInstallment, nextInstallment, getMaxInstallments, chequeFields, type PaymentMethod } from '@/lib/payment-constants';
 import { logEvent } from '@/lib/analytics';
 
 // Si le danseur quitte/rafraîchit la page avant de valider, les versements
@@ -41,6 +41,7 @@ interface PaymentGroup {
 
 export default function PaymentPlanPage() {
   const { user } = useAuth();
+  const isBureau = useIsBureau();
   const searchParams = useSearchParams();
   const membershipId = searchParams.get('membershipId');
   const groupId = searchParams.get('groupId');
@@ -131,7 +132,7 @@ export default function PaymentPlanPage() {
   const totalDue = group?.totalDue ?? membership?.totalDue ?? 0;
   const paymentMethod = group?.paymentMethod ?? membership?.paymentMethod ?? '';
 
-  const maxInstallments = MAX_INSTALLMENTS[(paymentMethod as PaymentMethod)] ?? 1;
+  const maxInstallments = getMaxInstallments(paymentMethod as PaymentMethod, isBureau);
 
   const totalCents = installments.reduce((sum, i) => {
     const v = parseFloat(i.amount);
