@@ -6,5 +6,6 @@ export interface Attendance {
   sessionId?: string;
   date: string; // YYYY-MM-DD
   scannedAt: Timestamp;
-  method: 'qr' | 'manual';
+  method: 'qr' | 'manual' | 'manual-admin';
+  recordedBy?: string;
 }

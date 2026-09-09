@@ -24,6 +24,7 @@ export default function InstructorPage() {
 
   useEffect(() => {
     const isAdmin = account?.roles?.includes('admin') || dancers.some(d => d.roles.includes('admin'));
+    const isBureau = account?.roles?.includes('bureau') || dancers.some(d => d.roles.includes('bureau'));
     setLoading(true);
 
     const load = async () => {
@@ -33,8 +34,8 @@ export default function InstructorPage() {
 
       const courses = new Map<string, string>();
 
-      if (isAdmin) {
-        // Admin : tous les cours
+      if (isAdmin || isBureau) {
+        // Admin/bureau : tous les cours
         const snap = await getDocs(collection(db, 'courses'));
         snap.docs.forEach(d => courses.set(d.id, (d.data() as Course).name));
       } else {
