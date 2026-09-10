@@ -68,6 +68,7 @@ interface Dancer {
   profession?: string;
   medicalNotes?: string;
   healthCertificate?: boolean;
+  licenseFfdanse?: boolean;
   customFields?: Record<string, unknown>;
   googleContactOptOut?: boolean;
 }
@@ -185,6 +186,7 @@ interface PendingInfo {
   memberNumber: string;
   isMinor: boolean;
   healthCertificate: boolean;
+  licenseFfdanse: boolean;
   emergencyContactName: string;
   emergencyContactPhone: string;
   googleContactOptOut: boolean;
@@ -210,6 +212,7 @@ function dancerToPendingInfo(d: Dancer): PendingInfo {
     memberNumber: d.memberNumber ?? '',
     isMinor: d.isMinor ?? false,
     healthCertificate: d.healthCertificate ?? false,
+    licenseFfdanse: d.licenseFfdanse ?? false,
     emergencyContactName: d.emergencyContact?.name ?? '',
     emergencyContactPhone: d.emergencyContact?.phone ?? '',
     googleContactOptOut: d.googleContactOptOut ?? false,
@@ -305,6 +308,7 @@ export default function DancerDetailPage() {
         memberNumber: pendingInfo.memberNumber || null,
         isMinor: pendingInfo.isMinor,
         healthCertificate: pendingInfo.healthCertificate,
+        licenseFfdanse: pendingInfo.licenseFfdanse,
         googleContactOptOut: pendingInfo.googleContactOptOut,
         emergencyContact: (pendingInfo.emergencyContactName || pendingInfo.emergencyContactPhone)
           ? { name: pendingInfo.emergencyContactName, phone: pendingInfo.emergencyContactPhone }
@@ -323,6 +327,7 @@ export default function DancerDetailPage() {
         memberNumber: pendingInfo.memberNumber || undefined,
         isMinor: pendingInfo.isMinor,
         healthCertificate: pendingInfo.healthCertificate,
+        licenseFfdanse: pendingInfo.licenseFfdanse,
         googleContactOptOut: pendingInfo.googleContactOptOut,
         emergencyContact: (pendingInfo.emergencyContactName || pendingInfo.emergencyContactPhone)
           ? { name: pendingInfo.emergencyContactName, phone: pendingInfo.emergencyContactPhone }
@@ -1094,6 +1099,14 @@ export default function DancerDetailPage() {
                 className="w-4 h-4 rounded" />
               <span className="text-sm text-gray-700">Certificat médical fourni</span>
             </label>
+            {(account?.roles?.includes('admin') || account?.roles?.includes('bureau')) && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={pendingInfo.licenseFfdanse}
+                  onChange={e => setPendingInfo(p => p && { ...p, licenseFfdanse: e.target.checked })}
+                  className="w-4 h-4 rounded" />
+                <span className="text-sm text-gray-700">Licence FFDanse</span>
+              </label>
+            )}
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={pendingInfo.googleContactOptOut}
                 onChange={e => setPendingInfo(p => p && { ...p, googleContactOptOut: e.target.checked })}
@@ -1102,6 +1115,24 @@ export default function DancerDetailPage() {
             </label>
           </div>
         </div>
+        )}
+
+        {(account?.roles?.includes('admin') || account?.roles?.includes('bureau')) && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
+            <div className="col-span-2 sm:col-span-3 border-2 border-red-500 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Licence FFDanse</p>
+                  <input type="checkbox" disabled checked={dancer.licenseFfdanse ?? false}
+                    className="w-4 h-4 rounded mt-2" />
+                </div>
+                {!editingInfo && (
+                  <button onClick={() => { setPendingInfo(dancerToPendingInfo(dancer)); setEditingInfo(true); }}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-medium">Modifier</button>
+                )}
+              </div>
+            </div>
+          </div>
         )}
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">

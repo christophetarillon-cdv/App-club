@@ -57,6 +57,7 @@ interface DancerExportRow {
   memberNumber: string;
   roles: string[];
   isActive: boolean;
+  licenseFfdanse: boolean;
   phone: string;
   street: string;
   postalCode: string;
@@ -334,6 +335,7 @@ export default function AdminExportsPage() {
           memberNumber: dancer.memberNumber ?? '',
           roles: dancer.roles ?? [],
           isActive: dancer.isActive !== false,
+          licenseFfdanse: dancer.licenseFfdanse ?? false,
           phone: dancer.phone ?? account?.phone ?? '',
           street: dancer.street ?? '',
           postalCode: dancer.postalCode ?? '',
@@ -488,6 +490,7 @@ function buildDancerRows(rows: DancerExportRow[], cat: CategoryFlags): Record<st
       'N° adhérent': r.memberNumber,
       'Rôles': r.roles.join(', '),
       'Actif': r.isActive ? 'Oui' : 'Non',
+      'Licence FFDanse': r.licenseFfdanse ? 'Oui' : 'Non',
     };
     if (cat.coordonnees) {
       out['Email'] = r.accountEmail;
