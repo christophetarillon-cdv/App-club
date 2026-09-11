@@ -11,7 +11,7 @@ import {
   type PaymentMethod, type Installment as InstallmentForm, getMaxInstallments, emptyInstallment, nextInstallment, chequeFields,
 } from '@/lib/payment-constants';
 import { GENDER_OPTIONS, genderLabel } from '@/lib/gender-constants';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, useIsAdmin, useIsBureau } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import type { ProfileFieldsConfig, CustomField, RoleConfig, PersonalDocument } from '@cdv/types';
@@ -222,6 +222,8 @@ function dancerToPendingInfo(d: Dancer): PendingInfo {
 export default function DancerDetailPage() {
   const { dancerId } = useParams<{ dancerId: string }>();
   const { user } = useAuth();
+  const isAdmin = useIsAdmin();
+  const isBureau = useIsBureau();
   const [dancer, setDancer] = useState<Dancer | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -253,6 +255,13 @@ export default function DancerDetailPage() {
   const [pendingInfo, setPendingInfo] = useState<PendingInfo | null>(null);
   const [savingInfo, setSavingInfo] = useState(false);
   const [infoError, setInfoError] = useState('');
+
+  const [resetPasswordMode, setResetPasswordMode] = useState<'auto' | 'manual' | null>(null);
+  const [manualPassword, setManualPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState<{ message: string; tempPassword?: string } | null>(null);
 
   const [editingCustom, setEditingCustom] = useState(false);
   const [pendingCustom, setPendingCustom] = useState<Record<string, unknown>>({});
@@ -296,6 +305,7 @@ export default function DancerDetailPage() {
     setInfoError('');
     setSavingInfo(true);
     try {
+      console.log('Saving with licenseFfdanse:', pendingInfo.licenseFfdanse);
       await updateDoc(doc(db, 'dancers', dancerId), {
         phone: pendingInfo.phone || null,
         birthDate: pendingInfo.birthDate ? new Date(pendingInfo.birthDate + 'T00:00:00') : null,
@@ -348,6 +358,44 @@ export default function DancerDetailPage() {
       setEditingCustom(false);
     } finally {
       setSavingCustom(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!account?.id) return;
+    setPasswordError('');
+    setPasswordSuccess(null);
+
+    const password = resetPasswordMode === 'manual' ? manualPassword?.trim() : undefined;
+    if (resetPasswordMode === 'manual' && !password) {
+      setPasswordError('Veuillez entrer un mot de passe');
+      return;
+    }
+    if (resetPasswordMode === 'manual' && password!.length < 6) {
+      setPasswordError('Le mot de passe doit faire au moins 6 caractères');
+      return;
+    }
+
+    setResettingPassword(true);
+    try {
+      const adminResetPassword = httpsCallable<{ userId: string; newPassword?: string }, any>(
+        functions,
+        'adminResetPassword',
+      );
+      const result = await adminResetPassword({ userId: account.id, newPassword: password });
+      setPasswordSuccess({
+        message: `Mot de passe réinitialisé pour ${account.email}. L'utilisateur devra le changer à sa prochaine connexion.`,
+        tempPassword: result.data.tempPassword,
+      });
+      setResetPasswordMode(null);
+      setManualPassword('');
+      setShowPassword(false);
+    } catch (err: any) {
+      console.log('Password reset error:', err);
+      const errorMessage = err?.message || err?.details || (typeof err === 'string' ? err : 'Erreur lors de la réinitialisation du mot de passe');
+      setPasswordError(errorMessage);
+    } finally {
+      setResettingPassword(false);
     }
   };
 
@@ -775,6 +823,7 @@ export default function DancerDetailPage() {
           profession: d.profession,
           medicalNotes: d.medicalNotes,
           healthCertificate: d.healthCertificate,
+          licenseFfdanse: d.licenseFfdanse,
           customFields: d.customFields,
         };
         setDancer(dancerData);
@@ -1099,7 +1148,7 @@ export default function DancerDetailPage() {
                 className="w-4 h-4 rounded" />
               <span className="text-sm text-gray-700">Certificat médical fourni</span>
             </label>
-            {(account?.roles?.includes('admin') || account?.roles?.includes('bureau')) && (
+            {(isAdmin || isBureau) && (
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={pendingInfo.licenseFfdanse}
                   onChange={e => setPendingInfo(p => p && { ...p, licenseFfdanse: e.target.checked })}
@@ -1117,23 +1166,16 @@ export default function DancerDetailPage() {
         </div>
         )}
 
-        {(account?.roles?.includes('admin') || account?.roles?.includes('bureau')) && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
-            <div className="col-span-2 sm:col-span-3 border-2 border-red-500 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">Licence FFDanse</p>
-                  <input type="checkbox" disabled checked={dancer.licenseFfdanse ?? false}
-                    className="w-4 h-4 rounded mt-2" />
-                </div>
-                {!editingInfo && (
-                  <button onClick={() => { setPendingInfo(dancerToPendingInfo(dancer)); setEditingInfo(true); }}
-                    className="text-xs text-blue-600 hover:text-blue-800 font-medium">Modifier</button>
-                )}
-              </div>
+        {/* Licence FFDanse - visible pour tous pour tester */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
+          <div className="col-span-2 sm:col-span-3 border-2 border-red-500 rounded-lg p-4">
+            <p className="text-sm font-semibold text-gray-900 mb-2">Licence FFDanse</p>
+            <div className="flex items-center gap-3">
+              <input type="checkbox" disabled checked={dancer.licenseFfdanse ?? false} className="w-5 h-5 rounded" />
+              <span className="text-sm text-gray-700">{dancer.licenseFfdanse ? 'Oui' : 'Non'}</span>
             </div>
           </div>
-        )}
+        </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
           <div className="col-span-2 sm:col-span-3">
@@ -1310,6 +1352,107 @@ export default function DancerDetailPage() {
               </>
             )}
             {reattachError && <p className="mt-2 text-sm text-red-600" role="alert">{reattachError}</p>}
+          </div>
+        )}
+
+        {/* Gestion du mot de passe */}
+        {account && !editingInfo && !editingRoles && (
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">
+              Gestion du mot de passe
+            </p>
+
+            {resetPasswordMode === null && (
+              <div className="space-y-2">
+                <button
+                  onClick={() => setResetPasswordMode('auto')}
+                  className="text-sm font-medium text-blue-600 border border-blue-200 rounded-lg px-4 py-2 hover:bg-blue-50 transition-colors"
+                >
+                  Générer un mot de passe
+                </button>
+                <button
+                  onClick={() => setResetPasswordMode('manual')}
+                  className="text-sm font-medium text-blue-600 border border-blue-200 rounded-lg px-4 py-2 hover:bg-blue-50 transition-colors"
+                >
+                  Définir un mot de passe personnalisé
+                </button>
+                <p className="text-xs text-gray-400 mt-2">
+                  L'utilisateur devra changer son mot de passe à sa prochaine connexion.
+                </p>
+              </div>
+            )}
+
+            {resetPasswordMode === 'auto' && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-3">
+                <p className="text-sm text-amber-800">
+                  Le mot de passe sera généré automatiquement (email + nom de famille).
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleResetPassword}
+                    disabled={resettingPassword}
+                    className="text-sm font-medium bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {resettingPassword ? 'Traitement…' : 'Confirmer'}
+                  </button>
+                  <button
+                    onClick={() => { setResetPasswordMode(null); setPasswordError(''); setPasswordSuccess(null); }}
+                    className="text-sm text-gray-600 hover:text-gray-800 px-4 py-2"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {resetPasswordMode === 'manual' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={manualPassword}
+                    onChange={e => setManualPassword(e.target.value)}
+                    placeholder="Nouveau mot de passe (min. 6 caractères)"
+                    className="flex-1 border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="shrink-0 text-sm font-medium bg-white border border-blue-300 text-blue-600 px-2.5 py-2 rounded-lg hover:bg-blue-50 hover:border-blue-400 transition-colors"
+                    title={showPassword ? 'Masquer' : 'Afficher'}
+                  >
+                    {showPassword ? '👁️‍🗨️' : '👁️'}
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleResetPassword}
+                    disabled={resettingPassword || !manualPassword.trim()}
+                    className="text-sm font-medium bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {resettingPassword ? 'Traitement…' : 'Valider'}
+                  </button>
+                  <button
+                    onClick={() => { setResetPasswordMode(null); setManualPassword(''); setShowPassword(false); setPasswordError(''); setPasswordSuccess(null); }}
+                    className="text-sm text-gray-600 hover:text-gray-800 px-4 py-2"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {passwordError && <p className="mt-2 text-sm text-red-600" role="alert">{passwordError}</p>}
+            {passwordSuccess && (
+              <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-4">
+                <p className="text-sm text-green-800">{passwordSuccess.message}</p>
+                {passwordSuccess.tempPassword && (
+                  <p className="mt-2 text-sm font-mono text-gray-800 bg-white border border-green-200 rounded px-3 py-2">
+                    {passwordSuccess.tempPassword}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -47,6 +47,7 @@ interface DancerRow {
   isActive: boolean;
   isDeleted: boolean;
   isDetached: boolean;
+  licenseFfdanse?: boolean;
   info?: MembershipInfo;
 }
 
@@ -171,6 +172,7 @@ export default function AdminDancersPage() {
         // Detache : plus rattache a aucun compte (retrait valide). La fiche et
         // l'historique sont intacts, mais la personne ne peut plus se connecter.
         isDetached: !d.data().accountId,
+        licenseFfdanse: d.data().licenseFfdanse ?? false,
         info: infoByDancer.get(d.id),
       }));
       dancers.sort((a, b) =>
@@ -284,6 +286,7 @@ export default function AdminDancersPage() {
       'Prénom': row.firstName,
       'Rôles': row.roles.map(roleLabel).join(', '),
       'Actif': row.isActive ? 'Oui' : 'Non',
+      'Licence FFDanse': row.licenseFfdanse ? 'Oui' : 'Non',
       'Plan': row.info?.planLabel ?? '',
       'Méthode de paiement': row.info?.paymentMethod ? (METHOD_LABEL[row.info.paymentMethod] ?? row.info.paymentMethod) : '',
       'Montant dû (€)': row.info ? (row.info.totalDue / 100).toFixed(2) : '',
@@ -293,7 +296,7 @@ export default function AdminDancersPage() {
     const ws = XLSX.utils.json_to_sheet(data);
     ws['!cols'] = [
       { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 8 },
-      { wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 18 },
+      { wch: 14 }, { wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 18 },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Danseurs');

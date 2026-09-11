@@ -1306,6 +1306,123 @@ export const recordAttendance = onCall(
   },
 );
 
+// ── addManualAttendance — ajout de présence à la main (admin/bureau) ─────────
+// Même mécanique que recordAttendance, mais sans kiosque : la date utilisée
+// est celle de la séance (pas "aujourd'hui") pour permettre de rattraper une
+// présence sur une séance passée.
+export const addManualAttendance = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const db = getDb();
+    const uid = request.auth.uid;
+
+    const { sessionId, dancerId, actingDancerId } = (request.data ?? {}) as {
+      sessionId: string;
+      dancerId: string;
+      actingDancerId?: string | null;
+    };
+    if (!sessionId || !dancerId) throw new HttpsError('invalid-argument', 'sessionId et dancerId requis');
+
+    // Permission : admin, ou bureau — rôles du danseur ACTIF si fourni (comme
+    // registerMedia), sinon rôles combinés compte+danseurs de l'appelant.
+    const accountSnap = await db.doc(`accounts/${uid}`).get();
+    let isAdmin = accountSnap.data()?.roles?.includes('admin') === true;
+    if (!isAdmin) {
+      const dancerAdminSnap = await db.collection('dancers')
+        .where('accountId', '==', uid)
+        .where('roles', 'array-contains', 'admin')
+        .get();
+      isAdmin = !dancerAdminSnap.empty;
+    }
+    if (!isAdmin) {
+      let effectiveRoles: string[];
+      if (actingDancerId) {
+        const actingSnap = await db.doc(`dancers/${actingDancerId}`).get();
+        if (!actingSnap.exists || actingSnap.data()?.accountId !== uid) {
+          throw new HttpsError('permission-denied', 'Danseur invalide');
+        }
+        effectiveRoles = actingSnap.data()?.roles ?? [];
+      } else {
+        effectiveRoles = await getCallerRoles(db, uid);
+      }
+      if (!effectiveRoles.includes('bureau')) {
+        throw new HttpsError('permission-denied', 'Accès refusé');
+      }
+    }
+
+    // Résoudre la séance (pour la date et le courseId)
+    const sessionRef = db.doc(`sessions/${sessionId}`);
+    const sessionSnap = await sessionRef.get();
+    if (!sessionSnap.exists) throw new HttpsError('not-found', 'Séance introuvable');
+    const session = sessionSnap.data()!;
+    const courseId: string = session.courseId;
+    const sessionDate: string = session.date;
+
+    // Résoudre le danseur
+    const dancerRef = db.doc(`dancers/${dancerId}`);
+    const dancerSnap = await dancerRef.get();
+    if (!dancerSnap.exists) throw new HttpsError('not-found', 'Danseur introuvable');
+    const dancer = dancerSnap.data()!;
+    if (!dancer.isActive) throw new HttpsError('failed-precondition', 'Compte danseur inactif');
+
+    // Doublon (même danseur, même séance, même date)
+    const dupQ = await db.collection('attendances')
+      .where('dancerId', '==', dancerId)
+      .where('sessionId', '==', sessionId)
+      .where('date', '==', sessionDate)
+      .limit(1)
+      .get();
+    if (!dupQ.empty) {
+      return {
+        status: 'already_registered',
+        dancerName: `${dancer.firstName} ${dancer.lastName}`,
+      };
+    }
+
+    // Statut de présence (inscrit vs walk-in)
+    const regQ = await db.collection('registrations')
+      .where('userId', '==', dancer.accountId)
+      .where('courseId', '==', courseId)
+      .where('status', '==', 'active')
+      .limit(1)
+      .get();
+    const attendanceStatus = regQ.empty ? 'walk-in' : 'registered';
+
+    const attendanceRef = db.collection('attendances').doc();
+    await db.runTransaction(async (tx) => {
+      const dupFresh = await tx.get(
+        db.collection('attendances')
+          .where('dancerId', '==', dancerId)
+          .where('sessionId', '==', sessionId)
+          .where('date', '==', sessionDate)
+          .limit(1)
+      );
+      if (!dupFresh.empty) return;
+
+      tx.set(attendanceRef, {
+        dancerId,
+        sessionId,
+        date: sessionDate,
+        scannedAt: admin.firestore.FieldValue.serverTimestamp(),
+        method: 'manual-admin',
+        recordedBy: uid,
+        status: attendanceStatus,
+      });
+
+      tx.update(sessionRef, {
+        actualAttendees: admin.firestore.FieldValue.increment(1),
+      });
+    });
+
+    return {
+      status: attendanceStatus,
+      dancerName: `${dancer.firstName} ${dancer.lastName}`,
+      memberNumber: dancer.memberNumber ?? null,
+    };
+  },
+);
+
 // ── detectIdleKiosks — ferme automatiquement les kiosques inactifs ─────────────
 export const detectIdleKiosks = onSchedule(
   { schedule: 'every 15 minutes', region: 'europe-west3' },
@@ -2607,7 +2724,7 @@ async function generateMembershipAttestation(
     const memberName = dancerData.firstName && dancerData.lastName
       ? `${dancerData.firstName} ${dancerData.lastName}`
       : (accountData.displayName ?? accountData.email ?? 'Membre');
-    const memberNumber: string = dancerData.memberNumber ?? '';
+    const memberNumber: string = (dancerData.memberNumber as string | undefined) ?? '';
     const seasonLabel: string = (seasonSnap.data()?.label as string | undefined) ?? '';
 
     const clubData = clubSnap.data() ?? {};
@@ -2706,7 +2823,7 @@ async function generateMembershipAttestation(
     // Montant et mode de règlement
     const totalDue: number = after.totalDue ?? 0;
     const paymentMethod: string = after.paymentMethod ?? '';
-    const methodLabel = paymentMethod === 'cheque' ? 'Chèque' : paymentMethod === 'transfer' ? 'Virement bancaire' : paymentMethod === 'cash' ? 'Espèces' : paymentMethod;
+    const methodLabel = paymentMethod === 'cheque' ? 'Chèque' : paymentMethod === 'transfer' ? 'Virement bancaire' : paymentMethod === 'cash' ? 'Espèces' : paymentMethod === 'mixed' ? 'Paiement mixte' : paymentMethod;
     const amountStr = `${(totalDue / 100).toFixed(2).replace('.', ',')} €`;
 
     page.drawText('Cotisation :', { x: 60, y, size: 11, font: fontBold, color: black });
@@ -3252,6 +3369,48 @@ export const adminCreateAccount = onCall(
   },
 );
 
+export const adminResetPassword = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Non authentifié');
+
+    const hasAccess = await callerHasDancersPageAccess(request.auth.uid);
+    if (!hasAccess) throw new HttpsError('permission-denied', "Vous n'avez pas accès à cette action");
+
+    const { userId, newPassword } = request.data as { userId: string; newPassword?: string };
+    if (!userId?.trim()) throw new HttpsError('invalid-argument', 'userId requis');
+
+    const db = getDb();
+    const accountSnap = await db.doc(`accounts/${userId}`).get();
+    if (!accountSnap.exists) throw new HttpsError('not-found', 'Compte non trouvé');
+
+    const account = accountSnap.data() as { email?: string; firstName?: string; lastName?: string };
+    const email = account.email;
+    if (!email) throw new HttpsError('internal', 'Email du compte introuvable');
+
+    const wasGenerated = !newPassword;
+    const finalPassword = newPassword?.trim() || `${email}${(account.lastName || '').trim()}`;
+
+    try {
+      await admin.auth().updateUser(userId, { password: finalPassword });
+      await db.doc(`accounts/${userId}`).update({
+        mustChangePassword: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        email,
+        tempPassword: wasGenerated ? finalPassword : null,
+        generatedPassword: wasGenerated,
+      };
+    } catch (err: unknown) {
+      const errMsg = (err as Error)?.message ?? 'Erreur inconnue';
+      throw new HttpsError('internal', `Erreur lors de la réinitialisation : ${errMsg}`);
+    }
+  },
+);
+
 export const createWebViewAuthToken = onCall(
   { region: 'europe-west3' },
   async (request) => {
@@ -3380,6 +3539,19 @@ async function removeGoogleContact(resourceName: string, clientSecret: string): 
   }
 }
 
+// Dossiers système Google Contacts : gérés automatiquement par Google, l'API
+// people.contactGroups.members.modify refuse toute modification dessus.
+const GOOGLE_SYSTEM_CONTACT_GROUPS = new Set([
+  'contactGroups/myContacts',
+  'contactGroups/starred',
+  'contactGroups/blocked',
+  'contactGroups/all',
+  'contactGroups/chatBuddies',
+  'contactGroups/coworkers',
+  'contactGroups/family',
+  'contactGroups/friends',
+]);
+
 async function getOrCreateContactGroup(
   peopleClient: ReturnType<typeof google.people>,
   groupName: string,
@@ -3428,6 +3600,7 @@ async function syncOneDancerToGoogle(
   groupNameTrial: string,
   seasonsById: Map<string, { label: string; startDateMs: number }>,
   etagByResourceName: Map<string, string>,
+  liveGroupIdsByResourceName: Map<string, string[]>,
 ): Promise<void> {
   const db = getDb();
   const dancerSnap = await db.doc(`dancers/${dancerId}`).get();
@@ -3494,7 +3667,13 @@ async function syncOneDancerToGoogle(
         requestBody: { etag, names, emailAddresses, phoneNumbers, addresses, birthdays },
       });
 
-      const previousGroupIds: string[] = dancer.googleContactGroupIds ?? [];
+      // État réel côté Google en priorité — googleContactGroupIds (cache
+      // Firestore) peut être désynchronisé (migration, ancien contact jamais
+      // suivi par ce champ...) et masquer des dossiers obsolètes à retirer.
+      const previousGroupIds: string[] =
+        liveGroupIdsByResourceName.get(dancer.googleContactResourceName)
+        ?? dancer.googleContactGroupIds
+        ?? [];
       const toAdd = desiredGroupIds.filter(id => !previousGroupIds.includes(id));
       const toRemove = previousGroupIds.filter(id => !desiredGroupIds.includes(id));
       await Promise.all([
@@ -3562,19 +3741,32 @@ async function runGoogleContactsSync(dancerIds: string[]): Promise<{ synced: num
   const existingResourceNames = dancerSnaps
     .map(s => s.data()?.googleContactResourceName as string | undefined)
     .filter((r): r is string => !!r);
+  // memberships en plus de metadata : sert à connaître les VRAIS dossiers
+  // actuels du contact côté Google (pas seulement ce que Firestore pense
+  // avoir synchronisé la dernière fois) pour que le nettoyage des anciens
+  // dossiers (ex: saison précédente) fonctionne même si googleContactGroupIds
+  // est absent/désynchronisé (migration, contact créé avant cette fonctionnalité...).
   const etagByResourceName = new Map<string, string>();
+  const liveGroupIdsByResourceName = new Map<string, string[]>();
   for (let i = 0; i < existingResourceNames.length; i += 200) {
     const chunk = existingResourceNames.slice(i, i + 200);
-    const res = await peopleClient.people.getBatchGet({ resourceNames: chunk, personFields: 'metadata' });
+    const res = await peopleClient.people.getBatchGet({ resourceNames: chunk, personFields: 'metadata,memberships' });
     for (const r of res.data.responses ?? []) {
-      if (r.requestedResourceName && r.person?.etag) etagByResourceName.set(r.requestedResourceName, r.person.etag);
+      if (!r.requestedResourceName || !r.person?.etag) continue;
+      etagByResourceName.set(r.requestedResourceName, r.person.etag);
+      // Exclut les dossiers système Google (non gérables via members.modify,
+      // l'API rejette toute tentative de retrait — ex: "myContacts").
+      const groupIds = (r.person.memberships ?? [])
+        .map(m => m.contactGroupMembership?.contactGroupResourceName)
+        .filter((id): id is string => !!id && !GOOGLE_SYSTEM_CONTACT_GROUPS.has(id));
+      liveGroupIdsByResourceName.set(r.requestedResourceName, groupIds);
     }
   }
 
   let synced = 0, errors = 0;
   for (const dancerId of dancerIds) {
     try {
-      await syncOneDancerToGoogle(dancerId, peopleClient, groupCache, groupNameGlobal, groupNameSeasonTemplate, groupNameTrial, seasonsById, etagByResourceName);
+      await syncOneDancerToGoogle(dancerId, peopleClient, groupCache, groupNameGlobal, groupNameSeasonTemplate, groupNameTrial, seasonsById, etagByResourceName, liveGroupIdsByResourceName);
       synced++;
     } catch (err) {
       console.error(`runGoogleContactsSync failed for dancer ${dancerId}:`, err);
@@ -3797,3 +3989,10 @@ export const getGoogleContactGroupEmails = onCall(
     return { emails: [...emails] };
   },
 );
+
+// ── Comptabilité (accounting) ────────────────────────────────────────────────
+export {
+  onPaymentCreated,
+  aggregateAccountingData,
+  initializeAccounting,
+} from './accounting';
