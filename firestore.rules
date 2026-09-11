@@ -582,5 +582,93 @@ service cloud.firestore {
       allow read: if hasPagePermission('/admin/analytics');
       allow write: if false; // uniquement écrit par la fonction planifiée (Admin SDK)
     }
+
+    // ── comptabilité ────────────────────────────────────────────────────────────
+    // Accès comptabilité = rôle 'comptable' ou 'admin'
+    function hasAccountingAccess() {
+      let roles = userRoles();
+      let perms = pagePerms();
+      return roles.hasAny(['admin']) ||
+        roles.hasAny(perms.get('/admin/accounting/journal', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/accounting/reconciliation', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/accounting/reports', ['admin']));
+    }
+
+    // Plan comptable (configuration)
+    match /chartOfAccounts/{id} {
+      allow read: if hasAccountingAccess();
+      allow write: if hasPagePermission('/admin/accounting/journal');
+    }
+
+    // Écritures comptables (journal)
+    match /accountingEntries/{id} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.seasonId is string && request.resource.data.date is number;
+      allow update: if isAuth();
+      allow delete: if isAuth();
+    }
+
+    // Extraits bancaires importés
+    match /bankStatements/{id} {
+      allow read: if hasAccountingAccess();
+      allow create, update: if hasPagePermission('/admin/accounting/reconciliation');
+      allow delete: if isAdmin();
+    }
+
+    // Rapprochements bancaires
+    match /bankReconciliations/{id} {
+      allow read: if hasAccountingAccess();
+      allow create, update: if hasPagePermission('/admin/accounting/reconciliation');
+      allow delete: if isAdmin();
+    }
+
+    // Ventilations (résumés par catégorie)
+    match /ventilationSummaries/{id} {
+      allow read: if hasAccountingAccess();
+      allow write: if false; // Cloud Function uniquement
+    }
+
+    // Bilans (résumés par exercice)
+    match /balanceSheets/{id} {
+      allow read: if hasAccountingAccess();
+      allow write: if false; // Cloud Function uniquement
+    }
+
+    // Documents justificatifs
+    match /accountingDocuments/{id} {
+      allow read: if hasAccountingAccess();
+      allow create: if hasAccountingAccess() && request.resource.data.seasonId is string;
+      allow update: if hasAccountingAccess() && (request.resource.data.createdBy == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Catégories analytiques
+    match /analyticsCategories/{id} {
+      allow read: if isAuth();
+      allow create, update: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // Comptes bancaires
+    match /bankAccounts/{id} {
+      allow read: if isAuth();
+      allow create, update: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // Relevés bancaires
+    match /bankStatements/{id} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.seasonId is string;
+      allow update: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // Rapprochements bancaires
+    match /bankReconciliations/{id} {
+      allow read: if isAuth();
+      allow create, update: if isAuth();
+      allow delete: if isAdmin();
+    }
   }
 }

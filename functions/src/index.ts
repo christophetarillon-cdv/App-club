@@ -3392,7 +3392,18 @@ export const adminResetPassword = onCall(
     const finalPassword = newPassword?.trim() || `${email}${(account.lastName || '').trim()}`;
 
     try {
-      await admin.auth().updateUser(userId, { password: finalPassword });
+      // Vérifier que le compte existe dans Firebase Auth
+      try {
+        await admin.auth().getUser(userId);
+      } catch (authErr) {
+        console.error(`[adminResetPassword] Compte non trouvé pour ${userId} (${email}):`, authErr);
+        throw new HttpsError('not-found', `Compte ${email} non trouvé dans Firebase Auth`);
+      }
+
+      await admin.auth().updateUser(userId, { password: finalPassword }).catch((authErr) => {
+        console.error(`[adminResetPassword] updateUser échoué pour ${userId} (${email}):`, authErr);
+        throw authErr;
+      });
       await db.doc(`accounts/${userId}`).update({
         mustChangePassword: true,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -3406,7 +3417,65 @@ export const adminResetPassword = onCall(
       };
     } catch (err: unknown) {
       const errMsg = (err as Error)?.message ?? 'Erreur inconnue';
+      console.error(`[adminResetPassword] Erreur pour ${userId} (${email}):`, errMsg);
       throw new HttpsError('internal', `Erreur lors de la réinitialisation : ${errMsg}`);
+    }
+  },
+);
+
+export const updateAccountEmail = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Non authentifié');
+
+    const hasAccess = await callerHasDancersPageAccess(request.auth.uid);
+    if (!hasAccess) throw new HttpsError('permission-denied', "Vous n'avez pas accès à cette action");
+
+    const { accountId, newEmail } = request.data as { accountId: string; newEmail?: string };
+    if (!accountId?.trim()) throw new HttpsError('invalid-argument', 'accountId requis');
+    if (!newEmail?.trim()) throw new HttpsError('invalid-argument', 'Email requis');
+    if (!newEmail.includes('@')) throw new HttpsError('invalid-argument', 'Email invalide');
+
+    const db = getDb();
+    const accountSnap = await db.doc(`accounts/${accountId}`).get();
+    if (!accountSnap.exists) throw new HttpsError('not-found', 'Compte non trouvé');
+
+    const account = accountSnap.data() as { email?: string; emailHistory?: any[] };
+    const currentEmail = account.email;
+
+    if (currentEmail === newEmail.trim()) {
+      throw new HttpsError('invalid-argument', 'Le nouvel email est identique à l\'email actuel');
+    }
+
+    // Vérifier que le nouvel email n'existe pas déjà
+    const existingSnap = await db.collection('accounts').where('email', '==', newEmail.trim()).get();
+    if (!existingSnap.empty) {
+      throw new HttpsError('already-exists', 'Cet email est déjà utilisé');
+    }
+
+    try {
+      // Mettre à jour Firebase Auth
+      await admin.auth().updateUser(accountId, { email: newEmail.trim() });
+
+      // Mettre à jour Firestore avec arrayUnion pour l'historique
+      await db.doc(`accounts/${accountId}`).update({
+        email: newEmail.trim(),
+        emailHistory: admin.firestore.FieldValue.arrayUnion({
+          email: currentEmail,
+          changedAt: admin.firestore.Timestamp.now(),
+          changedBy: request.auth.uid,
+        }),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        newEmail: newEmail.trim(),
+        oldEmail: currentEmail,
+      };
+    } catch (err: unknown) {
+      const errMsg = (err as Error)?.message ?? 'Erreur inconnue';
+      throw new HttpsError('internal', `Erreur lors du changement d'email : ${errMsg}`);
     }
   },
 );

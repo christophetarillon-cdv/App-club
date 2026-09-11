@@ -79,6 +79,7 @@ interface Account {
   dancerIds: string[];
   roles?: string[];
   phone?: string;
+  emailHistory?: Array<{ email: string; changedAt?: any; changedBy?: string }>;
 }
 interface Installment { id: string; expectedDate: string; amount: number; status: string; method?: string; chequeNumber?: string; draweeBank?: string; draweeCity?: string; }
 interface Entry {
@@ -263,6 +264,12 @@ export default function DancerDetailPage() {
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState<{ message: string; tempPassword?: string } | null>(null);
 
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [updatingEmail, setUpdatingEmail] = useState(false);
+  const [emailError, setEmailError] = useState('');
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+
   const [editingCustom, setEditingCustom] = useState(false);
   const [pendingCustom, setPendingCustom] = useState<Record<string, unknown>>({});
   const [savingCustom, setSavingCustom] = useState(false);
@@ -396,6 +403,41 @@ export default function DancerDetailPage() {
       setPasswordError(errorMessage);
     } finally {
       setResettingPassword(false);
+    }
+  };
+
+  const handleUpdateEmail = async () => {
+    if (!account?.id) return;
+    setEmailError('');
+    setEmailSuccess(null);
+
+    const email = newEmail.trim();
+    if (!email) {
+      setEmailError('Veuillez entrer un email');
+      return;
+    }
+    if (!email.includes('@')) {
+      setEmailError('Email invalide');
+      return;
+    }
+
+    setUpdatingEmail(true);
+    try {
+      const updateAccountEmail = httpsCallable<{ accountId: string; newEmail: string }, any>(
+        functions,
+        'updateAccountEmail',
+      );
+      const result = await updateAccountEmail({ accountId: account.id, newEmail: email });
+      setEmailSuccess(`Email changé de ${result.data.oldEmail} à ${result.data.newEmail}`);
+      setAccount(prev => prev ? { ...prev, email: result.data.newEmail } : prev);
+      setEditingEmail(false);
+      setNewEmail('');
+    } catch (err: any) {
+      console.log('Email update error:', err);
+      const errorMessage = err?.message || err?.details || (typeof err === 'string' ? err : 'Erreur lors du changement d\'email');
+      setEmailError(errorMessage);
+    } finally {
+      setUpdatingEmail(false);
     }
   };
 
@@ -1451,6 +1493,68 @@ export default function DancerDetailPage() {
                     {passwordSuccess.tempPassword}
                   </p>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Gestion de l'email */}
+        {account && !editingInfo && !editingRoles && (
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">
+              Gestion de l'email
+            </p>
+
+            {!editingEmail ? (
+              <div>
+                <p className="text-sm text-gray-700 mb-3">Email actuel : <span className="font-mono font-semibold">{account.email}</span></p>
+                <button
+                  onClick={() => setEditingEmail(true)}
+                  className="text-sm font-medium text-blue-600 border border-blue-200 rounded-lg px-4 py-2 hover:bg-blue-50 transition-colors"
+                >
+                  Changer l'email
+                </button>
+              </div>
+            ) : (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                <input
+                  type="email"
+                  value={newEmail}
+                  onChange={e => setNewEmail(e.target.value)}
+                  placeholder="Nouvel email"
+                  className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleUpdateEmail}
+                    disabled={updatingEmail || !newEmail.trim()}
+                    className="text-sm font-medium bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {updatingEmail ? 'Traitement…' : 'Valider'}
+                  </button>
+                  <button
+                    onClick={() => { setEditingEmail(false); setNewEmail(''); setEmailError(''); setEmailSuccess(null); }}
+                    className="text-sm text-gray-600 hover:text-gray-800 px-4 py-2"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {emailError && <p className="mt-2 text-sm text-red-600" role="alert">{emailError}</p>}
+            {emailSuccess && <p className="mt-2 text-sm text-green-600">{emailSuccess}</p>}
+
+            {account.emailHistory && account.emailHistory.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Historique des emails</p>
+                <div className="space-y-2">
+                  {account.emailHistory.map((entry: any, i: number) => (
+                    <div key={i} className="text-xs text-gray-600 bg-gray-50 rounded px-3 py-2">
+                      <p><span className="font-mono">{entry.email}</span> → <span className="text-gray-400">changé le {entry.changedAt ? new Date(entry.changedAt.seconds * 1000).toLocaleDateString('fr-FR') : '?'}</span></p>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
