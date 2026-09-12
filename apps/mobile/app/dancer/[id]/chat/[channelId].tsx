@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput, Image,
   KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Pressable,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
   collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, getDocs, updateDoc, Timestamp,
 } from 'firebase/firestore';
@@ -81,7 +81,7 @@ export default function ChatChannelScreen() {
   const { id, channelId } = useLocalSearchParams<{ id: string; channelId: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { account, user } = useAuth();
+  const { account, user, markMessagesAsRead } = useAuth();
   const { selectedDancer } = useDancer();
 
   const [channel, setChannel] = useState<ChatChannel | null>(null);
@@ -103,6 +103,15 @@ export default function ChatChannelScreen() {
   useEffect(() => {
     getDoc(doc(db, 'chatChannels', channelId)).then(s => { if (s.exists()) setChannel({ id: s.id, ...s.data() } as ChatChannel); });
   }, [channelId]);
+
+  // Reset badge when opening conversation
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedDancer?.id) {
+        markMessagesAsRead?.(selectedDancer.id);
+      }
+    }, [markMessagesAsRead, selectedDancer?.id]),
+  );
 
   // Marquer lu
   useEffect(() => {
