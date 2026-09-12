@@ -4,20 +4,23 @@ import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firest
 import * as Notifications from 'expo-notifications';
 import { db } from './firebase';
 
-const LAST_VISITED_STORAGE_KEY = 'badge_last_visited_at';
+const LAST_VISITED_KEY_PREFIX = 'badge_last_visited_';
 
-export function useBadgeCount() {
+export function useBadgeCount(dancerId?: string) {
   const [chatCount, setChatCount] = useState(0);
   const [announcementCount, setAnnouncementCount] = useState(0);
 
-  // Setup listeners
+  // Setup listeners - scoped to dancer if provided
   useEffect(() => {
+    if (!dancerId) return;
+
     let unsubChat: (() => void) | undefined;
     let unsubAnnouncements: (() => void) | undefined;
 
     const setup = async () => {
       try {
-        const lastVisitedStr = await AsyncStorage.getItem(LAST_VISITED_STORAGE_KEY);
+        const storageKey = `${LAST_VISITED_KEY_PREFIX}${dancerId}`;
+        const lastVisitedStr = await AsyncStorage.getItem(storageKey);
         const lastVisited = lastVisitedStr
           ? new Date(lastVisitedStr)
           : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -45,7 +48,7 @@ export function useBadgeCount() {
       unsubChat?.();
       unsubAnnouncements?.();
     };
-  }, []);
+  }, [dancerId]);
 
   // Update badge when either count changes
   useEffect(() => {
@@ -58,8 +61,10 @@ export function useBadgeCount() {
   const unreadCount = chatCount + announcementCount;
 
   const markAsRead = async () => {
+    if (!dancerId) return;
     try {
-      await AsyncStorage.setItem(LAST_VISITED_STORAGE_KEY, new Date().toISOString());
+      const storageKey = `${LAST_VISITED_KEY_PREFIX}${dancerId}`;
+      await AsyncStorage.setItem(storageKey, new Date().toISOString());
       setChatCount(0);
       setAnnouncementCount(0);
       await Notifications.setBadgeCountAsync(0);

@@ -53,8 +53,10 @@ export default function ChatListScreen() {
   // Reset badge when chat screen is focused
   useFocusEffect(
     useCallback(() => {
-      markMessagesAsRead?.();
-    }, [markMessagesAsRead]),
+      if (selectedDancer?.id) {
+        markMessagesAsRead?.(selectedDancer.id);
+      }
+    }, [markMessagesAsRead, selectedDancer?.id]),
   );
 
   // En direct (pas juste au focus) pour que la pastille se mette a jour des

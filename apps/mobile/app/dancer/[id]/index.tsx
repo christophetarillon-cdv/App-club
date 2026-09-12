@@ -122,8 +122,10 @@ export default function DancerHomeScreen() {
   // Reset badge when home screen is focused
   useFocusEffect(
     useCallback(() => {
-      markMessagesAsRead?.();
-    }, [markMessagesAsRead]),
+      if (selectedDancer?.id) {
+        markMessagesAsRead?.(selectedDancer.id);
+      }
+    }, [markMessagesAsRead, selectedDancer?.id]),
   );
 
   const loadAnnouncements = () => {

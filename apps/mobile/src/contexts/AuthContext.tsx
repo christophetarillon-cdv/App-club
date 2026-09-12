@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { collection, onSnapshot, query, where, doc, onSnapshot as onDocSnapshot } from 'firebase/firestore';
+import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '@/lib/firebase';
 import { useBadgeCount } from '@/lib/useBadgeCount';
 import type { Account, Dancer } from '@cdv/types';
@@ -10,7 +12,7 @@ interface AuthContextType {
   account: Account | null;
   dancers: Dancer[];
   loading: boolean;
-  markMessagesAsRead?: () => Promise<void>;
+  markMessagesAsRead?: (dancerId?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -25,7 +27,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [dancers, setDancers] = useState<Dancer[]>([]);
   const [loading, setLoading] = useState(true);
-  const { markAsRead } = useBadgeCount();
+  // Don't use dancerId here - will be called with it from components
+  const { markAsRead: markAsReadHook } = useBadgeCount();
 
   useEffect(() => {
     let unsubAccount: (() => void) | null = null;
@@ -78,8 +81,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const markMessagesAsRead = async (dancerId?: string) => {
+    try {
+      if (dancerId) {
+        const storageKey = `badge_last_visited_${dancerId}`;
+        await AsyncStorage.setItem(storageKey, new Date().toISOString());
+        await Notifications.setBadgeCountAsync(0);
+      }
+    } catch (error) {
+      console.error('[AuthContext] Error marking as read:', error);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, account, dancers, loading, markMessagesAsRead: markAsRead }}>
+    <AuthContext.Provider value={{ user, account, dancers, loading, markMessagesAsRead }}>
       {children}
     </AuthContext.Provider>
   );

@@ -61,7 +61,7 @@ export default function BottomTabBar({
 }) {
   const router = useRouter();
   const { hasPerm } = usePagePermissions();
-  const { unreadCount } = useBadgeCount();
+  const { unreadCount } = useBadgeCount(dancerId);
 
   const showChat = hasPerm('/chat');
   const showPlanning = hasPerm('/planning');
