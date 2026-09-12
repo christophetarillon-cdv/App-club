@@ -7,8 +7,10 @@ import { db } from './firebase';
 const LAST_VISITED_STORAGE_KEY = 'badge_last_visited_at';
 
 export function useBadgeCount() {
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [chatCount, setChatCount] = useState(0);
+  const [announcementCount, setAnnouncementCount] = useState(0);
 
+  // Setup listeners
   useEffect(() => {
     let unsubChat: (() => void) | undefined;
     let unsubAnnouncements: (() => void) | undefined;
@@ -16,31 +18,20 @@ export function useBadgeCount() {
     const setup = async () => {
       try {
         const lastVisitedStr = await AsyncStorage.getItem(LAST_VISITED_STORAGE_KEY);
-        const lastVisited = lastVisitedStr ? new Date(lastVisitedStr) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const lastVisited = lastVisitedStr
+          ? new Date(lastVisitedStr)
+          : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         const lastVisitedTimestamp = Timestamp.fromDate(lastVisited);
 
-        let chatCount = 0;
-        let announcementCount = 0;
-
-        const updateBadge = (newChatCount: number, newAnnouncementCount: number) => {
-          chatCount = newChatCount;
-          announcementCount = newAnnouncementCount;
-          const total = chatCount + announcementCount;
-          setUnreadCount(total);
-          Notifications.setBadgeCountAsync(total).catch(e => console.error('[useBadgeCount] Badge error:', e));
-        };
-
-        // Listen to chat messages
         unsubChat = onSnapshot(
           query(collection(db, 'chatMessages'), where('sentAt', '>', lastVisitedTimestamp)),
-          (chatSnap) => updateBadge(chatSnap.size, announcementCount),
+          (chatSnap) => setChatCount(chatSnap.size),
           (error) => console.error('[useBadgeCount] Chat listener error:', error),
         );
 
-        // Listen to announcements
         unsubAnnouncements = onSnapshot(
           query(collection(db, 'announcements'), where('sentAt', '>', lastVisitedTimestamp)),
-          (announcementsSnap) => updateBadge(chatCount, announcementsSnap.size),
+          (announcementsSnap) => setAnnouncementCount(announcementsSnap.size),
           (error) => console.error('[useBadgeCount] Announcements listener error:', error),
         );
       } catch (error) {
@@ -56,10 +47,21 @@ export function useBadgeCount() {
     };
   }, []);
 
+  // Update badge when either count changes
+  useEffect(() => {
+    const total = chatCount + announcementCount;
+    Notifications.setBadgeCountAsync(total).catch(e =>
+      console.error('[useBadgeCount] Badge error:', e)
+    );
+  }, [chatCount, announcementCount]);
+
+  const unreadCount = chatCount + announcementCount;
+
   const markAsRead = async () => {
     try {
       await AsyncStorage.setItem(LAST_VISITED_STORAGE_KEY, new Date().toISOString());
-      setUnreadCount(0);
+      setChatCount(0);
+      setAnnouncementCount(0);
       await Notifications.setBadgeCountAsync(0);
     } catch (error) {
       console.error('[useBadgeCount] Error marking as read:', error);
