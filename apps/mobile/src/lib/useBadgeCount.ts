@@ -19,6 +19,12 @@ export function useBadgeCount() {
       let chatCount = 0;
       let announcementCount = 0;
 
+      const updateTotal = () => {
+        const total = chatCount + announcementCount;
+        setUnreadCount(total);
+        Notifications.setBadgeCountAsync(total).catch(e => console.error('[useBadgeCount] Badge error:', e));
+      };
+
       // Listen to chat messages
       const chatQuery = query(
         collection(db, 'chatMessages'),
@@ -40,12 +46,6 @@ export function useBadgeCount() {
         announcementCount = announcementsSnap.size;
         updateTotal();
       });
-
-      const updateTotal = () => {
-        const total = chatCount + announcementCount;
-        setUnreadCount(total);
-        Notifications.setBadgeCountAsync(total).catch(e => console.error('[useBadgeCount] Badge error:', e));
-      };
 
       return () => {
         unsubChat();
