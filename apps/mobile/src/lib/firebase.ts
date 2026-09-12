@@ -5,18 +5,14 @@ import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
 
-// Valeurs par défaut = clubvoiron-dev, utilisées tant qu'aucune variable
-// EXPO_PUBLIC_FIREBASE_* n'est définie dans le profil de build EAS (voir
-// eas.json). Le jour où l'app bascule vers clubvoiron-prod, il suffira de
-// renseigner ces variables dans le profil "production" d'eas.json — aucun
-// changement de code nécessaire.
+// Production branch: clubvoiron-prod configuration hardcoded
 export const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? 'AIzaSyDpKbSvSu5CM3wdoBhCyaZyEAGGbtPs9dQ',
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN ?? 'clubvoiron-dev.firebaseapp.com',
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ?? 'clubvoiron-dev',
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET ?? 'clubvoiron-dev.firebasestorage.app',
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? '959510245510',
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID ?? '1:959510245510:web:44e18876571434366aa107',
+  apiKey: 'AIzaSyCKIDFu3Ds2cJPgHiqVJdmQfZ3eGMOE71Q',
+  authDomain: 'clubvoiron-prod.firebaseapp.com',
+  projectId: 'clubvoiron-prod',
+  storageBucket: 'clubvoiron-prod.firebasestorage.app',
+  messagingSenderId: '556748254588',
+  appId: '1:556748254588:web:28e35dc08d99d1657c08f9',
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]!;
