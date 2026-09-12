@@ -119,14 +119,6 @@ export default function DancerHomeScreen() {
 
   const isAdmin = selectedDancer?.roles?.includes('admin') ?? false;
 
-  // Reset badge when home screen is focused
-  useFocusEffect(
-    useCallback(() => {
-      if (selectedDancer?.id) {
-        markMessagesAsRead?.(selectedDancer.id);
-      }
-    }, [markMessagesAsRead, selectedDancer?.id]),
-  );
 
   const loadAnnouncements = () => {
     getDocs(
