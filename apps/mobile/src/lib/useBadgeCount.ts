@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import * as Notifications from 'expo-notifications';
 import { db } from './firebase';
 
@@ -9,45 +9,60 @@ const LAST_VISITED_STORAGE_KEY = 'badge_last_visited_at';
 export function useBadgeCount() {
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Calculate unread count on mount and whenever needed
-  const updateBadgeCount = async () => {
+  // Listen to chat messages and announcements in real-time
+  const setupListeners = useCallback(async () => {
     try {
-      // Get last visited timestamp
       const lastVisitedStr = await AsyncStorage.getItem(LAST_VISITED_STORAGE_KEY);
-      const lastVisited = lastVisitedStr ? new Date(lastVisitedStr) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // Default 7 days ago
-
+      const lastVisited = lastVisitedStr ? new Date(lastVisitedStr) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const lastVisitedTimestamp = Timestamp.fromDate(lastVisited);
 
-      // Count unread chat messages
+      let chatCount = 0;
+      let announcementCount = 0;
+
+      // Listen to chat messages
       const chatQuery = query(
         collection(db, 'chatMessages'),
         where('sentAt', '>', lastVisitedTimestamp),
       );
-      const chatSnap = await getDocs(chatQuery);
-      const chatCount = chatSnap.size;
 
-      // Count unread announcements
+      // Listen to announcements
       const announcementsQuery = query(
         collection(db, 'announcements'),
         where('sentAt', '>', lastVisitedTimestamp),
       );
-      const announcementsSnap = await getDocs(announcementsQuery);
-      const announcementCount = announcementsSnap.size;
 
-      const total = chatCount + announcementCount;
-      setUnreadCount(total);
+      const unsubChat = onSnapshot(chatQuery, (chatSnap) => {
+        chatCount = chatSnap.size;
+        updateTotal();
+      });
 
-      // Set app badge
-      await Notifications.setBadgeCountAsync(total);
+      const unsubAnnouncements = onSnapshot(announcementsQuery, (announcementsSnap) => {
+        announcementCount = announcementsSnap.size;
+        updateTotal();
+      });
+
+      const updateTotal = () => {
+        const total = chatCount + announcementCount;
+        setUnreadCount(total);
+        Notifications.setBadgeCountAsync(total).catch(e => console.error('[useBadgeCount] Badge error:', e));
+      };
+
+      return () => {
+        unsubChat();
+        unsubAnnouncements();
+      };
     } catch (error) {
       console.error('[useBadgeCount] Error:', error);
+      return () => {};
     }
-  };
-
-  // Update badge on mount
-  useEffect(() => {
-    updateBadgeCount();
   }, []);
+
+  // Setup listeners on mount
+  useEffect(() => {
+    let unsubChat: (() => void) | undefined;
+    setupListeners().then(unsub => { unsubChat = unsub; });
+    return () => unsubChat?.();
+  }, [setupListeners]);
 
   // Mark all as read (call this when user visits chat/announcements)
   const markAsRead = async () => {
