@@ -787,11 +787,24 @@ export const notifyNewAnnouncement = onDocumentCreated(
     const tokens = accountsSnap.docs.flatMap(d => (Array.isArray(d.data().fcmTokens) ? d.data().fcmTokens as string[] : []));
     if (tokens.length === 0) return;
 
-    await sendPushToTokens(tokens, {
+    const { invalidTokens } = await sendPushToTokens(tokens, {
       title: data.title ?? 'Nouvelle actualité',
       body: data.body ?? '',
       data: { type: 'announcement', announcementId: event.params.announcementId },
     });
+
+    // Nettoie les tokens invalides
+    if (invalidTokens.length > 0) {
+      const batch = db.batch();
+      accountsSnap.docs.forEach(d => {
+        const toRemove = invalidTokens.filter(t => (d.data().fcmTokens ?? []).includes(t));
+        if (toRemove.length > 0) {
+          batch.update(d.ref, { fcmTokens: admin.firestore.FieldValue.arrayRemove(...toRemove) });
+        }
+      });
+      await batch.commit();
+      console.log(`[notifyNewAnnouncement] Removed ${invalidTokens.length} invalid tokens`);
+    }
   },
 );
 
