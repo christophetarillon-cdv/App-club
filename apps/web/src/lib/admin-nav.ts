@@ -99,6 +99,16 @@ export const ADMIN_NAV: NavGroup[] = [
     ],
   },
   {
+    label: 'Comptabilité',
+    items: [
+      { label: 'Journal', href: '/admin/accounting/journal' },
+      { label: 'Rapprochement bancaire', href: '/admin/accounting/reconciliation' },
+      { label: 'Analytique', href: '/admin/accounting/analytics' },
+      { label: 'Rapports', href: '/admin/accounting/reports' },
+      { label: 'Paramètres', href: '/admin/accounting/settings' },
+    ],
+  },
+  {
     label: 'Contenus',
     items: [
       { label: 'Médiathèque', href: '/admin/media' },
