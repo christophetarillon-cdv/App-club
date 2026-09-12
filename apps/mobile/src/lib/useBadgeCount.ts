@@ -75,5 +75,5 @@ export function useBadgeCount() {
     }
   };
 
-  return { unreadCount, markAsRead, updateBadgeCount };
+  return { unreadCount, markAsRead };
 }
