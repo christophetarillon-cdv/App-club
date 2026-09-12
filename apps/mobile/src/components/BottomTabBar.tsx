@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import { Colors } from '@/constants/Colors';
 import { usePagePermissions } from '@/contexts/PagePermissionsContext';
+import { useBadgeCount } from '@/lib/useBadgeCount';
 
 type TabKey = 'home' | 'chat' | 'planning' | 'card' | 'videos' | 'audios';
 
@@ -60,6 +61,7 @@ export default function BottomTabBar({
 }) {
   const router = useRouter();
   const { hasPerm } = usePagePermissions();
+  const { unreadCount } = useBadgeCount();
 
   const showChat = hasPerm('/chat');
   const showPlanning = hasPerm('/planning');
@@ -86,7 +88,14 @@ export default function BottomTabBar({
 
       {showChat && (
         <TouchableOpacity style={styles.tabItem} onPress={() => go('chat')}>
-          <ChatIcon color={colorFor('chat')} />
+          <View style={styles.iconContainer}>
+            <ChatIcon color={colorFor('chat')} />
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+              </View>
+            )}
+          </View>
           <Text style={[styles.tabLabel, active === 'chat' && styles.tabLabelActive]} numberOfLines={1}>Discussion</Text>
         </TouchableOpacity>
       )}
@@ -144,4 +153,18 @@ const styles = StyleSheet.create({
   tabItem: { flex: 1, alignItems: 'center', paddingBottom: 4, gap: 3 },
   tabLabel: { fontSize: 9.5, color: Colors.tabIcon, fontWeight: '500' },
   tabLabelActive: { color: Colors.tabIconActive },
+  iconContainer: { position: 'relative' },
+  badge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+  },
+  badgeText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
 });
