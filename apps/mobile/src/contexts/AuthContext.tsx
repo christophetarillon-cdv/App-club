@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { collection, onSnapshot, query, where, doc, onSnapshot as onDocSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+import { useBadgeCount } from '@/lib/useBadgeCount';
 import type { Account, Dancer } from '@cdv/types';
 
 interface AuthContextType {
@@ -9,6 +10,7 @@ interface AuthContextType {
   account: Account | null;
   dancers: Dancer[];
   loading: boolean;
+  markMessagesAsRead?: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -23,6 +25,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [dancers, setDancers] = useState<Dancer[]>([]);
   const [loading, setLoading] = useState(true);
+  const { updateBadgeCount, markAsRead } = useBadgeCount();
+
+  // Update badge when user/account changes
+  useEffect(() => {
+    if (user) {
+      updateBadgeCount();
+    }
+  }, [user, updateBadgeCount]);
 
   useEffect(() => {
     let unsubAccount: (() => void) | null = null;
@@ -76,7 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, account, dancers, loading }}>
+    <AuthContext.Provider value={{ user, account, dancers, loading, markMessagesAsRead: markAsRead }}>
       {children}
     </AuthContext.Provider>
   );

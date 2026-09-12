@@ -103,7 +103,7 @@ function CardWaves() {
 
 export default function DancerHomeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user, dancers } = useAuth();
+  const { user, dancers, markMessagesAsRead } = useAuth();
   const { selectedDancer, clearDancer } = useDancer();
   const { hasPerm } = usePagePermissions();
   const router = useRouter();
@@ -118,6 +118,13 @@ export default function DancerHomeScreen() {
   const [cotisationSeasonLabel, setCotisationSeasonLabel] = useState<string | null>(null);
 
   const isAdmin = selectedDancer?.roles?.includes('admin') ?? false;
+
+  // Reset badge when home screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      markMessagesAsRead?.();
+    }, [markMessagesAsRead]),
+  );
 
   const loadAnnouncements = () => {
     getDocs(

@@ -38,7 +38,7 @@ export default function ChatListScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, account } = useAuth();
+  const { user, account, markMessagesAsRead } = useAuth();
   const { selectedDancer } = useDancer();
 
   // Cumul compte + fiche danseur : le role peut etre porte par l'un ou
@@ -49,6 +49,13 @@ export default function ChatListScreen() {
   const [rows, setRows] = useState<ChannelRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [adminUnread, setAdminUnread] = useState(false);
+
+  // Reset badge when chat screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      markMessagesAsRead?.();
+    }, [markMessagesAsRead]),
+  );
 
   // En direct (pas juste au focus) pour que la pastille se mette a jour des
   // que le danseur a lu la reponse, meme s'il revient tres vite de l'ecran
