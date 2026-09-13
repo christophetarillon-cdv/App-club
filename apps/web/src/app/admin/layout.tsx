@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, isProdEnvironment } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { ADMIN_NAV } from '@/lib/admin-nav';
@@ -38,6 +38,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   }, [user, account, loading, isAdmin, router]);
 
+  // La comptabilité est en développement : inaccessible en prod même pour un admin,
+  // indépendamment des permissions (pas encore de règles Firestore côté prod).
+  useEffect(() => {
+    if (isProdEnvironment && pathname.startsWith('/admin/accounting')) {
+      router.replace('/admin');
+    }
+  }, [pathname, router]);
+
   // Vérifie l'accès à la page courante une fois les permissions chargées
   useEffect(() => {
     if (!pagePermissions || isAdmin) return;
@@ -61,15 +69,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 
-  // Filtre le nav selon les permissions
-  const visibleNav = ADMIN_NAV.map(group => ({
-    ...group,
-    items: group.items.filter(item => {
-      if (isAdmin) return true;
-      const allowed = pagePermissions?.[item.href] ?? ['admin'];
-      return userRoles.some(r => allowed.includes(r));
-    }),
-  })).filter(group => group.items.length > 0);
+  // Filtre le nav selon les permissions, et masque la comptabilité en prod
+  // tant que le chantier n'est pas prêt à y être activé.
+  const visibleNav = ADMIN_NAV
+    .filter(group => !(isProdEnvironment && group.label === 'Comptabilité'))
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => {
+        if (isAdmin) return true;
+        const allowed = pagePermissions?.[item.href] ?? ['admin'];
+        return userRoles.some(r => allowed.includes(r));
+      }),
+    })).filter(group => group.items.length > 0);
 
   return (
     <div className="flex min-h-screen bg-gray-50">
