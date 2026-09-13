@@ -28,14 +28,16 @@ interface SeasonRange {
 
 interface BankDepositImportProps {
   userId: string;
+  onImported?: (seasonId: string) => void;
 }
 
-export default function BankDepositImport({ userId }: BankDepositImportProps) {
+export default function BankDepositImport({ userId, onImported }: BankDepositImportProps) {
   const [deposits, setDeposits] = useState<BankDeposit[]>([]);
   const [seasons, setSeasons] = useState<SeasonRange[]>([]);
   const [loading, setLoading] = useState(true);
   const [importingId, setImportingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   useEffect(() => {
     getDocs(collection(db, 'seasons')).then((snap) => {
@@ -88,6 +90,7 @@ export default function BankDepositImport({ userId }: BankDepositImportProps) {
   const handleImport = async (deposit: BankDeposit) => {
     setImportingId(deposit.id);
     setError('');
+    setSuccess('');
     try {
       const seasonId = resolveSeasonId(deposit.depositDate);
       if (!seasonId) {
@@ -115,6 +118,9 @@ export default function BankDepositImport({ userId }: BankDepositImportProps) {
       await updateDoc(doc(db, 'bankDeposits', deposit.id), {
         accountingEntryId: entryRef.id,
       });
+
+      setSuccess(`Écriture ajoutée à la saison ${seasonId}.`);
+      onImported?.(seasonId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de l\'import');
     } finally {
@@ -123,7 +129,7 @@ export default function BankDepositImport({ userId }: BankDepositImportProps) {
   };
 
   if (loading) return null;
-  if (deposits.length === 0) return null;
+  if (deposits.length === 0 && !success) return null;
 
   return (
     <div className="bg-white rounded-lg border overflow-hidden">
@@ -133,6 +139,7 @@ export default function BankDepositImport({ userId }: BankDepositImportProps) {
           Bordereaux de remise en banque générés depuis Finance, pas encore intégrés au journal comptable.
         </p>
       </div>
+      {success && <div className="mx-6 mt-4 bg-green-50 text-green-700 p-3 rounded text-sm">{success}</div>}
       {error && <div className="m-4 bg-red-50 text-red-700 p-3 rounded text-sm">{error}</div>}
       <div className="divide-y">
         {deposits.map((deposit) => (

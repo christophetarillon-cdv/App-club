@@ -150,7 +150,7 @@ export default function JournalPage() {
       )}
 
       {/* Mises en banque à importer */}
-      <BankDepositImport userId={user.uid} />
+      <BankDepositImport userId={user.uid} onImported={(sid) => setSeasonId(sid)} />
 
       {/* Tableau des écritures */}
       <div className="bg-white rounded-lg border">
