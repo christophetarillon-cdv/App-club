@@ -318,7 +318,7 @@ export default function ManualReconciliation() {
                     <td className="px-4 py-3 text-center">
                       <input
                         type="checkbox"
-                        checked={draft?.hasReceipt ?? false}
+                        checked={draft?.hasReceipt ?? entry.hasReceipt ?? false}
                         disabled={!draft?.checked}
                         onChange={(e) => setHasReceipt(entry.id, e.target.checked)}
                         className="w-4 h-4 cursor-pointer disabled:opacity-40"
