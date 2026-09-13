@@ -298,7 +298,7 @@ export default function ManualReconciliation() {
                         type="checkbox"
                         checked={draft?.checked ?? false}
                         onChange={() => toggleChecked(entry.id)}
-                        className="w-4 h-4 cursor-pointer"
+                        className="w-5 h-5 accent-blue-600 cursor-pointer"
                       />
                     </td>
                     <td className="px-4 py-3">{new Date(entry.date).toLocaleDateString('fr-FR')}</td>
@@ -321,7 +321,9 @@ export default function ManualReconciliation() {
                         checked={draft?.hasReceipt ?? entry.hasReceipt ?? false}
                         disabled={!draft?.checked}
                         onChange={(e) => setHasReceipt(entry.id, e.target.checked)}
-                        className="w-4 h-4 cursor-pointer disabled:opacity-40"
+                        className={`w-5 h-5 accent-green-600 ${
+                          draft?.checked ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'
+                        }`}
                       />
                     </td>
                   </tr>
