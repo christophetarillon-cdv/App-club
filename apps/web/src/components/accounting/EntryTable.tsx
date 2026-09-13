@@ -35,16 +35,17 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
   const [error, setError] = useState('');
   const [bankLabels, setBankLabels] = useState<Record<string, string>>({});
 
-  // Charge les libellés des comptes comptables depuis Firestore, pour rester
-  // synchronisé avec ce qui est géré dans Paramètres comptabilité.
+  // Charge les libellés des comptes depuis Finance > Comptes bancaires
+  // (collection `bankAccounts`, source unique partagée avec le RIB du club).
+  // entry.bankAccount stocke l'id du document.
   useEffect(() => {
-    const q = query(collection(db, 'accountingBankAccounts'));
+    const q = query(collection(db, 'bankAccounts'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const labels: Record<string, string> = {};
       snapshot.forEach((doc) => {
         const data = doc.data();
         if (data.isActive !== false) {
-          labels[data.code] = data.label;
+          labels[doc.id] = data.name ?? doc.id;
         }
       });
       setBankLabels(labels);

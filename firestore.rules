@@ -426,8 +426,14 @@ service cloud.firestore {
       // Un RIB est fait pour être communiqué : tout utilisateur connecté peut
       // le lire (nécessaire pour afficher les coordonnées lors d'un paiement
       // par virement dans le parcours de cotisation).
+      // Ces mêmes comptes sont aussi utilisés par la compta (voir plus bas
+      // ~ligne 590) : le rôle compta peut ajuster uniquement leur ordre
+      // d'affichage (`sortOrder`), toute autre modification (RIB, visibilité
+      // adhérents...) reste réservée à /admin/settings/bank-accounts.
       allow read: if isAuth();
       allow write: if hasPagePermission('/admin/settings/bank-accounts');
+      allow update: if hasPagePermission('/admin/accounting/journal') &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sortOrder', 'updatedAt']);
     }
 
     match /attendances/{id} {
@@ -649,12 +655,5 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Comptes bancaires/caisse comptables (plan de trésorerie interne à la
-    // compta). Collection distincte de `bankAccounts` (RIB du club, voir
-    // plus haut ~ligne 425) — les deux ont des schémas incompatibles.
-    match /accountingBankAccounts/{id} {
-      allow read: if hasAccountingAccess();
-      allow write: if hasPagePermission('/admin/accounting/journal');
-    }
   }
 }

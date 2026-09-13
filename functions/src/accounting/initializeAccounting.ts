@@ -24,14 +24,6 @@ const DEFAULT_CHART_OF_ACCOUNTS = [
   { code: '66', label: 'Autres charges', type: 'expense', isActive: true },
 ];
 
-const DEFAULT_BANK_ACCOUNTS = [
-  { code: 'CE_PRINCIPAL', label: 'Caisse Épargne Principale', type: 'checking', currency: 'EUR', isActive: true, sortOrder: 1 },
-  { code: 'CE_LIVRET', label: 'Caisse Épargne - Livret', type: 'savings', currency: 'EUR', isActive: true, sortOrder: 2 },
-  { code: 'PAYPAL', label: 'PayPal', type: 'online', currency: 'EUR', isActive: true, sortOrder: 3 },
-  { code: 'STRIPE', label: 'Stripe', type: 'online', currency: 'EUR', isActive: true, sortOrder: 4 },
-  { code: 'CAISSE', label: 'Caisse espèces', type: 'cash', currency: 'EUR', isActive: true, sortOrder: 5 },
-];
-
 // Déclenché manuellement pour initialiser la comptabilité d'un club
 export const initializeAccounting = onCall(
   { region: 'europe-west3' },
@@ -70,27 +62,9 @@ export const initializeAccounting = onCall(
         console.log(`[Accounting] Created ${DEFAULT_CHART_OF_ACCOUNTS.length} chart of accounts`);
       }
 
-      // 2. Crée les comptes bancaires par défaut s'ils n'existent pas
-      // Collection dédiée à la compta : distincte de `bankAccounts` qui stocke
-      // le RIB du club affiché aux adhérents (voir firestore.rules ~ligne 425).
-      const bankSnap = await getDb().collection('accountingBankAccounts').get();
-
-      if (bankSnap.empty) {
-        const batch = getDb().batch();
-
-        DEFAULT_BANK_ACCOUNTS.forEach((account) => {
-          const id = account.code.toLowerCase();
-          batch.set(getDb().collection('accountingBankAccounts').doc(id), {
-            ...account,
-            id,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          });
-        });
-
-        await batch.commit();
-        console.log(`[Accounting] Created ${DEFAULT_BANK_ACCOUNTS.length} bank accounts`);
-      }
+      // Les comptes bancaires ne sont pas initialisés ici : ils se gèrent
+      // dans Finance > Comptes bancaires (collection `bankAccounts`, aussi
+      // utilisée pour le RIB du club affiché aux adhérents).
 
       return {
         success: true,

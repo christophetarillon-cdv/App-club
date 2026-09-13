@@ -368,14 +368,16 @@ export default function MembershipPage() {
       });
     }).catch(() => {});
     getDocs(collection(db, 'bankAccounts')).then(snap => {
-      setBankAccounts(snap.docs.map(d => ({
-        id: d.id,
-        name: d.data().name ?? '',
-        bank: d.data().bank ?? '',
-        accountNumber: d.data().accountNumber ?? '',
-        holder: d.data().holder ?? '',
-        label: d.data().label ?? '',
-      })));
+      setBankAccounts(snap.docs
+        .filter(d => d.data().visibleToMembers !== false)
+        .map(d => ({
+          id: d.id,
+          name: d.data().name ?? '',
+          bank: d.data().bank ?? '',
+          accountNumber: d.data().accountNumber ?? '',
+          holder: d.data().holder ?? '',
+          label: d.data().label ?? '',
+        })));
     }).catch(() => {});
   }, []);
 

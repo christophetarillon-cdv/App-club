@@ -13,9 +13,10 @@ interface BankAccount {
   accountNumber: string;
   holder: string;
   label: string;
+  visibleToMembers: boolean;
 }
 
-const emptyForm = { name: '', bank: '', accountNumber: '', holder: '', label: '' };
+const emptyForm = { name: '', bank: '', accountNumber: '', holder: '', label: '', visibleToMembers: true };
 
 
 export default function BankAccountsPage() {
@@ -34,6 +35,7 @@ export default function BankAccountsPage() {
       accountNumber: d.data().accountNumber ?? '',
       holder: d.data().holder ?? '',
       label: d.data().label ?? '',
+      visibleToMembers: d.data().visibleToMembers !== false,
     })));
     setLoading(false);
   };
@@ -49,6 +51,7 @@ export default function BankAccountsPage() {
       accountNumber: form.accountNumber.trim(),
       holder: form.holder,
       label: form.label,
+      visibleToMembers: form.visibleToMembers,
       updatedAt: serverTimestamp(),
     };
     if (editId) {
@@ -63,7 +66,10 @@ export default function BankAccountsPage() {
   };
 
   const startEdit = (a: BankAccount) => {
-    setForm({ name: a.name, bank: a.bank, accountNumber: a.accountNumber, holder: a.holder, label: a.label });
+    setForm({
+      name: a.name, bank: a.bank, accountNumber: a.accountNumber, holder: a.holder, label: a.label,
+      visibleToMembers: a.visibleToMembers,
+    });
     setEditId(a.id);
   };
 
@@ -121,6 +127,12 @@ export default function BankAccountsPage() {
             className={inputCls} />
         </div>
 
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" checked={form.visibleToMembers}
+            onChange={e => setForm(p => ({ ...p, visibleToMembers: e.target.checked }))} />
+          Visible pour les adhérents (proposé comme destination de virement pour la cotisation)
+        </label>
+
         <div className="flex gap-3">
           <button type="submit" disabled={saving}
             className="bg-blue-600 text-white font-semibold px-5 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm">
@@ -144,7 +156,12 @@ export default function BankAccountsPage() {
             <div key={a.id} className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-0.5">
-                  <p className="font-semibold text-gray-900">{a.name}</p>
+                  <p className="font-semibold text-gray-900">
+                    {a.name}
+                    {!a.visibleToMembers && (
+                      <span className="ml-2 text-xs font-normal text-gray-400">(masqué aux adhérents)</span>
+                    )}
+                  </p>
                   <p className="text-xs text-gray-500">{a.holder} — {a.bank}</p>
                   <p className="text-xs font-mono text-gray-600">{a.accountNumber}</p>
                   {a.label && <p className="text-xs text-gray-400 italic">{a.label}</p>}

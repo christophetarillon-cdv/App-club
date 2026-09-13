@@ -10,13 +10,11 @@ interface EntryFormProps {
   onSuccess: () => void;
 }
 
-const BANK_ACCOUNTS = [
-  { code: 'CE_PRINCIPAL', label: 'Caisse Épargne Principale' },
-  { code: 'CE_LIVRET', label: 'Caisse Épargne - Livret' },
-  { code: 'PAYPAL', label: 'PayPal' },
-  { code: 'STRIPE', label: 'Stripe' },
-  { code: 'CAISSE', label: 'Caisse espèces' },
-];
+interface BankAccountOption {
+  id: string;
+  label: string;
+  sortOrder: number;
+}
 
 const DEFAULT_ANALYTICS_CATEGORIES = [
   { name: 'Soirées & Événements', description: 'Dépenses liées aux soirées et événements', sortOrder: 1 },
@@ -32,35 +30,40 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [type, setType] = useState<TransactionType>('expense');
-  const [bankAccounts, setBankAccounts] = useState(BANK_ACCOUNTS);
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([]);
   const [categories, setCategories] = useState(DEFAULT_ANALYTICS_CATEGORIES);
 
   const [form, setForm] = useState({
     date: new Date().toISOString().split('T')[0],
     description: '',
     amount: '',
-    bankAccount: 'CE_PRINCIPAL',
-    bankAccountTo: 'CE_LIVRET',
+    bankAccount: '',
+    bankAccountTo: '',
     paymentType: 'virement',
     chequeNumber: '',
     analyticsCategory: 'Soirées & Événements',
   });
 
-  // Charger les comptes bancaires comptables depuis Firestore
-  // (collection dédiée `accountingBankAccounts`, distincte du RIB du club
-  // stocké dans `bankAccounts` — voir firestore.rules)
+  // Charge les comptes bancaires depuis Finance > Comptes bancaires
+  // (collection `bankAccounts`, source unique partagée avec le RIB du club)
   useEffect(() => {
-    const q = query(collection(db, 'accountingBankAccounts'));
+    const q = query(collection(db, 'bankAccounts'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data: any[] = [];
+      const data: BankAccountOption[] = [];
       snapshot.forEach((doc) => {
         const docData = doc.data();
         if (docData.isActive !== false) {
-          data.push({ code: docData.code, label: docData.label, sortOrder: docData.sortOrder });
+          data.push({ id: doc.id, label: docData.name ?? doc.id, sortOrder: docData.sortOrder ?? 999 });
         }
       });
+      data.sort((a, b) => a.sortOrder - b.sortOrder);
+      setBankAccounts(data);
       if (data.length > 0) {
-        setBankAccounts(data.sort((a, b) => a.sortOrder - b.sortOrder));
+        setForm((f) => ({
+          ...f,
+          bankAccount: f.bankAccount || data[0]!.id,
+          bankAccountTo: f.bankAccountTo || data[1]?.id || data[0]!.id,
+        }));
       }
     });
     return () => unsubscribe();
@@ -265,7 +268,7 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
             className="w-full px-3 py-2 border rounded-lg"
           >
             {bankAccounts.map((acc) => (
-              <option key={acc.code} value={acc.code}>
+              <option key={acc.id} value={acc.id}>
                 {acc.label}
               </option>
             ))}
@@ -285,7 +288,7 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
               className="w-full px-3 py-2 border rounded-lg"
             >
               {bankAccounts.map((acc) => (
-                <option key={acc.code} value={acc.code}>
+                <option key={acc.id} value={acc.id}>
                   {acc.label}
                 </option>
               ))}
@@ -299,7 +302,7 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
               className="w-full px-3 py-2 border rounded-lg"
             >
               {bankAccounts.map((acc) => (
-                <option key={acc.code} value={acc.code}>
+                <option key={acc.id} value={acc.id}>
                   {acc.label}
                 </option>
               ))}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, updateDoc, deleteDoc, doc, query, where, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, query, where, onSnapshot, getDocs } from 'firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface AnalyticsCategory {
@@ -13,9 +13,9 @@ interface AnalyticsCategory {
 }
 
 interface BankAccount {
-  id?: string;
-  code: string;
-  label: string;
+  id: string;
+  name: string;
+  bank: string;
   sortOrder: number;
 }
 
@@ -27,12 +27,12 @@ export default function SettingsPage() {
   const [categories, setCategories] = useState<AnalyticsCategory[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [orderDrafts, setOrderDrafts] = useState<Record<string, number>>({});
+  const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    code: '',
-    label: '',
     sortOrder: 1,
   });
 
@@ -52,19 +52,27 @@ export default function SettingsPage() {
     return () => unsubscribe();
   }, []);
 
-  // Charger les comptes bancaires comptables (collection dédiée, distincte
-  // du RIB du club stocké dans `bankAccounts` — voir firestore.rules)
+  // Les comptes bancaires sont gérés dans Finance > Comptes bancaires
+  // (collection `bankAccounts`) ; cette page ne fait que lire cette même
+  // liste et permet d'ajuster leur ordre d'affichage pour la compta.
   useEffect(() => {
-    const q = query(collection(db, 'accountingBankAccounts'));
+    const q = query(collection(db, 'bankAccounts'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: BankAccount[] = [];
       snapshot.forEach((doc) => {
         const docData = doc.data();
         if (docData.isActive !== false) {
-          data.push({ id: doc.id, ...docData } as BankAccount);
+          data.push({
+            id: doc.id,
+            name: docData.name ?? '',
+            bank: docData.bank ?? '',
+            sortOrder: docData.sortOrder ?? 999,
+          });
         }
       });
-      setBankAccounts(data.sort((a, b) => a.sortOrder - b.sortOrder));
+      data.sort((a, b) => a.sortOrder - b.sortOrder);
+      setBankAccounts(data);
+      setOrderDrafts(Object.fromEntries(data.map((a) => [a.id, a.sortOrder])));
     });
     return () => unsubscribe();
   }, []);
@@ -93,7 +101,7 @@ export default function SettingsPage() {
           createdBy: user?.uid,
         });
       }
-      setFormData({ name: '', description: '', code: '', label: '', sortOrder: 1 });
+      setFormData({ name: '', description: '', sortOrder: 1 });
       setEditingId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur');
@@ -102,41 +110,21 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSaveBank = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
+  const handleSaveOrder = async (bankId: string) => {
+    const sortOrder = orderDrafts[bankId];
+    if (sortOrder === undefined || Number.isNaN(sortOrder)) return;
 
+    setSavingOrderId(bankId);
+    setError('');
     try {
-      if (editingId) {
-        const docRef = doc(db, 'accountingBankAccounts', editingId);
-        await updateDoc(docRef, {
-          label: formData.label,
-          sortOrder: formData.sortOrder,
-          updatedAt: Date.now(),
-        });
-      } else {
-        if (!formData.code || !formData.label) {
-          setError('Code et libellé sont obligatoires');
-          setLoading(false);
-          return;
-        }
-        await addDoc(collection(db, 'accountingBankAccounts'), {
-          code: formData.code,
-          label: formData.label,
-          sortOrder: formData.sortOrder,
-          type: 'checking',
-          currency: 'EUR',
-          isActive: true,
-          createdAt: Date.now(),
-        });
-      }
-      setFormData({ name: '', description: '', code: '', label: '', sortOrder: 1 });
-      setEditingId(null);
+      await updateDoc(doc(db, 'bankAccounts', bankId), {
+        sortOrder,
+        updatedAt: Date.now(),
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur');
     } finally {
-      setLoading(false);
+      setSavingOrderId(null);
     }
   };
 
@@ -160,36 +148,10 @@ export default function SettingsPage() {
     }
   };
 
-  const handleDeleteBank = async (id: string, bankCode: string) => {
-    try {
-      // Vérifier si le compte est utilisé
-      const q = query(collection(db, 'accountingEntries'), where('bankAccount', '==', bankCode));
-      const snapshot = await getDocs(q);
-
-      if (snapshot.size > 0) {
-        setError(`Impossible de supprimer ce compte : ${snapshot.size} écriture(s) l'utilise(nt)`);
-        return;
-      }
-
-      if (!confirm('Êtes-vous sûr ?')) return;
-      const docRef = doc(db, 'accountingBankAccounts', id);
-      await updateDoc(docRef, { isActive: false });
-      setError('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur');
-    }
-  };
-
   const handleEditCategory = (cat: AnalyticsCategory) => {
     setEditingId(cat.id || null);
-    setFormData({ name: cat.name, description: cat.description, code: '', label: '', sortOrder: cat.sortOrder });
+    setFormData({ name: cat.name, description: cat.description, sortOrder: cat.sortOrder });
     setActiveTab('categories');
-  };
-
-  const handleEditBank = (bank: BankAccount) => {
-    setEditingId(bank.id || null);
-    setFormData({ name: '', description: '', code: bank.code, label: bank.label, sortOrder: bank.sortOrder });
-    setActiveTab('banks');
   };
 
   if (!user) return <div>Authentification requise</div>;
@@ -277,7 +239,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => {
                       setEditingId(null);
-                      setFormData({ name: '', description: '', code: '', label: '', sortOrder: 1 });
+                      setFormData({ name: '', description: '', sortOrder: 1 });
                     }}
                     className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-medium"
                   >
@@ -321,96 +283,50 @@ export default function SettingsPage() {
 
       {/* Comptes bancaires */}
       {activeTab === 'banks' && (
-        <div className="grid grid-cols-3 gap-6">
-          {/* Formulaire */}
-          <div className="bg-white p-6 rounded-lg border">
-            <h2 className="text-lg font-semibold mb-4">
-              {editingId ? 'Modifier le compte' : 'Ajouter un compte'}
-            </h2>
-            <form onSubmit={handleSaveBank} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Code</label>
-                <input
-                  type="text"
-                  value={formData.code}
-                  onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                  placeholder="CE_PRINCIPAL"
-                  className="w-full px-3 py-2 border rounded-lg"
-                  required
-                  disabled={!!editingId}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Libellé</label>
-                <input
-                  type="text"
-                  value={formData.label}
-                  onChange={(e) => setFormData({ ...formData, label: e.target.value })}
-                  placeholder="Caisse Épargne Principale"
-                  className="w-full px-3 py-2 border rounded-lg"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Ordre</label>
-                <input
-                  type="number"
-                  value={formData.sortOrder}
-                  onChange={(e) => setFormData({ ...formData, sortOrder: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 font-medium"
-                >
-                  {loading ? 'Enregistrement...' : 'Enregistrer'}
-                </button>
-                {editingId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingId(null);
-                      setFormData({ name: '', description: '', code: '', label: '', sortOrder: 1 });
-                    }}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-medium"
-                  >
-                    Annuler
-                  </button>
-                )}
-              </div>
-            </form>
+        <div className="bg-white p-6 rounded-lg border">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Comptes bancaires</h2>
+            <a
+              href="/admin/settings/bank-accounts"
+              className="text-sm text-blue-600 hover:underline"
+            >
+              Gérer les comptes (créer, modifier, RIB) →
+            </a>
           </div>
-
-          {/* Liste */}
-          <div className="col-span-2 bg-white p-6 rounded-lg border">
-            <h2 className="text-lg font-semibold mb-4">Liste des comptes bancaires</h2>
-            <div className="space-y-2">
-              {bankAccounts.map((bank) => (
-                <div key={bank.id} className="flex items-center justify-between p-3 bg-gray-50 rounded border">
-                  <div>
-                    <p className="font-medium">{bank.label}</p>
-                    <p className="text-sm text-gray-600">Code: {bank.code}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleEditBank(bank)}
-                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm font-medium hover:bg-blue-200"
-                    >
-                      Modifier
-                    </button>
-                    <button
-                      onClick={() => bank.id && handleDeleteBank(bank.id, bank.code)}
-                      className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm font-medium hover:bg-red-200"
-                    >
-                      Supprimer
-                    </button>
-                  </div>
+          <p className="text-sm text-gray-500 mb-4">
+            Les comptes eux-mêmes se créent et se modifient dans Finance &gt; Comptes bancaires.
+            Ici, tu peux seulement ajuster leur ordre d'affichage dans le journal comptable.
+          </p>
+          <div className="space-y-2">
+            {bankAccounts.length === 0 && (
+              <p className="text-sm text-gray-400">Aucun compte bancaire configuré pour l'instant.</p>
+            )}
+            {bankAccounts.map((bank) => (
+              <div key={bank.id} className="flex items-center justify-between p-3 bg-gray-50 rounded border">
+                <div>
+                  <p className="font-medium">{bank.name}</p>
+                  <p className="text-sm text-gray-600">{bank.bank}</p>
                 </div>
-              ))}
-            </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600">Ordre</label>
+                  <input
+                    type="number"
+                    value={orderDrafts[bank.id] ?? bank.sortOrder}
+                    onChange={(e) =>
+                      setOrderDrafts({ ...orderDrafts, [bank.id]: parseInt(e.target.value) })
+                    }
+                    className="w-20 px-2 py-1 border rounded-lg"
+                  />
+                  <button
+                    onClick={() => handleSaveOrder(bank.id)}
+                    disabled={savingOrderId === bank.id || orderDrafts[bank.id] === bank.sortOrder}
+                    className="px-3 py-1 bg-blue-500 text-white rounded text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
+                  >
+                    {savingOrderId === bank.id ? '...' : 'Enregistrer'}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
