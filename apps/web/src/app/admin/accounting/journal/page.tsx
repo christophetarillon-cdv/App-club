@@ -22,6 +22,9 @@ interface Entry {
   reconciled: boolean;
   status: 'draft' | 'posted';
   createdAt: number;
+  valueDate?: number;
+  hasReceipt?: boolean;
+  statementNumber?: string;
 }
 
 export default function JournalPage() {

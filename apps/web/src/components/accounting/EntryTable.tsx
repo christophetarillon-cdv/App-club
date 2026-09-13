@@ -17,6 +17,9 @@ interface Entry {
   analyticsCategory?: string;
   reconciled: boolean;
   status: 'draft' | 'posted';
+  valueDate?: number;
+  hasReceipt?: boolean;
+  statementNumber?: string;
 }
 
 interface EntryTableProps {
@@ -291,9 +294,25 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                           <p className="text-xs font-semibold text-gray-600">Catégorie analytique</p>
                           <p className="text-sm">{entry.analyticsCategory || '-'}</p>
                         </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-xs font-semibold text-gray-600">Pointé</p>
+                            <p className="text-sm">{entry.reconciled ? 'Pointé' : 'Non pointé'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-gray-600">Date de valeur</p>
+                            <p className="text-sm">
+                              {entry.valueDate ? new Date(entry.valueDate).toLocaleDateString('fr-FR') : '-'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-gray-600">N° de relevé</p>
+                            <p className="text-sm">{entry.statementNumber || '-'}</p>
+                          </div>
+                        </div>
                         <div>
-                          <p className="text-xs font-semibold text-gray-600">Pointé</p>
-                          <p className="text-sm">{entry.reconciled ? 'Pointé' : 'Non pointé'}</p>
+                          <p className="text-xs font-semibold text-gray-600">Facture correspondante</p>
+                          <p className="text-sm">{entry.hasReceipt ? '✓ Oui' : 'Non'}</p>
                         </div>
                         <button
                           onClick={() => handleEdit(entry)}
