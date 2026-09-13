@@ -42,6 +42,7 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
     paymentType: 'virement',
     chequeNumber: '',
     analyticsCategory: 'Soirées & Événements',
+    hasReceipt: false,
   });
 
   // Charge les comptes bancaires depuis Finance > Comptes bancaires
@@ -114,6 +115,7 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
           bankAccount: form.bankAccount,
           analyticsCategory: 'Transfert interne',
           reconciled: false,
+          hasReceipt: form.hasReceipt,
           status: 'posted',
           createdAt: Date.now(),
           createdBy: userId,
@@ -128,6 +130,7 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
           bankAccount: form.bankAccountTo,
           analyticsCategory: 'Transfert interne',
           reconciled: false,
+          hasReceipt: form.hasReceipt,
           status: 'posted',
           createdAt: Date.now(),
           createdBy: userId,
@@ -147,6 +150,7 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
           ...(form.paymentType === 'cheque' && { chequeNumber: form.chequeNumber }),
           analyticsCategory: form.analyticsCategory,
           reconciled: false,
+          hasReceipt: form.hasReceipt,
           status: 'posted',
           createdAt: Date.now(),
           createdBy: userId,
@@ -155,16 +159,14 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
         await addDoc(collection(db, 'accountingEntries'), entry);
       }
 
-      setForm({
+      setForm((f) => ({
+        ...f,
         date: new Date().toISOString().split('T')[0],
         description: '',
         amount: '',
-        bankAccount: 'CE_PRINCIPAL',
-        bankAccountTo: 'CE_LIVRET',
-        paymentType: 'virement',
         chequeNumber: '',
-        analyticsCategory: 'Soirées & Événements',
-      });
+        hasReceipt: false,
+      }));
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la création');
@@ -339,6 +341,17 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
           />
         </div>
       )}
+
+      {/* Facture correspondante */}
+      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={form.hasReceipt}
+          onChange={(e) => setForm({ ...form, hasReceipt: e.target.checked })}
+          className="w-4 h-4"
+        />
+        Facture correspondante disponible
+      </label>
 
       {/* Catégorie analytique */}
       <div>

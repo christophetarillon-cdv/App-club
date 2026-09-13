@@ -3,7 +3,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, doc, onSnapshot, query, updateDoc } from 'firebase/firestore';
-import { useAuth } from '@/contexts/AuthContext';
 
 interface Entry {
   id: string;
@@ -29,12 +28,10 @@ interface EntryTableProps {
 }
 
 export default function EntryTable({ entries, loading, seasonId }: EntryTableProps) {
-  const { user } = useAuth();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingData, setEditingData] = useState<Partial<Entry>>({});
   const [saving, setSaving] = useState(false);
-  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [bankLabels, setBankLabels] = useState<Record<string, string>>({});
 
@@ -80,23 +77,6 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
       setError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleToggleReconciled = async (entry: Entry) => {
-    if (!user) return;
-
-    setTogglingId(entry.id);
-    setError('');
-    try {
-      const entryRef = doc(db, 'accountingEntries', entry.id);
-      await updateDoc(entryRef, {
-        reconciled: !entry.reconciled,
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur lors du pointage');
-    } finally {
-      setTogglingId(null);
     }
   };
 
@@ -146,9 +126,9 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                   <input
                     type="checkbox"
                     checked={entry.reconciled}
-                    onChange={() => handleToggleReconciled(entry)}
-                    disabled={togglingId === entry.id}
-                    className="w-4 h-4 cursor-pointer"
+                    disabled
+                    title="Le pointage se fait depuis Rapprochement"
+                    className="w-4 h-4 cursor-not-allowed"
                   />
                 </td>
                 <td

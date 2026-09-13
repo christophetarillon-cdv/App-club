@@ -20,6 +20,7 @@ interface Entry {
   description: string;
   amount: number;
   type: 'expense' | 'income';
+  hasReceipt?: boolean;
 }
 
 interface EntryDraft {
@@ -92,7 +93,10 @@ export default function ManualReconciliation() {
       unreconciledSnap.forEach((d) => {
         const data = d.data();
         if (typeof data.amount === 'number' && data.type) {
-          list.push({ id: d.id, date: data.date, description: data.description, amount: data.amount, type: data.type });
+          list.push({
+            id: d.id, date: data.date, description: data.description, amount: data.amount, type: data.type,
+            hasReceipt: data.hasReceipt ?? false,
+          });
         }
       });
       list.sort((a, b) => b.date - a.date);
@@ -110,12 +114,13 @@ export default function ManualReconciliation() {
       if (existing?.checked) {
         return { ...prev, [entryId]: { ...existing, checked: false } };
       }
+      const entry = unreconciled.find((e) => e.id === entryId);
       return {
         ...prev,
         [entryId]: {
           checked: true,
           valueDate: existing?.valueDate || new Date().toISOString().split('T')[0]!,
-          hasReceipt: existing?.hasReceipt ?? false,
+          hasReceipt: existing?.hasReceipt ?? entry?.hasReceipt ?? false,
         },
       };
     });
