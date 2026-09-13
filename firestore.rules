@@ -418,8 +418,12 @@ service cloud.firestore {
     }
 
     match /bankDeposits/{id} {
-      allow read: if hasPagePermission('/admin/payments/bank-deposits') || hasPagePermission('/admin/finances/dashboard') || hasPagePermission('/admin/exports');
+      allow read: if hasPagePermission('/admin/payments/bank-deposits') || hasPagePermission('/admin/finances/dashboard') || hasPagePermission('/admin/exports') || hasPagePermission('/admin/accounting/journal');
       allow write: if hasPagePermission('/admin/payments/bank-deposits');
+      // La compta marque un bordereau comme importé (accountingEntryId) sans
+      // pouvoir toucher au reste (montant, comptes, lignes...).
+      allow update: if hasPagePermission('/admin/accounting/journal') &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['accountingEntryId']);
     }
 
     match /bankAccounts/{id} {

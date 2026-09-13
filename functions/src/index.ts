@@ -4073,8 +4073,10 @@ export const getGoogleContactGroupEmails = onCall(
 );
 
 // ── Comptabilité (accounting) ────────────────────────────────────────────────
+// onPaymentCreated a été retiré : il écrivait dans accountingEntries avec un
+// schéma abandonné (débit/crédit, codes de compte inexistants) et aurait fait
+// doublon avec l'import des mises en banque désormais utilisé à la place.
 export {
-  onPaymentCreated,
   aggregateAccountingData,
   initializeAccounting,
 } from './accounting';

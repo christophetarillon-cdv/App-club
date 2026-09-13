@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { collection, getDocs, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import EntryForm from '@/components/accounting/EntryForm';
 import EntryTable from '@/components/accounting/EntryTable';
+import BankDepositImport from '@/components/accounting/BankDepositImport';
 
 interface Entry {
   id: string;
@@ -147,6 +148,9 @@ export default function JournalPage() {
           />
         </div>
       )}
+
+      {/* Mises en banque à importer */}
+      <BankDepositImport userId={user.uid} />
 
       {/* Tableau des écritures */}
       <div className="bg-white rounded-lg border">
