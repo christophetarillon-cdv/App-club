@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query } from 'firebase/firestore';
 
 interface BankStatementImportProps {
   seasonId: string;
@@ -10,15 +10,79 @@ interface BankStatementImportProps {
   onSuccess: () => void;
 }
 
+interface BankAccountOption {
+  id: string;
+  label: string;
+  sortOrder: number;
+}
+
+// Détecte le séparateur (virgule ou point-virgule, les deux courants en France)
+// et découpe une ligne en respectant les champs entre guillemets.
+function parseCsvLine(line: string, delimiter: string): string[] {
+  const fields: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (inQuotes) {
+      if (char === '"') {
+        if (line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += char;
+      }
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === delimiter) {
+      fields.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  fields.push(current.trim());
+  return fields;
+}
+
+// Convertit un nombre au format français (1 234,56) ou anglais (1234.56) en float.
+function parseAmount(raw: string): number {
+  const cleaned = raw.replace(/\s/g, '').replace(/,/g, '.');
+  const normalized = cleaned.replace(/\.(?=.*\.)/g, '');
+  return parseFloat(normalized);
+}
+
 export default function BankStatementImport({ seasonId, userId, onSuccess }: BankStatementImportProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([]);
   const [form, setForm] = useState({
     fileName: '',
-    accountId: 'CE_PRINCIPAL',
+    accountId: '',
     month: new Date().toISOString().slice(0, 7),
     bankBalance: '',
   });
+
+  useEffect(() => {
+    const q = query(collection(db, 'bankAccounts'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data: BankAccountOption[] = [];
+      snapshot.forEach((doc) => {
+        const docData = doc.data();
+        data.push({ id: doc.id, label: docData.name ?? doc.id, sortOrder: docData.sortOrder ?? 999 });
+      });
+      data.sort((a, b) => a.sortOrder - b.sortOrder);
+      setBankAccounts(data);
+      if (data.length > 0) {
+        setForm((f) => ({ ...f, accountId: f.accountId || data[0]!.id }));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -28,27 +92,39 @@ export default function BankStatementImport({ seasonId, userId, onSuccess }: Ban
     setError('');
 
     try {
+      if (!form.accountId) {
+        setError('Sélectionne un compte bancaire');
+        return;
+      }
+
+      const bankBalance = parseFloat(form.bankBalance);
+      if (Number.isNaN(bankBalance)) {
+        setError('Le solde bancaire est obligatoire');
+        return;
+      }
+
       const text = await file.text();
-      const lines = text.trim().split('\n');
+      const lines = text.trim().split(/\r?\n/).filter((l) => l.trim() !== '');
 
       if (lines.length < 2) {
         setError('Le fichier CSV doit avoir au moins une ligne de données');
         return;
       }
 
-      // Parser le CSV simple : Date,Description,Montant
-      const entries = lines.slice(1).map((line) => {
-        const [date, description, amount] = line.split(',').map(s => s.trim());
-        return {
-          date,
-          description,
-          amount: parseFloat(amount) || 0,
-        };
-      });
+      // Détecte le séparateur sur l'en-tête (';' plus fréquent dans les exports bancaires FR)
+      const delimiter = lines[0]!.includes(';') ? ';' : ',';
 
-      const bankBalance = parseFloat(form.bankBalance);
-      if (!bankBalance) {
-        setError('Le solde bancaire est obligatoire');
+      const entries = lines.slice(1).map((line) => {
+        const [date, description, amount] = parseCsvLine(line, delimiter);
+        return {
+          date: date ?? '',
+          description: description ?? '',
+          amount: parseAmount(amount ?? '0') || 0,
+        };
+      }).filter((entry) => entry.date && entry.description);
+
+      if (entries.length === 0) {
+        setError('Aucune ligne valide trouvée dans le fichier (format attendu : Date,Description,Montant)');
         return;
       }
 
@@ -67,7 +143,7 @@ export default function BankStatementImport({ seasonId, userId, onSuccess }: Ban
       await addDoc(collection(db, 'bankStatements'), statement);
       setForm({
         fileName: '',
-        accountId: 'CE_PRINCIPAL',
+        accountId: form.accountId,
         month: new Date().toISOString().slice(0, 7),
         bankBalance: '',
       });
@@ -76,6 +152,7 @@ export default function BankStatementImport({ seasonId, userId, onSuccess }: Ban
       setError(err instanceof Error ? err.message : 'Erreur lors de l\'import');
     } finally {
       setLoading(false);
+      e.target.value = '';
     }
   };
 
@@ -90,11 +167,9 @@ export default function BankStatementImport({ seasonId, userId, onSuccess }: Ban
           onChange={(e) => setForm({ ...form, accountId: e.target.value })}
           className="w-full px-3 py-2 border rounded-lg"
         >
-          <option value="CE_PRINCIPAL">Caisse Épargne Principale</option>
-          <option value="CE_LIVRET">Caisse Épargne - Livret</option>
-          <option value="PAYPAL">PayPal</option>
-          <option value="STRIPE">Stripe</option>
-          <option value="CAISSE">Caisse espèces</option>
+          {bankAccounts.map((acc) => (
+            <option key={acc.id} value={acc.id}>{acc.label}</option>
+          ))}
         </select>
       </div>
 
@@ -123,12 +198,12 @@ export default function BankStatementImport({ seasonId, userId, onSuccess }: Ban
 
       <div>
         <label className="block text-sm font-medium mb-2">Fichier CSV</label>
-        <p className="text-xs text-gray-600 mb-2">Format: Date,Description,Montant</p>
+        <p className="text-xs text-gray-600 mb-2">Format: Date,Description,Montant (virgule ou point-virgule, champs entre guillemets acceptés)</p>
         <input
           type="file"
           accept=".csv"
           onChange={handleFileUpload}
-          disabled={loading}
+          disabled={loading || !form.accountId}
           className="w-full px-3 py-2 border rounded-lg cursor-pointer"
         />
       </div>
@@ -137,7 +212,7 @@ export default function BankStatementImport({ seasonId, userId, onSuccess }: Ban
         <p className="font-medium mb-1">Format CSV attendu :</p>
         <pre className="text-xs">Date,Description,Montant
 2026-09-01,Paiement Amazon,-50.00
-2026-09-02,Virement reçu,+1000.00</pre>
+2026-09-02,"Virement, cotisation Dupont",+1000.00</pre>
       </div>
     </div>
   );

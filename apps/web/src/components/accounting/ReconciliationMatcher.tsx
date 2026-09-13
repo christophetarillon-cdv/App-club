@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, writeBatch } from 'firebase/firestore';
 
 interface BankTransaction {
   date: string;
   description: string;
   amount: number;
+  matchedEntryId?: string;
 }
 
 interface Entry {
@@ -15,66 +16,101 @@ interface Entry {
   date: number;
   description: string;
   amount: number;
-  bankAccount: string;
-  reconciled: boolean;
+  type: 'expense' | 'income';
 }
 
 interface ReconciliationMatcherProps {
   bankStatementId: string;
   accountId: string;
-  transactions: BankTransaction[];
-  seasonId: string;
+  entries: BankTransaction[];
 }
+
+const MAX_DAYS_APART = 3;
 
 export default function ReconciliationMatcher({
   bankStatementId,
   accountId,
-  transactions,
-  seasonId,
+  entries,
 }: ReconciliationMatcherProps) {
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [candidates, setCandidates] = useState<Entry[]>([]);
+  const [matchedEntries, setMatchedEntries] = useState<Record<string, Entry>>({});
   const [loading, setLoading] = useState(true);
-  const [matches, setMatches] = useState<Record<number, string>>({});
+  const [busyIdx, setBusyIdx] = useState<number | null>(null);
+  const [error, setError] = useState('');
+
+  const matchedIdsKey = entries.map((e) => e.matchedEntryId ?? '').join(',');
 
   useEffect(() => {
-    const loadEntries = async () => {
+    const load = async () => {
+      setLoading(true);
+      setError('');
       try {
         const q = query(
           collection(db, 'accountingEntries'),
-          where('seasonId', '==', seasonId),
           where('bankAccount', '==', accountId),
-          where('reconciled', '==', false)
+          where('reconciled', '==', false),
         );
         const snapshot = await getDocs(q);
-        const data: Entry[] = [];
-        snapshot.forEach((doc) => {
-          data.push({ id: doc.id, ...doc.data() } as Entry);
+        const list: Entry[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data();
+          if (typeof data.amount === 'number' && data.type) {
+            list.push({ id: d.id, date: data.date, description: data.description, amount: data.amount, type: data.type });
+          }
         });
-        setEntries(data.sort((a, b) => b.date - a.date));
+        setCandidates(list.sort((a, b) => b.date - a.date));
+
+        const matchedIds = entries.map((e) => e.matchedEntryId).filter((id): id is string => !!id);
+        if (matchedIds.length > 0) {
+          const docs = await Promise.all(matchedIds.map((id) => getDoc(doc(db, 'accountingEntries', id))));
+          const map: Record<string, Entry> = {};
+          docs.forEach((snap) => {
+            if (snap.exists()) {
+              const data = snap.data();
+              map[snap.id] = { id: snap.id, date: data.date, description: data.description, amount: data.amount, type: data.type };
+            }
+          });
+          setMatchedEntries(map);
+        } else {
+          setMatchedEntries({});
+        }
       } catch (err) {
-        console.error('Erreur:', err);
+        setError(err instanceof Error ? err.message : 'Erreur de chargement');
       } finally {
         setLoading(false);
       }
     };
 
-    loadEntries();
-  }, [seasonId, accountId]);
+    load();
+    // matchedIdsKey capture les changements de matching (autre onglet, autre session)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId, bankStatementId, matchedIdsKey]);
 
-  const handleMatch = async (txIdx: number, entryId: string) => {
-    const entry = entries.find((e) => e.id === entryId);
-    if (!entry) return;
-
+  const updateMatch = async (idx: number, matchedEntryId: string | null) => {
+    setBusyIdx(idx);
+    setError('');
     try {
-      const entryRef = doc(db, 'accountingEntries', entryId);
-      await updateDoc(entryRef, {
-        reconciled: true,
+      const previousId = entries[idx]?.matchedEntryId;
+      const newEntries: BankTransaction[] = entries.map((e, i): BankTransaction => {
+        if (i !== idx) return e;
+        const { matchedEntryId: _drop, ...rest } = e;
+        return matchedEntryId ? { ...rest, matchedEntryId } : rest;
       });
+      const matchedCount = newEntries.filter((e) => e.matchedEntryId).length;
+      const status = matchedCount === 0 ? 'imported' : matchedCount === newEntries.length ? 'reconciled' : 'reconciling';
 
-      setMatches({ ...matches, [txIdx]: entryId });
-      setEntries(entries.filter((e) => e.id !== entryId));
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'bankStatements', bankStatementId), { entries: newEntries, status });
+      if (matchedEntryId) {
+        batch.update(doc(db, 'accountingEntries', matchedEntryId), { reconciled: true });
+      } else if (previousId) {
+        batch.update(doc(db, 'accountingEntries', previousId), { reconciled: false });
+      }
+      await batch.commit();
     } catch (err) {
-      console.error('Erreur lors du matching:', err);
+      setError(err instanceof Error ? err.message : 'Erreur lors du matching');
+    } finally {
+      setBusyIdx(null);
     }
   };
 
@@ -82,15 +118,15 @@ export default function ReconciliationMatcher({
 
   return (
     <div className="space-y-6">
-      {transactions.map((tx, txIdx) => {
-        const matched = matches[txIdx];
-        const candidates = entries.filter((e) => {
-          const entryDate = new Date(e.date).toISOString().split('T')[0];
-          const txDate = tx.date;
-          const sameDayOrNextDay = new Date(entryDate) >= new Date(txDate) &&
-                                   new Date(entryDate) <= new Date(new Date(txDate).getTime() + 86400000);
+      {error && <div className="bg-red-50 text-red-700 p-3 rounded text-sm">{error}</div>}
+
+      {entries.map((tx, txIdx) => {
+        const matched = tx.matchedEntryId ? matchedEntries[tx.matchedEntryId] : undefined;
+        const candidatesForTx = candidates.filter((e) => {
+          const diffDays = Math.abs(e.date - new Date(tx.date).getTime()) / 86400000;
+          const sameSign = (tx.amount >= 0 && e.type === 'income') || (tx.amount < 0 && e.type === 'expense');
           const sameAmount = Math.abs(e.amount - Math.abs(tx.amount)) < 0.01;
-          return sameDayOrNextDay && sameAmount;
+          return diffDays <= MAX_DAYS_APART && sameSign && sameAmount;
         });
 
         return (
@@ -120,16 +156,23 @@ export default function ReconciliationMatcher({
             </div>
 
             {matched ? (
-              <div className="p-3 bg-green-100 border border-green-300 rounded text-sm text-green-700">
-                ✓ Matched avec écriture comptable
+              <div className="flex items-center justify-between p-3 bg-green-100 border border-green-300 rounded text-sm text-green-700">
+                <span>✓ Matched avec « {matched.description} » ({new Date(matched.date).toLocaleDateString('fr-FR')})</span>
+                <button
+                  onClick={() => updateMatch(txIdx, null)}
+                  disabled={busyIdx === txIdx}
+                  className="px-3 py-1 bg-white border border-green-400 text-green-700 rounded text-sm font-medium hover:bg-green-50 disabled:opacity-50"
+                >
+                  Annuler
+                </button>
               </div>
             ) : (
               <div className="space-y-2">
-                {candidates.length > 0 ? (
+                {candidatesForTx.length > 0 ? (
                   <div>
-                    <p className="text-sm font-medium mb-2">Écritures correspondantes ({candidates.length}):</p>
+                    <p className="text-sm font-medium mb-2">Écritures correspondantes ({candidatesForTx.length}):</p>
                     <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {candidates.map((entry) => (
+                      {candidatesForTx.map((entry) => (
                         <div
                           key={entry.id}
                           className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200 hover:border-blue-400 transition"
@@ -141,8 +184,9 @@ export default function ReconciliationMatcher({
                             </p>
                           </div>
                           <button
-                            onClick={() => handleMatch(txIdx, entry.id)}
-                            className="px-3 py-1 bg-blue-500 text-white rounded text-sm font-medium hover:bg-blue-600"
+                            onClick={() => updateMatch(txIdx, entry.id)}
+                            disabled={busyIdx === txIdx}
+                            className="px-3 py-1 bg-blue-500 text-white rounded text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
                           >
                             Match
                           </button>
@@ -164,7 +208,7 @@ export default function ReconciliationMatcher({
       {/* Résumé */}
       <div className="bg-blue-50 border border-blue-300 rounded-lg p-4">
         <p className="text-sm text-blue-900">
-          <strong>{Object.keys(matches).length}/{transactions.length}</strong> transactions matchées
+          <strong>{entries.filter((e) => e.matchedEntryId).length}/{entries.length}</strong> transactions matchées
         </p>
       </div>
     </div>

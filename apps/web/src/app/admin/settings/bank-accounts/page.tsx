@@ -14,9 +14,10 @@ interface BankAccount {
   holder: string;
   label: string;
   visibleToMembers: boolean;
+  openingBalance: number;
 }
 
-const emptyForm = { name: '', bank: '', accountNumber: '', holder: '', label: '', visibleToMembers: true };
+const emptyForm = { name: '', bank: '', accountNumber: '', holder: '', label: '', visibleToMembers: true, openingBalance: '0' };
 
 
 export default function BankAccountsPage() {
@@ -36,6 +37,7 @@ export default function BankAccountsPage() {
       holder: d.data().holder ?? '',
       label: d.data().label ?? '',
       visibleToMembers: d.data().visibleToMembers !== false,
+      openingBalance: d.data().openingBalance ?? 0,
     })));
     setLoading(false);
   };
@@ -52,6 +54,7 @@ export default function BankAccountsPage() {
       holder: form.holder,
       label: form.label,
       visibleToMembers: form.visibleToMembers,
+      openingBalance: parseFloat(form.openingBalance) || 0,
       updatedAt: serverTimestamp(),
     };
     if (editId) {
@@ -68,7 +71,7 @@ export default function BankAccountsPage() {
   const startEdit = (a: BankAccount) => {
     setForm({
       name: a.name, bank: a.bank, accountNumber: a.accountNumber, holder: a.holder, label: a.label,
-      visibleToMembers: a.visibleToMembers,
+      visibleToMembers: a.visibleToMembers, openingBalance: String(a.openingBalance),
     });
     setEditId(a.id);
   };
@@ -127,6 +130,16 @@ export default function BankAccountsPage() {
             className={inputCls} />
         </div>
 
+        <div>
+          <label className={labelCls}>Solde initial (€)</label>
+          <input type="number" step="0.01" value={form.openingBalance}
+            onChange={e => setForm(p => ({ ...p, openingBalance: e.target.value }))}
+            className={inputCls} />
+          <p className="text-xs text-gray-400 mt-1">
+            À saisir une seule fois au démarrage de la compta pour ce compte — sert de point de départ au rapprochement bancaire.
+          </p>
+        </div>
+
         <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
           <input type="checkbox" checked={form.visibleToMembers}
             onChange={e => setForm(p => ({ ...p, visibleToMembers: e.target.checked }))} />
@@ -165,6 +178,7 @@ export default function BankAccountsPage() {
                   <p className="text-xs text-gray-500">{a.holder} — {a.bank}</p>
                   <p className="text-xs font-mono text-gray-600">{a.accountNumber}</p>
                   {a.label && <p className="text-xs text-gray-400 italic">{a.label}</p>}
+                  <p className="text-xs text-gray-400">Solde initial : {a.openingBalance.toFixed(2)} €</p>
                 </div>
                 <div className="flex gap-3 flex-shrink-0">
                   <button onClick={() => startEdit(a)} className="text-sm text-blue-600 hover:underline">Modifier</button>

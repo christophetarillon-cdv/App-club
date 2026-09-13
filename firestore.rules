@@ -611,7 +611,11 @@ service cloud.firestore {
       allow read: if hasAccountingAccess();
       allow create: if hasPagePermission('/admin/accounting/journal')
         && request.resource.data.seasonId is string && request.resource.data.date is number;
-      allow update, delete: if hasPagePermission('/admin/accounting/journal');
+      // Le pointage (reconciled, valueDate, hasReceipt, statementNumber) se
+      // fait aussi depuis la page Rapprochement, pas seulement le Journal.
+      allow update: if hasPagePermission('/admin/accounting/journal') ||
+        hasPagePermission('/admin/accounting/reconciliation');
+      allow delete: if hasPagePermission('/admin/accounting/journal');
     }
 
     // Extraits bancaires importés

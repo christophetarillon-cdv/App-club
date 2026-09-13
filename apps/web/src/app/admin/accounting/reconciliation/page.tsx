@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
-import { collection, getDocs, orderBy, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import BankStatementImport from '@/components/accounting/BankStatementImport';
 import ReconciliationMatcher from '@/components/accounting/ReconciliationMatcher';
+import ManualReconciliation from '@/components/accounting/ManualReconciliation';
 
 interface BankStatement {
   id: string;
@@ -18,6 +19,7 @@ interface BankStatement {
     date: string;
     description: string;
     amount: number;
+    matchedEntryId?: string;
   }>;
   status: 'imported' | 'reconciling' | 'reconciled';
   createdAt: number;
@@ -25,7 +27,9 @@ interface BankStatement {
 
 export default function ReconciliationPage() {
   const { user } = useAuth();
+  const [mode, setMode] = useState<'auto' | 'manual'>('manual');
   const [bankStatements, setBankStatements] = useState<BankStatement[]>([]);
+  const [bankAccountNames, setBankAccountNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [seasons, setSeasons] = useState<string[]>([]);
   const [seasonId, setSeasonId] = useState('');
@@ -44,8 +48,17 @@ export default function ReconciliationPage() {
     });
   }, []);
 
+  // Charge les noms des comptes bancaires pour l'affichage
   useEffect(() => {
-    if (!user || !seasonId) return;
+    getDocs(collection(db, 'bankAccounts')).then((snapshot) => {
+      const names: Record<string, string> = {};
+      snapshot.forEach((d) => { names[d.id] = d.data().name ?? d.id; });
+      setBankAccountNames(names);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!user || !seasonId || mode !== 'auto') return;
 
     const q = query(
       collection(db, 'bankStatements'),
@@ -62,142 +75,166 @@ export default function ReconciliationPage() {
     });
 
     return () => unsubscribe();
-  }, [user, seasonId]);
+  }, [user, seasonId, mode]);
 
   if (!user) return <div>Authentification requise</div>;
 
   return (
     <div className="space-y-6">
       {/* En-tête */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Rapprochement bancaire</h1>
-          <p className="text-gray-600 mt-1">Importez et réconciliez vos relevés bancaires</p>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold">Rapprochement bancaire</h1>
+        <p className="text-gray-600 mt-1">Pointez vos écritures avec vos relevés bancaires</p>
+      </div>
+
+      {/* Sélecteur de mode */}
+      <div className="flex gap-4 border-b">
         <button
-          onClick={() => setShowImport(!showImport)}
-          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-medium"
+          onClick={() => setMode('manual')}
+          className={`px-4 py-2 font-medium border-b-2 transition ${
+            mode === 'manual' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-600 hover:text-gray-900'
+          }`}
         >
-          {showImport ? 'Fermer' : '+ Importer un relevé'}
+          Manuel
+        </button>
+        <button
+          onClick={() => setMode('auto')}
+          className={`px-4 py-2 font-medium border-b-2 transition ${
+            mode === 'auto' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Automatique (import CSV)
         </button>
       </div>
 
-      {/* Sélection saison */}
-      <div>
-        <label className="block text-sm font-medium mb-2">Saison</label>
-        <select
-          value={seasonId}
-          onChange={(e) => setSeasonId(e.target.value)}
-          className="px-3 py-2 border rounded-lg"
-        >
-          {seasons.map((label) => (
-            <option key={label} value={label}>Saison {label}</option>
-          ))}
-        </select>
-      </div>
+      {mode === 'manual' && <ManualReconciliation />}
 
-      {/* Formulaire d'import */}
-      {showImport && (
-        <div className="bg-white p-6 rounded-lg border">
-          <h2 className="text-lg font-semibold mb-4">Importer un relevé bancaire</h2>
-          <BankStatementImport
-            seasonId={seasonId}
-            userId={user.uid}
-            onSuccess={() => setShowImport(false)}
-          />
+      {mode === 'auto' && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <label className="block text-sm font-medium mb-2">Saison</label>
+              <select
+                value={seasonId}
+                onChange={(e) => setSeasonId(e.target.value)}
+                className="px-3 py-2 border rounded-lg"
+              >
+                {seasons.map((label) => (
+                  <option key={label} value={label}>Saison {label}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={() => setShowImport(!showImport)}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-medium"
+            >
+              {showImport ? 'Fermer' : '+ Importer un relevé'}
+            </button>
+          </div>
+
+          {/* Formulaire d'import */}
+          {showImport && (
+            <div className="bg-white p-6 rounded-lg border">
+              <h2 className="text-lg font-semibold mb-4">Importer un relevé bancaire</h2>
+              <BankStatementImport
+                seasonId={seasonId}
+                userId={user.uid}
+                onSuccess={() => setShowImport(false)}
+              />
+            </div>
+          )}
+
+          {/* Liste des relevés */}
+          <div className="bg-white rounded-lg border overflow-hidden">
+            <div className="px-6 py-4 border-b bg-gray-50">
+              <h2 className="text-lg font-semibold">Relevés importés</h2>
+            </div>
+
+            {loading ? (
+              <div className="p-6 text-center text-gray-500">Chargement...</div>
+            ) : bankStatements.length === 0 ? (
+              <div className="p-6 text-center text-gray-500">Aucun relevé pour cette saison</div>
+            ) : (
+              <div className="divide-y">
+                {bankStatements.map((stmt) => (
+                  <div key={stmt.id} className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <p className="font-semibold text-lg">{stmt.fileName}</p>
+                        <p className="text-sm text-gray-600">
+                          Compte: {bankAccountNames[stmt.accountId] ?? stmt.accountId} | Mois: {stmt.month}
+                        </p>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {stmt.entries.length} transactions
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-blue-600">
+                          {stmt.bankBalance.toFixed(2)} €
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Solde bancaire</p>
+                        <span className={`inline-block mt-2 px-2 py-1 rounded text-xs font-medium ${
+                          stmt.status === 'reconciled'
+                            ? 'bg-green-100 text-green-700'
+                            : stmt.status === 'reconciling'
+                            ? 'bg-yellow-100 text-yellow-700'
+                            : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {stmt.status === 'reconciled' ? 'Réconcilié' :
+                           stmt.status === 'reconciling' ? 'En cours' : 'Importé'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-50 rounded p-4 max-h-96 overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr>
+                            <th className="text-left pb-2 font-semibold">Date</th>
+                            <th className="text-left pb-2 font-semibold">Description</th>
+                            <th className="text-right pb-2 font-semibold">Montant</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stmt.entries.map((entry, idx) => (
+                            <tr key={idx} className="border-t">
+                              <td className="py-2">{entry.date}</td>
+                              <td className="py-2">{entry.description.substring(0, 40)}</td>
+                              <td className={`py-2 text-right font-mono ${
+                                entry.amount >= 0 ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {entry.amount >= 0 ? '+' : ''}{entry.amount.toFixed(2)} €
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <button
+                      onClick={() => setMatchingStatementId(matchingStatementId === stmt.id ? null : stmt.id)}
+                      className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-medium"
+                    >
+                      {matchingStatementId === stmt.id ? 'Fermer le matching' : 'Réconcilier ce relevé'}
+                    </button>
+
+                    {matchingStatementId === stmt.id && (
+                      <div className="mt-6 pt-6 border-t">
+                        <h3 className="text-lg font-semibold mb-4">Matching des transactions</h3>
+                        <ReconciliationMatcher
+                          bankStatementId={stmt.id}
+                          accountId={stmt.accountId}
+                          entries={stmt.entries}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
-
-      {/* Liste des relevés */}
-      <div className="bg-white rounded-lg border overflow-hidden">
-        <div className="px-6 py-4 border-b bg-gray-50">
-          <h2 className="text-lg font-semibold">Relevés importés</h2>
-        </div>
-
-        {loading ? (
-          <div className="p-6 text-center text-gray-500">Chargement...</div>
-        ) : bankStatements.length === 0 ? (
-          <div className="p-6 text-center text-gray-500">Aucun relevé pour cette saison</div>
-        ) : (
-          <div className="divide-y">
-            {bankStatements.map((stmt) => (
-              <div key={stmt.id} className="p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <p className="font-semibold text-lg">{stmt.fileName}</p>
-                    <p className="text-sm text-gray-600">
-                      Compte: {stmt.accountId} | Mois: {stmt.month}
-                    </p>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {stmt.entries.length} transactions
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-bold text-blue-600">
-                      {stmt.bankBalance.toFixed(2)} €
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">Solde bancaire</p>
-                    <span className={`inline-block mt-2 px-2 py-1 rounded text-xs font-medium ${
-                      stmt.status === 'reconciled'
-                        ? 'bg-green-100 text-green-700'
-                        : stmt.status === 'reconciling'
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-gray-100 text-gray-700'
-                    }`}>
-                      {stmt.status === 'reconciled' ? 'Réconcilié' :
-                       stmt.status === 'reconciling' ? 'En cours' : 'Importé'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 rounded p-4 max-h-96 overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr>
-                        <th className="text-left pb-2 font-semibold">Date</th>
-                        <th className="text-left pb-2 font-semibold">Description</th>
-                        <th className="text-right pb-2 font-semibold">Montant</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {stmt.entries.map((entry, idx) => (
-                        <tr key={idx} className="border-t">
-                          <td className="py-2">{entry.date}</td>
-                          <td className="py-2">{entry.description.substring(0, 40)}</td>
-                          <td className={`py-2 text-right font-mono ${
-                            entry.amount >= 0 ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {entry.amount >= 0 ? '+' : ''}{entry.amount.toFixed(2)} €
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <button
-                  onClick={() => setMatchingStatementId(matchingStatementId === stmt.id ? null : stmt.id)}
-                  className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-medium"
-                >
-                  {matchingStatementId === stmt.id ? 'Fermer le matching' : 'Réconcilier ce relevé'}
-                </button>
-
-                {matchingStatementId === stmt.id && (
-                  <div className="mt-6 pt-6 border-t">
-                    <h3 className="text-lg font-semibold mb-4">Matching des transactions</h3>
-                    <ReconciliationMatcher
-                      bankStatementId={stmt.id}
-                      accountId={stmt.accountId}
-                      transactions={stmt.entries}
-                      seasonId={seasonId}
-                    />
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
