@@ -61,14 +61,12 @@ export default function SettingsPage() {
       const data: BankAccount[] = [];
       snapshot.forEach((doc) => {
         const docData = doc.data();
-        if (docData.isActive !== false) {
-          data.push({
-            id: doc.id,
-            name: docData.name ?? '',
-            bank: docData.bank ?? '',
-            sortOrder: docData.sortOrder ?? 999,
-          });
-        }
+        data.push({
+          id: doc.id,
+          name: docData.name ?? '',
+          bank: docData.bank ?? '',
+          sortOrder: docData.sortOrder ?? 999,
+        });
       });
       data.sort((a, b) => a.sortOrder - b.sortOrder);
       setBankAccounts(data);

@@ -44,9 +44,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
       const labels: Record<string, string> = {};
       snapshot.forEach((doc) => {
         const data = doc.data();
-        if (data.isActive !== false) {
-          labels[doc.id] = data.name ?? doc.id;
-        }
+        labels[doc.id] = data.name ?? doc.id;
       });
       setBankLabels(labels);
     });
