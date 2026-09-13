@@ -46,9 +46,11 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
     analyticsCategory: 'Soirées & Événements',
   });
 
-  // Charger les comptes bancaires depuis Firestore
+  // Charger les comptes bancaires comptables depuis Firestore
+  // (collection dédiée `accountingBankAccounts`, distincte du RIB du club
+  // stocké dans `bankAccounts` — voir firestore.rules)
   useEffect(() => {
-    const q = query(collection(db, 'bankAccounts'));
+    const q = query(collection(db, 'accountingBankAccounts'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: any[] = [];
       snapshot.forEach((doc) => {

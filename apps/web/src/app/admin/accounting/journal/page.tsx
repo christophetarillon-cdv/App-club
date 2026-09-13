@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
-import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import EntryForm from '@/components/accounting/EntryForm';
 import EntryTable from '@/components/accounting/EntryTable';
 
@@ -28,13 +28,26 @@ export default function JournalPage() {
   const { user } = useAuth();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [seasonId, setSeasonId] = useState('2024-2025');
+  const [seasons, setSeasons] = useState<string[]>([]);
+  const [seasonId, setSeasonId] = useState('');
   const [filter, setFilter] = useState<'all' | 'draft' | 'posted'>('all');
   const [showForm, setShowForm] = useState(false);
 
+  // Charge la liste des saisons (le libellé sert de seasonId, ex: "2024-2025")
+  useEffect(() => {
+    getDocs(query(collection(db, 'seasons'), orderBy('label', 'desc'))).then((snapshot) => {
+      const labels = snapshot.docs.map((d) => d.data().label as string);
+      setSeasons(labels);
+      if (labels.length > 0) {
+        const active = snapshot.docs.find((d) => d.data().isActive)?.data().label;
+        setSeasonId(active || labels[0]);
+      }
+    });
+  }, []);
+
   // Charge les écritures de la saison
   useEffect(() => {
-    if (!user) {
+    if (!user || !seasonId) {
       setLoading(false);
       return;
     }
@@ -79,8 +92,9 @@ export default function JournalPage() {
             onChange={(e) => setSeasonId(e.target.value)}
             className="px-3 py-2 border rounded-lg"
           >
-            <option value="2024-2025">Saison 2024-2025</option>
-            <option value="2025-2026">Saison 2025-2026</option>
+            {seasons.map((label) => (
+              <option key={label} value={label}>Saison {label}</option>
+            ))}
           </select>
 
           <div className="flex gap-2">

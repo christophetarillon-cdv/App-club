@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, where, onSnapshot } from 'firebase/firestore';
 import BankStatementImport from '@/components/accounting/BankStatementImport';
 import ReconciliationMatcher from '@/components/accounting/ReconciliationMatcher';
 
@@ -27,12 +27,25 @@ export default function ReconciliationPage() {
   const { user } = useAuth();
   const [bankStatements, setBankStatements] = useState<BankStatement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [seasonId, setSeasonId] = useState('2024-2025');
+  const [seasons, setSeasons] = useState<string[]>([]);
+  const [seasonId, setSeasonId] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [matchingStatementId, setMatchingStatementId] = useState<string | null>(null);
 
+  // Charge la liste des saisons (le libellé sert de seasonId, ex: "2024-2025")
   useEffect(() => {
-    if (!user) return;
+    getDocs(query(collection(db, 'seasons'), orderBy('label', 'desc'))).then((snapshot) => {
+      const labels = snapshot.docs.map((d) => d.data().label as string);
+      setSeasons(labels);
+      if (labels.length > 0) {
+        const active = snapshot.docs.find((d) => d.data().isActive)?.data().label;
+        setSeasonId(active || labels[0]);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!user || !seasonId) return;
 
     const q = query(
       collection(db, 'bankStatements'),
@@ -77,8 +90,9 @@ export default function ReconciliationPage() {
           onChange={(e) => setSeasonId(e.target.value)}
           className="px-3 py-2 border rounded-lg"
         >
-          <option value="2024-2025">Saison 2024-2025</option>
-          <option value="2025-2026">Saison 2025-2026</option>
+          {seasons.map((label) => (
+            <option key={label} value={label}>Saison {label}</option>
+          ))}
         </select>
       </div>
 

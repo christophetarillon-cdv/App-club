@@ -71,14 +71,16 @@ export const initializeAccounting = onCall(
       }
 
       // 2. Crée les comptes bancaires par défaut s'ils n'existent pas
-      const bankSnap = await getDb().collection('bankAccounts').get();
+      // Collection dédiée à la compta : distincte de `bankAccounts` qui stocke
+      // le RIB du club affiché aux adhérents (voir firestore.rules ~ligne 425).
+      const bankSnap = await getDb().collection('accountingBankAccounts').get();
 
       if (bankSnap.empty) {
         const batch = getDb().batch();
 
         DEFAULT_BANK_ACCOUNTS.forEach((account) => {
           const id = account.code.toLowerCase();
-          batch.set(getDb().collection('bankAccounts').doc(id), {
+          batch.set(getDb().collection('accountingBankAccounts').doc(id), {
             ...account,
             id,
             createdAt: Date.now(),

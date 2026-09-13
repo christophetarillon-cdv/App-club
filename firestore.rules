@@ -649,11 +649,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Note : la comptabilité réutilise la collection bankAccounts existante
-    // (RIB du club, voir plus haut ~ligne 425) — lecture déjà ouverte à tout
-    // utilisateur connecté (nécessaire pour l'affichage du RIB en cotisation),
-    // écriture déjà réservée à hasPagePermission('/admin/settings/bank-accounts').
-    // Pas de redéclaration ici pour éviter un second match qui rouvrirait
-    // l'accès en écriture via hasAccountingAccess() sans le vouloir.
+    // Comptes bancaires/caisse comptables (plan de trésorerie interne à la
+    // compta). Collection distincte de `bankAccounts` (RIB du club, voir
+    // plus haut ~ligne 425) — les deux ont des schémas incompatibles.
+    match /accountingBankAccounts/{id} {
+      allow read: if hasAccountingAccess();
+      allow write: if hasPagePermission('/admin/accounting/journal');
+    }
   }
 }

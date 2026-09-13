@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, updateDoc } from 'firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface Entry {
@@ -25,14 +25,6 @@ interface EntryTableProps {
   seasonId: string;
 }
 
-const BANK_LABELS: Record<string, string> = {
-  CE_PRINCIPAL: 'CE Principale',
-  CE_LIVRET: 'CE Livret',
-  PAYPAL: 'PayPal',
-  STRIPE: 'Stripe',
-  CAISSE: 'Caisse',
-};
-
 export default function EntryTable({ entries, loading, seasonId }: EntryTableProps) {
   const { user } = useAuth();
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -40,16 +32,37 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
   const [editingData, setEditingData] = useState<Partial<Entry>>({});
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [bankLabels, setBankLabels] = useState<Record<string, string>>({});
+
+  // Charge les libellés des comptes comptables depuis Firestore, pour rester
+  // synchronisé avec ce qui est géré dans Paramètres comptabilité.
+  useEffect(() => {
+    const q = query(collection(db, 'accountingBankAccounts'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const labels: Record<string, string> = {};
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.isActive !== false) {
+          labels[data.code] = data.label;
+        }
+      });
+      setBankLabels(labels);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleEdit = (entry: Entry) => {
     setEditingId(entry.id);
     setEditingData({ ...entry });
+    setError('');
   };
 
   const handleSave = async () => {
     if (!editingId) return;
 
     setSaving(true);
+    setError('');
     try {
       const entryRef = doc(db, 'accountingEntries', editingId);
       await updateDoc(entryRef, {
@@ -62,7 +75,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
       setEditingId(null);
       setEditingData({});
     } catch (err) {
-      console.error('Erreur lors de la sauvegarde:', err);
+      setError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde');
     } finally {
       setSaving(false);
     }
@@ -72,13 +85,14 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
     if (!user) return;
 
     setTogglingId(entry.id);
+    setError('');
     try {
       const entryRef = doc(db, 'accountingEntries', entry.id);
       await updateDoc(entryRef, {
         reconciled: !entry.reconciled,
       });
     } catch (err) {
-      console.error('Erreur lors du pointage:', err);
+      setError(err instanceof Error ? err.message : 'Erreur lors du pointage');
     } finally {
       setTogglingId(null);
     }
@@ -102,6 +116,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
 
   return (
     <div className="overflow-x-auto">
+      {error && <div className="m-4 bg-red-50 text-red-700 p-3 rounded">{error}</div>}
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b">
           <tr>
@@ -117,9 +132,8 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
         </thead>
         <tbody>
           {entries.map((entry) => (
-            <>
+            <Fragment key={entry.id}>
               <tr
-                key={entry.id}
                 className={`border-b transition ${
                   entry.reconciled
                     ? 'bg-green-50 hover:bg-green-100'
@@ -166,7 +180,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                   {!entry.type && <span className="text-xs text-gray-500">Ancienne</span>}
                 </td>
                 <td className="px-6 py-4">
-                  {BANK_LABELS[entry.bankAccount] || entry.bankAccount}
+                  {bankLabels[entry.bankAccount] || entry.bankAccount}
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-600">
                   {entry.analyticsCategory || '-'}
@@ -184,7 +198,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
 
               {expandedId === entry.id && (
                 <tr className="bg-blue-50 border-b">
-                  <td colSpan={7} className="px-6 py-4">
+                  <td colSpan={8} className="px-6 py-4">
                     {editingId === entry.id ? (
                       <div className="space-y-4">
                         <div>
@@ -223,7 +237,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                               onChange={(e) => setEditingData({ ...editingData, bankAccount: e.target.value })}
                               className="w-full px-3 py-2 border rounded text-sm"
                             >
-                              {Object.entries(BANK_LABELS).map(([code, label]) => (
+                              {Object.entries(bankLabels).map(([code, label]) => (
                                 <option key={code} value={code}>{label}</option>
                               ))}
                             </select>
@@ -263,7 +277,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <p className="text-xs font-semibold text-gray-600">Compte bancaire</p>
-                            <p className="text-sm">{BANK_LABELS[entry.bankAccount] || entry.bankAccount}</p>
+                            <p className="text-sm">{bankLabels[entry.bankAccount] || entry.bankAccount}</p>
                           </div>
                           <div>
                             <p className="text-xs font-semibold text-gray-600">Montant</p>
@@ -293,7 +307,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                   </td>
                 </tr>
               )}
-            </>
+            </Fragment>
           ))}
         </tbody>
       </table>

@@ -52,9 +52,10 @@ export default function SettingsPage() {
     return () => unsubscribe();
   }, []);
 
-  // Charger les comptes bancaires
+  // Charger les comptes bancaires comptables (collection dédiée, distincte
+  // du RIB du club stocké dans `bankAccounts` — voir firestore.rules)
   useEffect(() => {
-    const q = query(collection(db, 'bankAccounts'));
+    const q = query(collection(db, 'accountingBankAccounts'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: BankAccount[] = [];
       snapshot.forEach((doc) => {
@@ -108,7 +109,7 @@ export default function SettingsPage() {
 
     try {
       if (editingId) {
-        const docRef = doc(db, 'bankAccounts', editingId);
+        const docRef = doc(db, 'accountingBankAccounts', editingId);
         await updateDoc(docRef, {
           label: formData.label,
           sortOrder: formData.sortOrder,
@@ -120,7 +121,7 @@ export default function SettingsPage() {
           setLoading(false);
           return;
         }
-        await addDoc(collection(db, 'bankAccounts'), {
+        await addDoc(collection(db, 'accountingBankAccounts'), {
           code: formData.code,
           label: formData.label,
           sortOrder: formData.sortOrder,
@@ -171,7 +172,7 @@ export default function SettingsPage() {
       }
 
       if (!confirm('Êtes-vous sûr ?')) return;
-      const docRef = doc(db, 'bankAccounts', id);
+      const docRef = doc(db, 'accountingBankAccounts', id);
       await updateDoc(docRef, { isActive: false });
       setError('');
     } catch (err) {
