@@ -286,9 +286,9 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                   {bankLabels[entry.bankAccount] || entry.bankAccount}
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-600">
-                  {entry.splits && entry.splits.length > 0
-                    ? `${entry.splits.length} ligne(s)`
-                    : entry.analyticsCategory || '-'}
+                  {entry.splits && entry.splits.length > 1
+                    ? `${entry.splits.length} lignes`
+                    : entry.splits?.[0]?.analyticsCategory || entry.analyticsCategory || '-'}
                 </td>
                 <td className="px-6 py-4 text-center">
                   <span className={`px-2 py-1 rounded text-xs font-medium ${

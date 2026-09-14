@@ -17,11 +17,11 @@ interface BankAccountOption {
 }
 
 const DEFAULT_ANALYTICS_CATEGORIES = [
-  { name: 'Soirées & Événements', description: 'Dépenses liées aux soirées et événements', sortOrder: 1 },
-  { name: 'Formation & Cours', description: 'Revenus et dépenses de formation', sortOrder: 2 },
-  { name: 'Adhésions & Cotisations', description: 'Revenus des adhésions', sortOrder: 3 },
-  { name: 'Subventions', description: 'Revenus de subventions publiques', sortOrder: 4 },
-  { name: 'Fonctionnement', description: 'Charges de fonctionnement courant', sortOrder: 5 },
+  { name: 'Soirées & Événements', description: 'Dépenses liées aux soirées et événements', sortOrder: 1, requiresDetail: false },
+  { name: 'Formation & Cours', description: 'Revenus et dépenses de formation', sortOrder: 2, requiresDetail: false },
+  { name: 'Adhésions & Cotisations', description: 'Revenus des adhésions', sortOrder: 3, requiresDetail: false },
+  { name: 'Subventions', description: 'Revenus de subventions publiques', sortOrder: 4, requiresDetail: false },
+  { name: 'Fonctionnement', description: 'Charges de fonctionnement courant', sortOrder: 5, requiresDetail: false },
 ];
 
 type TransactionType = 'expense' | 'income' | 'transfer';
@@ -32,6 +32,8 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
   const [type, setType] = useState<TransactionType>('expense');
   const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([]);
   const [categories, setCategories] = useState(DEFAULT_ANALYTICS_CATEGORIES);
+  const [chartOptions, setChartOptions] = useState<string[]>([]);
+  const [detailOptions, setDetailOptions] = useState<Record<string, string[]>>({});
 
   const [form, setForm] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -42,6 +44,8 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
     paymentType: 'virement',
     chequeNumber: '',
     analyticsCategory: 'Soirées & Événements',
+    chartAccount: '',
+    eventDetail: '',
     hasReceipt: false,
   });
 
@@ -76,13 +80,51 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
       snapshot.forEach((doc) => {
         const docData = doc.data();
         if (docData.isActive !== false) {
-          data.push({ name: docData.name, description: docData.description, sortOrder: docData.sortOrder });
+          data.push({
+            name: docData.name, description: docData.description, sortOrder: docData.sortOrder,
+            requiresDetail: !!docData.requiresDetail,
+          });
         }
       });
       if (data.length > 0) {
         setCategories(data.sort((a, b) => a.sortOrder - b.sortOrder));
         setForm((f) => ({ ...f, analyticsCategory: data[0].name }));
       }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Charger les comptes traditionnels (niveau 1, obligatoire)
+  useEffect(() => {
+    const q = query(collection(db, 'chartOfAccounts'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const labels: { label: string; sortOrder: number }[] = [];
+      snapshot.forEach((doc) => {
+        const docData = doc.data();
+        if (docData.isActive !== false) labels.push({ label: docData.label, sortOrder: docData.sortOrder ?? 999 });
+      });
+      labels.sort((a, b) => a.sortOrder - b.sortOrder);
+      const sorted = labels.map((l) => l.label);
+      setChartOptions(sorted);
+      if (sorted.length > 0) {
+        setForm((f) => ({ ...f, chartAccount: f.chartAccount || sorted[0]! }));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Charge les détails (niveau 3) de chaque catégorie qui l'exige
+  useEffect(() => {
+    const q = query(collection(db, 'analyticsCategoryDetails'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const byCategory: Record<string, string[]> = {};
+      snapshot.forEach((doc) => {
+        const docData = doc.data();
+        if (docData.isActive !== false && docData.categoryName) {
+          (byCategory[docData.categoryName] ??= []).push(docData.label);
+        }
+      });
+      setDetailOptions(byCategory);
     });
     return () => unsubscribe();
   }, []);
@@ -102,6 +144,18 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
       if (form.paymentType === 'cheque' && !form.chequeNumber.trim()) {
         setError('Le N° de chèque est obligatoire');
         return;
+      }
+
+      if (type !== 'transfer') {
+        if (!form.chartAccount) {
+          setError('Le compte traditionnel est obligatoire');
+          return;
+        }
+        const selectedCategory = categories.find((c) => c.name === form.analyticsCategory);
+        if (selectedCategory?.requiresDetail && !form.eventDetail) {
+          setError(`La catégorie "${form.analyticsCategory}" nécessite un détail`);
+          return;
+        }
       }
 
       if (type === 'transfer') {
@@ -149,6 +203,12 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
           paymentType: form.paymentType,
           ...(form.paymentType === 'cheque' && { chequeNumber: form.chequeNumber }),
           analyticsCategory: form.analyticsCategory,
+          splits: [{
+            chartAccount: form.chartAccount,
+            analyticsCategory: form.analyticsCategory,
+            ...(form.eventDetail && { eventDetail: form.eventDetail }),
+            amount,
+          }],
           reconciled: false,
           hasReceipt: form.hasReceipt,
           status: 'posted',
@@ -165,6 +225,7 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
         description: '',
         amount: '',
         chequeNumber: '',
+        eventDetail: '',
         hasReceipt: false,
       }));
       onSuccess();
@@ -353,26 +414,64 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
         Facture correspondante disponible
       </label>
 
-      {/* Catégorie analytique */}
-      <div>
-        <label className="block text-sm font-medium mb-1">Catégorie</label>
-        <select
-          value={form.analyticsCategory}
-          onChange={(e) => setForm({ ...form, analyticsCategory: e.target.value })}
-          className="w-full px-3 py-2 border rounded-lg"
-        >
-          {categories.map((cat) => (
-            <option key={cat.name} value={cat.name}>
-              {cat.name}
-            </option>
-          ))}
-        </select>
-        {categories.find(c => c.name === form.analyticsCategory)?.description && (
-          <p className="text-xs text-gray-500 mt-1">
-            {categories.find(c => c.name === form.analyticsCategory)?.description}
-          </p>
-        )}
-      </div>
+      {type !== 'transfer' && (
+        <>
+          {/* Compte traditionnel (niveau 1, obligatoire) */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Compte traditionnel</label>
+            <select
+              value={form.chartAccount}
+              onChange={(e) => setForm({ ...form, chartAccount: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg"
+              required
+            >
+              <option value="">Sélectionner...</option>
+              {chartOptions.map((label) => (
+                <option key={label} value={label}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Catégorie analytique (niveau 2) */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Catégorie</label>
+            <select
+              value={form.analyticsCategory}
+              onChange={(e) => setForm({ ...form, analyticsCategory: e.target.value, eventDetail: '' })}
+              className="w-full px-3 py-2 border rounded-lg"
+            >
+              {categories.map((cat) => (
+                <option key={cat.name} value={cat.name}>
+                  {cat.name}
+                </option>
+              ))}
+            </select>
+            {categories.find(c => c.name === form.analyticsCategory)?.description && (
+              <p className="text-xs text-gray-500 mt-1">
+                {categories.find(c => c.name === form.analyticsCategory)?.description}
+              </p>
+            )}
+          </div>
+
+          {/* Détail (niveau 3, conditionnel) */}
+          {categories.find(c => c.name === form.analyticsCategory)?.requiresDetail && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Détail</label>
+              <select
+                value={form.eventDetail}
+                onChange={(e) => setForm({ ...form, eventDetail: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+                required
+              >
+                <option value="">Sélectionner...</option>
+                {(detailOptions[form.analyticsCategory] || []).map((label) => (
+                  <option key={label} value={label}>{label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </>
+      )}
 
       {/* Bouton */}
       <button
