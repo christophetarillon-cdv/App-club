@@ -4,6 +4,13 @@ import { Fragment, useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, doc, onSnapshot, query, updateDoc } from 'firebase/firestore';
 
+interface Split {
+  chartAccount: string;
+  analyticsCategory: string;
+  eventDetail?: string;
+  amount: number;
+}
+
 interface Entry {
   id: string;
   date: number;
@@ -19,6 +26,7 @@ interface Entry {
   valueDate?: number;
   hasReceipt?: boolean;
   statementNumber?: string;
+  splits?: Split[];
 }
 
 interface EntryTableProps {
@@ -37,6 +45,12 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
   const [error, setError] = useState('');
   const [bankLabels, setBankLabels] = useState<Record<string, string>>({});
   const [page, setPage] = useState(0);
+  const [chartOptions, setChartOptions] = useState<string[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<{ name: string; requiresDetail: boolean }[]>([]);
+  const [ventilatingId, setVentilatingId] = useState<string | null>(null);
+  const [splitRows, setSplitRows] = useState<Split[]>([]);
+  const [ventilateError, setVentilateError] = useState('');
+  const [savingVentilation, setSavingVentilation] = useState(false);
 
   // Revient à la première page quand on change de saison
   useEffect(() => {
@@ -61,6 +75,31 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
       setBankLabels(labels);
     });
     return () => unsubscribe();
+  }, []);
+
+  // Charge les comptes traditionnels et catégories analytiques pour l'éditeur
+  // de ventilation (Paramètres comptabilité).
+  useEffect(() => {
+    const unsubChart = onSnapshot(query(collection(db, 'chartOfAccounts')), (snapshot) => {
+      const labels: string[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.isActive !== false) labels.push(data.label);
+      });
+      setChartOptions(labels);
+    });
+    const unsubCategories = onSnapshot(query(collection(db, 'analyticsCategories')), (snapshot) => {
+      const cats: { name: string; requiresDetail: boolean }[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.isActive !== false) cats.push({ name: data.name, requiresDetail: !!data.requiresDetail });
+      });
+      setCategoryOptions(cats);
+    });
+    return () => {
+      unsubChart();
+      unsubCategories();
+    };
   }, []);
 
   const handleEdit = (entry: Entry) => {
@@ -90,6 +129,61 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
       setError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleStartVentilate = (entry: Entry) => {
+    setVentilatingId(entry.id);
+    setVentilateError('');
+    setSplitRows(
+      entry.splits && entry.splits.length > 0
+        ? entry.splits.map((s) => ({ ...s }))
+        : [{ chartAccount: '', analyticsCategory: entry.analyticsCategory || '', eventDetail: '', amount: entry.amount ?? 0 }],
+    );
+  };
+
+  const handleAddSplitRow = () => {
+    setSplitRows((rows) => [...rows, { chartAccount: '', analyticsCategory: '', eventDetail: '', amount: 0 }]);
+  };
+
+  const handleRemoveSplitRow = (idx: number) => {
+    setSplitRows((rows) => rows.filter((_, i) => i !== idx));
+  };
+
+  const handleSplitRowChange = (idx: number, patch: Partial<Split>) => {
+    setSplitRows((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  };
+
+  const handleSaveVentilation = async (entry: Entry) => {
+    setVentilateError('');
+
+    if (splitRows.some((r) => !r.chartAccount || !r.analyticsCategory)) {
+      setVentilateError('Chaque ligne doit avoir un compte traditionnel et une catégorie analytique.');
+      return;
+    }
+    const missingDetail = splitRows.find((r) => {
+      const cat = categoryOptions.find((c) => c.name === r.analyticsCategory);
+      return cat?.requiresDetail && !r.eventDetail?.trim();
+    });
+    if (missingDetail) {
+      setVentilateError(`La catégorie "${missingDetail.analyticsCategory}" nécessite un détail.`);
+      return;
+    }
+    const sum = splitRows.reduce((s, r) => s + (r.amount || 0), 0);
+    if (Math.abs(sum - (entry.amount ?? 0)) > 0.01) {
+      setVentilateError(`La somme des lignes (${sum.toFixed(2)} €) ne correspond pas au montant de l'écriture (${(entry.amount ?? 0).toFixed(2)} €).`);
+      return;
+    }
+
+    setSavingVentilation(true);
+    try {
+      await updateDoc(doc(db, 'accountingEntries', entry.id), { splits: splitRows });
+      setVentilatingId(null);
+      setSplitRows([]);
+    } catch (err) {
+      setVentilateError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde');
+    } finally {
+      setSavingVentilation(false);
     }
   };
 
@@ -180,7 +274,9 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                   {bankLabels[entry.bankAccount] || entry.bankAccount}
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-600">
-                  {entry.analyticsCategory || '-'}
+                  {entry.splits && entry.splits.length > 0
+                    ? `${entry.splits.length} ligne(s)`
+                    : entry.analyticsCategory || '-'}
                 </td>
                 <td className="px-6 py-4 text-center">
                   <span className={`px-2 py-1 rounded text-xs font-medium ${
@@ -283,6 +379,94 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                           </button>
                         </div>
                       </div>
+                    ) : ventilatingId === entry.id ? (
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold text-gray-600">
+                          Ventiler {entry.amount?.toFixed(2)} € en plusieurs lignes
+                        </p>
+                        {ventilateError && (
+                          <div className="bg-red-50 text-red-700 p-2 rounded text-sm">{ventilateError}</div>
+                        )}
+                        <div className="space-y-2">
+                          {splitRows.map((row, idx) => {
+                            const cat = categoryOptions.find((c) => c.name === row.analyticsCategory);
+                            return (
+                              <div key={idx} className="grid grid-cols-12 gap-2 items-start bg-white p-2 rounded border">
+                                <select
+                                  value={row.chartAccount}
+                                  onChange={(e) => handleSplitRowChange(idx, { chartAccount: e.target.value })}
+                                  className="col-span-3 px-2 py-1.5 border rounded text-sm"
+                                >
+                                  <option value="">Compte traditionnel...</option>
+                                  {chartOptions.map((label) => (
+                                    <option key={label} value={label}>{label}</option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={row.analyticsCategory}
+                                  onChange={(e) => handleSplitRowChange(idx, { analyticsCategory: e.target.value })}
+                                  className="col-span-3 px-2 py-1.5 border rounded text-sm"
+                                >
+                                  <option value="">Catégorie...</option>
+                                  {categoryOptions.map((c) => (
+                                    <option key={c.name} value={c.name}>{c.name}</option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="text"
+                                  value={row.eventDetail || ''}
+                                  onChange={(e) => handleSplitRowChange(idx, { eventDetail: e.target.value })}
+                                  placeholder={cat?.requiresDetail ? 'Détail (requis)...' : 'Détail (optionnel)...'}
+                                  className={`col-span-3 px-2 py-1.5 border rounded text-sm ${cat?.requiresDetail && !row.eventDetail ? 'border-orange-400' : ''}`}
+                                />
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={row.amount || ''}
+                                  onChange={(e) => handleSplitRowChange(idx, { amount: parseFloat(e.target.value) || 0 })}
+                                  className="col-span-2 px-2 py-1.5 border rounded text-sm"
+                                />
+                                <button
+                                  onClick={() => handleRemoveSplitRow(idx)}
+                                  disabled={splitRows.length <= 1}
+                                  className="col-span-1 px-2 py-1.5 text-red-600 hover:text-red-800 disabled:opacity-30 text-sm"
+                                  title="Retirer cette ligne"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <button
+                            onClick={handleAddSplitRow}
+                            className="text-sm text-blue-600 hover:underline"
+                          >
+                            + Ajouter une ligne
+                          </button>
+                          <p className="text-sm text-gray-600">
+                            Total lignes : <span className="font-mono font-semibold">
+                              {splitRows.reduce((s, r) => s + (r.amount || 0), 0).toFixed(2)} €
+                            </span> / {entry.amount?.toFixed(2)} €
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleSaveVentilation(entry)}
+                            disabled={savingVentilation}
+                            className="px-4 py-2 bg-purple-500 text-white rounded text-sm font-medium hover:bg-purple-600 disabled:opacity-50"
+                          >
+                            {savingVentilation ? 'Enregistrement...' : 'Enregistrer la ventilation'}
+                          </button>
+                          <button
+                            onClick={() => { setVentilatingId(null); setSplitRows([]); setVentilateError(''); }}
+                            className="px-4 py-2 bg-gray-300 text-gray-700 rounded text-sm font-medium hover:bg-gray-400"
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      </div>
                     ) : (
                       <div className="space-y-2">
                         <div>
@@ -303,10 +487,36 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                             </p>
                           </div>
                         </div>
-                        <div>
-                          <p className="text-xs font-semibold text-gray-600">Catégorie analytique</p>
-                          <p className="text-sm">{entry.analyticsCategory || '-'}</p>
-                        </div>
+                        {entry.splits && entry.splits.length > 0 ? (
+                          <div>
+                            <p className="text-xs font-semibold text-gray-600 mb-1">Ventilation</p>
+                            <table className="w-full text-sm border rounded overflow-hidden">
+                              <thead className="bg-gray-100">
+                                <tr>
+                                  <th className="px-2 py-1 text-left font-medium">Compte traditionnel</th>
+                                  <th className="px-2 py-1 text-left font-medium">Catégorie</th>
+                                  <th className="px-2 py-1 text-left font-medium">Détail</th>
+                                  <th className="px-2 py-1 text-right font-medium">Montant</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {entry.splits.map((s, i) => (
+                                  <tr key={i} className="border-t">
+                                    <td className="px-2 py-1">{s.chartAccount}</td>
+                                    <td className="px-2 py-1">{s.analyticsCategory}</td>
+                                    <td className="px-2 py-1 text-gray-500">{s.eventDetail || '-'}</td>
+                                    <td className="px-2 py-1 text-right font-mono">{s.amount.toFixed(2)} €</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div>
+                            <p className="text-xs font-semibold text-gray-600">Catégorie analytique</p>
+                            <p className="text-sm">{entry.analyticsCategory || '-'}</p>
+                          </div>
+                        )}
                         <div className="grid grid-cols-3 gap-4">
                           <div>
                             <p className="text-xs font-semibold text-gray-600">Pointé</p>
@@ -327,12 +537,20 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                           <p className="text-xs font-semibold text-gray-600">Facture correspondante</p>
                           <p className="text-sm">{entry.hasReceipt ? '✓ Oui' : 'Non'}</p>
                         </div>
-                        <button
-                          onClick={() => handleEdit(entry)}
-                          className="mt-2 px-4 py-2 bg-blue-500 text-white rounded text-sm font-medium hover:bg-blue-600"
-                        >
-                          Modifier
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEdit(entry)}
+                            className="mt-2 px-4 py-2 bg-blue-500 text-white rounded text-sm font-medium hover:bg-blue-600"
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            onClick={() => handleStartVentilate(entry)}
+                            className="mt-2 px-4 py-2 bg-purple-500 text-white rounded text-sm font-medium hover:bg-purple-600"
+                          >
+                            {entry.splits && entry.splits.length > 0 ? 'Modifier la ventilation' : 'Ventiler cette écriture'}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </td>
