@@ -24,6 +24,7 @@ interface ChartAccount {
   id?: string;
   label: string;
   sortOrder: number;
+  type?: 'charge' | 'produit';
 }
 
 interface CategoryDetail {
@@ -56,9 +57,10 @@ export default function SettingsPage() {
     requiresDetail: false,
   });
 
-  const [chartFormData, setChartFormData] = useState({
+  const [chartFormData, setChartFormData] = useState<{ label: string; sortOrder: number; type: 'charge' | 'produit' | '' }>({
     label: '',
     sortOrder: 1,
+    type: '',
   });
 
   const [detailFormData, setDetailFormData] = useState({
@@ -112,7 +114,7 @@ export default function SettingsPage() {
       snapshot.forEach((doc) => {
         const docData = doc.data();
         if (docData.isActive !== false) {
-          data.push({ id: doc.id, label: docData.label ?? '', sortOrder: docData.sortOrder ?? 999 });
+          data.push({ id: doc.id, label: docData.label ?? '', sortOrder: docData.sortOrder ?? 999, type: docData.type });
         }
       });
       setChartAccounts(data.sort((a, b) => a.sortOrder - b.sortOrder));
@@ -180,26 +182,33 @@ export default function SettingsPage() {
 
   const handleSaveChartAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
 
+    if (!chartFormData.type) {
+      setError('Le type (Charge ou Produit) est obligatoire');
+      return;
+    }
+
+    setLoading(true);
     try {
       if (editingChartId) {
         await updateDoc(doc(db, 'chartOfAccounts', editingChartId), {
           label: chartFormData.label,
           sortOrder: chartFormData.sortOrder,
+          type: chartFormData.type,
           updatedAt: Date.now(),
         });
       } else {
         await addDoc(collection(db, 'chartOfAccounts'), {
           label: chartFormData.label,
           sortOrder: chartFormData.sortOrder,
+          type: chartFormData.type,
           isActive: true,
           createdAt: Date.now(),
           createdBy: user?.uid,
         });
       }
-      setChartFormData({ label: '', sortOrder: 1 });
+      setChartFormData({ label: '', sortOrder: 1, type: '' });
       setEditingChartId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur');
@@ -210,7 +219,7 @@ export default function SettingsPage() {
 
   const handleEditChartAccount = (acc: ChartAccount) => {
     setEditingChartId(acc.id || null);
-    setChartFormData({ label: acc.label, sortOrder: acc.sortOrder });
+    setChartFormData({ label: acc.label, sortOrder: acc.sortOrder, type: acc.type ?? '' });
     setActiveTab('accounts');
   };
 
@@ -640,6 +649,29 @@ export default function SettingsPage() {
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Type</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setChartFormData({ ...chartFormData, type: 'charge' })}
+                    className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
+                      chartFormData.type === 'charge' ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Charge
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChartFormData({ ...chartFormData, type: 'produit' })}
+                    className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
+                      chartFormData.type === 'produit' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Produit
+                  </button>
+                </div>
+              </div>
               <div className="flex gap-2">
                 <button
                   type="submit"
@@ -653,7 +685,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => {
                       setEditingChartId(null);
-                      setChartFormData({ label: '', sortOrder: 1 });
+                      setChartFormData({ label: '', sortOrder: 1, type: '' });
                     }}
                     className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-medium"
                   >
@@ -675,7 +707,18 @@ export default function SettingsPage() {
               )}
               {chartAccounts.map((acc) => (
                 <div key={acc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded border">
-                  <p className="font-medium">{acc.label}</p>
+                  <p className="font-medium">
+                    {acc.label}
+                    {acc.type === 'charge' && (
+                      <span className="ml-2 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium">Charge</span>
+                    )}
+                    {acc.type === 'produit' && (
+                      <span className="ml-2 text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">Produit</span>
+                    )}
+                    {!acc.type && (
+                      <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-medium">Non typé</span>
+                    )}
+                  </p>
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleEditChartAccount(acc)}
