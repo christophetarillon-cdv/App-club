@@ -416,7 +416,11 @@ export default function AnalyticsPage() {
                     <tr className="border-b hover:bg-gray-50">
                       <td className="px-4 py-3 text-center">
                         {hasDetails && (
-                          <button onClick={() => setExpandedCategory(expanded ? null : cat.name)} className="text-gray-400 hover:text-gray-700">
+                          <button
+                            onClick={() => setExpandedCategory(expanded ? null : cat.name)}
+                            className="w-8 h-8 flex items-center justify-center text-xl text-gray-500 hover:text-gray-900 hover:bg-gray-200 rounded"
+                            title={expanded ? 'Masquer le détail' : 'Afficher le détail'}
+                          >
                             {expanded ? '▾' : '▸'}
                           </button>
                         )}
