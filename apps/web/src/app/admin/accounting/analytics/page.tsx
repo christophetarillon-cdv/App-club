@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 
 interface Split {
@@ -24,6 +24,8 @@ interface Entry {
 interface ChartAccountOption {
   label: string;
   type?: 'charge' | 'produit';
+  group?: string;
+  sortOrder?: number;
 }
 
 interface CategoryAgg {
@@ -39,6 +41,8 @@ interface AccountAgg {
   amount: number;
   count: number;
   type?: 'charge' | 'produit';
+  group?: string;
+  sortOrder?: number;
 }
 
 const getSplits = (entry: Entry): Split[] => {
@@ -55,6 +59,13 @@ export default function AnalyticsPage() {
   const [tab, setTab] = useState<'category' | 'account'>('category');
   const [includeDraft, setIncludeDraft] = useState(false);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+  const [presidentName, setPresidentName] = useState('');
+
+  useEffect(() => {
+    getDoc(doc(db, 'clubProfile', 'main')).then((snap) => {
+      setPresidentName(snap.data()?.presidentName ?? '');
+    });
+  }, []);
 
   useEffect(() => {
     getDocs(query(collection(db, 'seasons'), orderBy('label', 'desc'))).then((snapshot) => {
@@ -72,7 +83,9 @@ export default function AnalyticsPage() {
       const list: ChartAccountOption[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
-        if (data.isActive !== false) list.push({ label: data.label, type: data.type });
+        if (data.isActive !== false) {
+          list.push({ label: data.label, type: data.type, group: data.group, sortOrder: data.sortOrder ?? 999 });
+        }
       });
       setChartAccounts(list);
     });
@@ -135,11 +148,12 @@ export default function AnalyticsPage() {
 
   const accountAggs = useMemo(() => {
     const map = new Map<string, AccountAgg>();
-    const typeByLabel = new Map(chartAccounts.map((c) => [c.label, c.type]));
+    const infoByLabel = new Map(chartAccounts.map((c) => [c.label, c]));
     filteredEntries.forEach((entry) => {
       getSplits(entry).forEach((split) => {
         const key = split.chartAccount || 'Non classé';
-        const agg = map.get(key) ?? { label: key, amount: 0, count: 0, type: typeByLabel.get(key) };
+        const info = infoByLabel.get(key);
+        const agg = map.get(key) ?? { label: key, amount: 0, count: 0, type: info?.type, group: info?.group, sortOrder: info?.sortOrder };
         agg.amount += split.amount;
         agg.count += 1;
         map.set(key, agg);
@@ -229,6 +243,75 @@ export default function AnalyticsPage() {
     XLSX.writeFile(wb, `detail_${category.name.replace(/\s+/g, '_')}.xlsx`);
   };
 
+  // Construit les lignes d'un côté (Produits ou Charges) du compte de
+  // résultat : comptes groupés (avec sous-total) puis comptes sans groupe,
+  // triés par ordre d'affichage des comptes traditionnels.
+  const buildResultSide = (accounts: AccountAgg[], totalLabel: string): (string | number)[][] => {
+    const grouped = new Map<string, AccountAgg[]>();
+    const ungrouped: AccountAgg[] = [];
+    accounts.forEach((a) => {
+      if (a.group) {
+        if (!grouped.has(a.group)) grouped.set(a.group, []);
+        grouped.get(a.group)!.push(a);
+      } else {
+        ungrouped.push(a);
+      }
+    });
+
+    const groupEntries = Array.from(grouped.entries()).sort(([, accsA], [, accsB]) => {
+      const minA = Math.min(...accsA.map((a) => a.sortOrder ?? 999));
+      const minB = Math.min(...accsB.map((a) => a.sortOrder ?? 999));
+      return minA - minB;
+    });
+
+    const rows: (string | number)[][] = [];
+    groupEntries.forEach(([groupName, accs]) => {
+      accs.sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
+      accs.forEach((a) => rows.push([a.label, a.amount]));
+      rows.push([`Total ${groupName}`, accs.reduce((s, a) => s + a.amount, 0)]);
+      rows.push(['', '']);
+    });
+    ungrouped
+      .sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999))
+      .forEach((a) => rows.push([a.label, a.amount]));
+    rows.push([totalLabel, accounts.reduce((s, a) => s + a.amount, 0)]);
+    return rows;
+  };
+
+  const handleExportResultReport = () => {
+    const leftBody = buildResultSide(produits, 'Total produits');
+    const rightBody = buildResultSide(charges, 'Total charges');
+    const maxLen = Math.max(leftBody.length, rightBody.length);
+
+    const rows: (string | number)[][] = [
+      [`Compte de résultat — Saison ${seasonId}`],
+      [],
+      ['Produits', '', '', 'Charges', ''],
+    ];
+    for (let i = 0; i < maxLen; i++) {
+      const l = leftBody[i] ?? ['', ''];
+      const r = rightBody[i] ?? ['', ''];
+      rows.push([l[0]!, l[1]!, '', r[0]!, r[1]!]);
+    }
+    rows.push([]);
+    rows.push(['Total recettes', totalProduits, '', 'Total charges', totalCharges]);
+    rows.push(['', '', '', 'Résultat', totalProduits - totalCharges]);
+    rows.push(['TOTAL EQUILIBRE', totalProduits, '', 'TOTAL EQUILIBRE', totalProduits]);
+    rows.push([]);
+    if (nonClasse.length > 0) {
+      rows.push([`${nonClasse.length} compte(s) non classé(s) exclus de ce total — voir l'onglet Par compte traditionnel.`]);
+      rows.push([]);
+    }
+    rows.push([`Certifié exact par : ${presidentName || '____________________'}`]);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 32 }, { wch: 14 }, { wch: 3 }, { wch: 32 }, { wch: 14 }];
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Compte de résultat');
+    XLSX.writeFile(wb, `compte_resultat_${seasonId}.xlsx`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -252,13 +335,22 @@ export default function AnalyticsPage() {
             Inclure les brouillons
           </label>
         </div>
-        <button
-          onClick={tab === 'category' ? handleExportCategories : handleExportAccounts}
-          disabled={loading}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium text-sm"
-        >
-          Exporter Excel
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleExportResultReport}
+            disabled={loading}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-medium text-sm"
+          >
+            Exporter le compte de résultat
+          </button>
+          <button
+            onClick={tab === 'category' ? handleExportCategories : handleExportAccounts}
+            disabled={loading}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium text-sm"
+          >
+            Exporter Excel
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-4">

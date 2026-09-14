@@ -25,6 +25,7 @@ interface ChartAccount {
   label: string;
   sortOrder: number;
   type?: 'charge' | 'produit';
+  group?: string;
 }
 
 interface CategoryDetail {
@@ -57,10 +58,11 @@ export default function SettingsPage() {
     requiresDetail: false,
   });
 
-  const [chartFormData, setChartFormData] = useState<{ label: string; sortOrder: number; type: 'charge' | 'produit' | '' }>({
+  const [chartFormData, setChartFormData] = useState<{ label: string; sortOrder: number; type: 'charge' | 'produit' | ''; group: string }>({
     label: '',
     sortOrder: 1,
     type: '',
+    group: '',
   });
 
   const [detailFormData, setDetailFormData] = useState({
@@ -114,7 +116,7 @@ export default function SettingsPage() {
       snapshot.forEach((doc) => {
         const docData = doc.data();
         if (docData.isActive !== false) {
-          data.push({ id: doc.id, label: docData.label ?? '', sortOrder: docData.sortOrder ?? 999, type: docData.type });
+          data.push({ id: doc.id, label: docData.label ?? '', sortOrder: docData.sortOrder ?? 999, type: docData.type, group: docData.group });
         }
       });
       setChartAccounts(data.sort((a, b) => a.sortOrder - b.sortOrder));
@@ -196,6 +198,7 @@ export default function SettingsPage() {
           label: chartFormData.label,
           sortOrder: chartFormData.sortOrder,
           type: chartFormData.type,
+          group: chartFormData.group || null,
           updatedAt: Date.now(),
         });
       } else {
@@ -203,12 +206,13 @@ export default function SettingsPage() {
           label: chartFormData.label,
           sortOrder: chartFormData.sortOrder,
           type: chartFormData.type,
+          group: chartFormData.group || null,
           isActive: true,
           createdAt: Date.now(),
           createdBy: user?.uid,
         });
       }
-      setChartFormData({ label: '', sortOrder: 1, type: '' });
+      setChartFormData({ label: '', sortOrder: 1, type: '', group: '' });
       setEditingChartId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur');
@@ -219,7 +223,7 @@ export default function SettingsPage() {
 
   const handleEditChartAccount = (acc: ChartAccount) => {
     setEditingChartId(acc.id || null);
-    setChartFormData({ label: acc.label, sortOrder: acc.sortOrder, type: acc.type ?? '' });
+    setChartFormData({ label: acc.label, sortOrder: acc.sortOrder, type: acc.type ?? '', group: acc.group ?? '' });
     setActiveTab('accounts');
   };
 
@@ -672,6 +676,20 @@ export default function SettingsPage() {
                   </button>
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Groupe (facultatif)</label>
+                <input
+                  type="text"
+                  value={chartFormData.group}
+                  onChange={(e) => setChartFormData({ ...chartFormData, group: e.target.value })}
+                  placeholder="Ex: Activités courantes"
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Comptes partageant le même groupe : sous-total dédié dans l'export "Compte de résultat".
+                  Laisser vide si tu n'as pas besoin de sous-totaux.
+                </p>
+              </div>
               <div className="flex gap-2">
                 <button
                   type="submit"
@@ -685,7 +703,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => {
                       setEditingChartId(null);
-                      setChartFormData({ label: '', sortOrder: 1, type: '' });
+                      setChartFormData({ label: '', sortOrder: 1, type: '', group: '' });
                     }}
                     className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-medium"
                   >
@@ -717,6 +735,9 @@ export default function SettingsPage() {
                     )}
                     {!acc.type && (
                       <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-medium">Non typé</span>
+                    )}
+                    {acc.group && (
+                      <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">{acc.group}</span>
                     )}
                   </p>
                   <div className="flex gap-2">
