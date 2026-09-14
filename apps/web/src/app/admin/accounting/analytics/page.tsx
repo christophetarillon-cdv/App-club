@@ -396,7 +396,7 @@ export default function AnalyticsPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="px-4 py-3 w-8"></th>
+                <th className="px-4 py-3 w-14"></th>
                 <th className="px-4 py-3 text-left font-semibold">Catégorie</th>
                 <th className="px-4 py-3 text-right font-semibold">Recettes</th>
                 <th className="px-4 py-3 text-right font-semibold">Dépenses</th>
@@ -418,7 +418,7 @@ export default function AnalyticsPage() {
                         {hasDetails && (
                           <button
                             onClick={() => setExpandedCategory(expanded ? null : cat.name)}
-                            className="w-8 h-8 flex items-center justify-center text-xl text-gray-500 hover:text-gray-900 hover:bg-gray-200 rounded"
+                            className="w-11 h-11 flex items-center justify-center text-2xl font-bold text-white bg-blue-500 hover:bg-blue-600 rounded-lg transition"
                             title={expanded ? 'Masquer le détail' : 'Afficher le détail'}
                           >
                             {expanded ? '▾' : '▸'}
