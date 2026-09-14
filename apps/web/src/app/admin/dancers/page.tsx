@@ -63,6 +63,7 @@ const STATUS_COLOR: Record<string, string> = {
 const METHOD_LABEL: Record<string, string> = {
   cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', online: 'En ligne', mixed: 'Mixte',
 };
+const PAGE_SIZE = 25;
 
 export default function AdminDancersPage() {
   const [seasons, setSeasons] = useState<Season[]>([]);
@@ -79,6 +80,7 @@ export default function AdminDancersPage() {
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     getDocs(collection(db, 'seasons')).then(snap => {
@@ -196,6 +198,15 @@ export default function AdminDancersPage() {
     })
     .filter(r => !selectedRole || r.roles.includes(selectedRole))
     .filter(r => !selectedStatus || (selectedStatus === 'none' ? !r.info : r.info?.status === selectedStatus));
+
+  // Revient à la première page à chaque changement de filtre
+  useEffect(() => {
+    setPage(0);
+  }, [search, selectedRole, selectedStatus, showDeleted, selectedSeasonId]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const paginated = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   // Demandes de retrait deposees depuis l'app mobile. Le titulaire ne detache
   // pas lui-meme : le detachement n'a lieu qu'ici, a la validation.
@@ -445,9 +456,9 @@ export default function AdminDancersPage() {
         <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[65vh]">
           <table className="w-full text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="px-3 py-3 w-10"></th>
                 <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Nom</th>
@@ -460,7 +471,7 @@ export default function AdminDancersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {filtered.map(row => (
+              {paginated.map(row => (
                 <tr key={row.id} className={`hover:bg-gray-50/50 ${row.isDeleted ? 'opacity-50' : ''}`}>
                   <td className="px-3 py-2">
                     {row.photoUrl ? (
@@ -533,6 +544,31 @@ export default function AdminDancersPage() {
             </tbody>
           </table>
           </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50 text-sm">
+              <p className="text-gray-500">
+                {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, filtered.length)} sur {filtered.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={currentPage === 0}
+                  className="px-3 py-1 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ← Précédent
+                </button>
+                <span className="text-gray-500">Page {currentPage + 1} / {totalPages}</span>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                  disabled={currentPage >= totalPages - 1}
+                  className="px-3 py-1 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Suivant →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
