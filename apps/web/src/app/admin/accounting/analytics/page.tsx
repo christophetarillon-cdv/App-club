@@ -418,7 +418,7 @@ export default function AnalyticsPage() {
                         {hasDetails && (
                           <button
                             onClick={() => setExpandedCategory(expanded ? null : cat.name)}
-                            className="w-11 h-11 flex items-center justify-center text-2xl font-bold text-white bg-blue-500 hover:bg-blue-600 rounded-lg transition"
+                            className="w-8 h-8 flex items-center justify-center text-base font-bold text-white bg-blue-500 hover:bg-blue-600 rounded-lg transition"
                             title={expanded ? 'Masquer le détail' : 'Afficher le détail'}
                           >
                             {expanded ? '▾' : '▸'}
