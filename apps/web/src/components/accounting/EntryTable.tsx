@@ -27,6 +27,8 @@ interface EntryTableProps {
   seasonId: string;
 }
 
+const PAGE_SIZE = 25;
+
 export default function EntryTable({ entries, loading, seasonId }: EntryTableProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -34,6 +36,16 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [bankLabels, setBankLabels] = useState<Record<string, string>>({});
+  const [page, setPage] = useState(0);
+
+  // Revient à la première page quand on change de saison
+  useEffect(() => {
+    setPage(0);
+  }, [seasonId]);
+
+  const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const paginatedEntries = entries.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   // Charge les libellés des comptes depuis Finance > Comptes bancaires
   // (collection `bankAccounts`, source unique partagée avec le RIB du club).
@@ -97,10 +109,11 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div>
       {error && <div className="m-4 bg-red-50 text-red-700 p-3 rounded">{error}</div>}
+      <div className="overflow-auto max-h-[65vh]">
       <table className="w-full text-sm">
-        <thead className="bg-gray-50 border-b">
+        <thead className="bg-gray-50 border-b sticky top-0 z-10">
           <tr>
             <th className="px-6 py-3 text-center font-semibold w-10">✓</th>
             <th className="px-6 py-3 text-left font-semibold">Date</th>
@@ -113,7 +126,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry) => (
+          {paginatedEntries.map((entry) => (
             <Fragment key={entry.id}>
               <tr
                 className={`border-b transition ${
@@ -309,6 +322,32 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
           ))}
         </tbody>
       </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-6 py-3 border-t bg-gray-50 text-sm">
+          <p className="text-gray-600">
+            {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, entries.length)} sur {entries.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={currentPage === 0}
+              className="px-3 py-1 bg-white border rounded-lg font-medium hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              ← Précédent
+            </button>
+            <span className="text-gray-500">Page {currentPage + 1} / {totalPages}</span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={currentPage >= totalPages - 1}
+              className="px-3 py-1 bg-white border rounded-lg font-medium hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Suivant →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
