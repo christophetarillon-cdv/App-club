@@ -26,6 +26,13 @@ interface ChartAccount {
   sortOrder: number;
 }
 
+interface CategoryDetail {
+  id?: string;
+  categoryName: string;
+  label: string;
+  sortOrder: number;
+}
+
 export default function SettingsPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'categories' | 'banks' | 'accounts'>('categories');
@@ -34,8 +41,11 @@ export default function SettingsPage() {
   const [categories, setCategories] = useState<AnalyticsCategory[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [chartAccounts, setChartAccounts] = useState<ChartAccount[]>([]);
+  const [categoryDetails, setCategoryDetails] = useState<CategoryDetail[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingChartId, setEditingChartId] = useState<string | null>(null);
+  const [editingDetailId, setEditingDetailId] = useState<string | null>(null);
+  const [expandedDetailsFor, setExpandedDetailsFor] = useState<string | null>(null);
   const [orderDrafts, setOrderDrafts] = useState<Record<string, number>>({});
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
 
@@ -47,6 +57,12 @@ export default function SettingsPage() {
   });
 
   const [chartFormData, setChartFormData] = useState({
+    label: '',
+    sortOrder: 1,
+  });
+
+  const [detailFormData, setDetailFormData] = useState({
+    categoryName: '',
     label: '',
     sortOrder: 1,
   });
@@ -63,6 +79,27 @@ export default function SettingsPage() {
         }
       });
       setCategories(data.sort((a, b) => a.sortOrder - b.sortOrder));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Charger les détails (niveau 3) de chaque catégorie qui l'exige
+  useEffect(() => {
+    const q = query(collection(db, 'analyticsCategoryDetails'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data: CategoryDetail[] = [];
+      snapshot.forEach((doc) => {
+        const docData = doc.data();
+        if (docData.isActive !== false) {
+          data.push({
+            id: doc.id,
+            categoryName: docData.categoryName ?? '',
+            label: docData.label ?? '',
+            sortOrder: docData.sortOrder ?? 999,
+          });
+        }
+      });
+      setCategoryDetails(data.sort((a, b) => a.sortOrder - b.sortOrder));
     });
     return () => unsubscribe();
   }, []);
@@ -234,6 +271,52 @@ export default function SettingsPage() {
     setActiveTab('categories');
   };
 
+  const handleSaveDetail = async (e: React.FormEvent, categoryName: string) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      if (editingDetailId) {
+        await updateDoc(doc(db, 'analyticsCategoryDetails', editingDetailId), {
+          label: detailFormData.label,
+          sortOrder: detailFormData.sortOrder,
+          updatedAt: Date.now(),
+        });
+      } else {
+        await addDoc(collection(db, 'analyticsCategoryDetails'), {
+          categoryName,
+          label: detailFormData.label,
+          sortOrder: detailFormData.sortOrder,
+          isActive: true,
+          createdAt: Date.now(),
+          createdBy: user?.uid,
+        });
+      }
+      setDetailFormData({ categoryName: '', label: '', sortOrder: 1 });
+      setEditingDetailId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditDetail = (detail: CategoryDetail) => {
+    setEditingDetailId(detail.id || null);
+    setDetailFormData({ categoryName: detail.categoryName, label: detail.label, sortOrder: detail.sortOrder });
+  };
+
+  const handleDeleteDetail = async (id: string) => {
+    try {
+      if (!confirm('Êtes-vous sûr ?')) return;
+      await updateDoc(doc(db, 'analyticsCategoryDetails', id), { isActive: false });
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur');
+    }
+  };
+
   if (!user) return <div>Authentification requise</div>;
 
   return (
@@ -323,7 +406,7 @@ export default function SettingsPage() {
                   onChange={(e) => setFormData({ ...formData, requiresDetail: e.target.checked })}
                   className="w-4 h-4"
                 />
-                Nécessite un détail (texte libre) lors de la ventilation
+                Nécessite un détail (liste à choisir) lors de la ventilation
               </label>
               <div className="flex gap-2">
                 <button
@@ -353,35 +436,127 @@ export default function SettingsPage() {
           <div className="col-span-2 bg-white p-6 rounded-lg border">
             <h2 className="text-lg font-semibold mb-4">Liste des catégories</h2>
             <div className="space-y-2">
-              {categories.map((cat) => (
-                <div key={cat.id} className="flex items-center justify-between p-3 bg-gray-50 rounded border">
-                  <div>
-                    <p className="font-medium">
-                      {cat.name}
-                      {cat.requiresDetail && (
-                        <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">
-                          Détail requis
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-sm text-gray-600">{cat.description}</p>
+              {categories.map((cat) => {
+                const details = categoryDetails.filter((d) => d.categoryName === cat.name);
+                const isExpanded = expandedDetailsFor === cat.name;
+                return (
+                  <div key={cat.id} className="bg-gray-50 rounded border">
+                    <div className="flex items-center justify-between p-3">
+                      <div>
+                        <p className="font-medium">
+                          {cat.name}
+                          {cat.requiresDetail && (
+                            <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">
+                              Détail requis
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-sm text-gray-600">{cat.description}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        {cat.requiresDetail && (
+                          <button
+                            onClick={() => {
+                              setExpandedDetailsFor(isExpanded ? null : cat.name);
+                              setEditingDetailId(null);
+                              setDetailFormData({ categoryName: cat.name, label: '', sortOrder: 1 });
+                            }}
+                            className="px-3 py-1 bg-purple-100 text-purple-700 rounded text-sm font-medium hover:bg-purple-200"
+                          >
+                            Gérer les détails ({details.length})
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleEditCategory(cat)}
+                          className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm font-medium hover:bg-blue-200"
+                        >
+                          Modifier
+                        </button>
+                        <button
+                          onClick={() => cat.id && handleDeleteCategory(cat.id, cat.name)}
+                          className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm font-medium hover:bg-red-200"
+                        >
+                          Supprimer
+                        </button>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="border-t bg-white p-3 space-y-3">
+                        <form
+                          onSubmit={(e) => handleSaveDetail(e, cat.name)}
+                          className="flex items-end gap-2"
+                        >
+                          <div className="flex-1">
+                            <label className="block text-xs font-medium mb-1">Libellé</label>
+                            <input
+                              type="text"
+                              value={detailFormData.label}
+                              onChange={(e) => setDetailFormData({ ...detailFormData, label: e.target.value })}
+                              placeholder="Ex: Recette chèque"
+                              className="w-full px-2 py-1.5 border rounded text-sm"
+                              required
+                            />
+                          </div>
+                          <div className="w-20">
+                            <label className="block text-xs font-medium mb-1">Ordre</label>
+                            <input
+                              type="number"
+                              value={detailFormData.sortOrder}
+                              onChange={(e) => setDetailFormData({ ...detailFormData, sortOrder: parseInt(e.target.value) })}
+                              className="w-full px-2 py-1.5 border rounded text-sm"
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={loading}
+                            className="px-3 py-1.5 bg-purple-500 text-white rounded text-sm font-medium hover:bg-purple-600 disabled:opacity-50"
+                          >
+                            {editingDetailId ? 'Mettre à jour' : 'Ajouter'}
+                          </button>
+                          {editingDetailId && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingDetailId(null);
+                                setDetailFormData({ categoryName: cat.name, label: '', sortOrder: 1 });
+                              }}
+                              className="px-3 py-1.5 bg-gray-300 text-gray-700 rounded text-sm font-medium hover:bg-gray-400"
+                            >
+                              Annuler
+                            </button>
+                          )}
+                        </form>
+
+                        <div className="space-y-1">
+                          {details.length === 0 && (
+                            <p className="text-sm text-gray-400">Aucun détail configuré pour l'instant.</p>
+                          )}
+                          {details.map((d) => (
+                            <div key={d.id} className="flex items-center justify-between px-2 py-1.5 bg-gray-50 rounded text-sm">
+                              <span>{d.label}</span>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleEditDetail(d)}
+                                  className="text-blue-600 hover:underline text-xs font-medium"
+                                >
+                                  Modifier
+                                </button>
+                                <button
+                                  onClick={() => d.id && handleDeleteDetail(d.id)}
+                                  className="text-red-600 hover:underline text-xs font-medium"
+                                >
+                                  Supprimer
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleEditCategory(cat)}
-                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm font-medium hover:bg-blue-200"
-                    >
-                      Modifier
-                    </button>
-                    <button
-                      onClick={() => cat.id && handleDeleteCategory(cat.id, cat.name)}
-                      className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm font-medium hover:bg-red-200"
-                    >
-                      Supprimer
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

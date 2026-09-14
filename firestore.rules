@@ -663,5 +663,13 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Détails (niveau 3) rattachés à une catégorie analytique dont
+    // requiresDetail est vrai — liste fermée proposée en ventilation.
+    match /analyticsCategoryDetails/{id} {
+      allow read: if hasAccountingAccess();
+      allow create, update: if hasAccountingAccess();
+      allow delete: if isAdmin();
+    }
+
   }
 }

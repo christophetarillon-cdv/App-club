@@ -47,6 +47,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
   const [page, setPage] = useState(0);
   const [chartOptions, setChartOptions] = useState<string[]>([]);
   const [categoryOptions, setCategoryOptions] = useState<{ name: string; requiresDetail: boolean }[]>([]);
+  const [detailOptions, setDetailOptions] = useState<Record<string, string[]>>({});
   const [ventilatingId, setVentilatingId] = useState<string | null>(null);
   const [splitRows, setSplitRows] = useState<Split[]>([]);
   const [ventilateError, setVentilateError] = useState('');
@@ -96,9 +97,20 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
       });
       setCategoryOptions(cats);
     });
+    const unsubDetails = onSnapshot(query(collection(db, 'analyticsCategoryDetails')), (snapshot) => {
+      const byCategory: Record<string, string[]> = {};
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.isActive !== false && data.categoryName) {
+          (byCategory[data.categoryName] ??= []).push(data.label);
+        }
+      });
+      setDetailOptions(byCategory);
+    });
     return () => {
       unsubChart();
       unsubCategories();
+      unsubDetails();
     };
   }, []);
 
@@ -412,13 +424,20 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                                     <option key={c.name} value={c.name}>{c.name}</option>
                                   ))}
                                 </select>
-                                <input
-                                  type="text"
-                                  value={row.eventDetail || ''}
-                                  onChange={(e) => handleSplitRowChange(idx, { eventDetail: e.target.value })}
-                                  placeholder={cat?.requiresDetail ? 'Détail (requis)...' : 'Détail (optionnel)...'}
-                                  className={`col-span-3 px-2 py-1.5 border rounded text-sm ${cat?.requiresDetail && !row.eventDetail ? 'border-orange-400' : ''}`}
-                                />
+                                {cat?.requiresDetail ? (
+                                  <select
+                                    value={row.eventDetail || ''}
+                                    onChange={(e) => handleSplitRowChange(idx, { eventDetail: e.target.value })}
+                                    className={`col-span-3 px-2 py-1.5 border rounded text-sm ${!row.eventDetail ? 'border-orange-400' : ''}`}
+                                  >
+                                    <option value="">Détail (requis)...</option>
+                                    {(detailOptions[row.analyticsCategory] || []).map((label) => (
+                                      <option key={label} value={label}>{label}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <div className="col-span-3" />
+                                )}
                                 <input
                                   type="number"
                                   step="0.01"
