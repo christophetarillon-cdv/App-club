@@ -16,6 +16,13 @@ interface BankAccountOption {
   sortOrder: number;
 }
 
+interface Split {
+  chartAccount: string;
+  analyticsCategory: string;
+  eventDetail?: string;
+  amount: number;
+}
+
 const DEFAULT_ANALYTICS_CATEGORIES = [
   { name: 'Soirées & Événements', description: 'Dépenses liées aux soirées et événements', sortOrder: 1, requiresDetail: false },
   { name: 'Formation & Cours', description: 'Revenus et dépenses de formation', sortOrder: 2, requiresDetail: false },
@@ -43,11 +50,21 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
     bankAccountTo: '',
     paymentType: 'virement',
     chequeNumber: '',
-    analyticsCategory: 'Soirées & Événements',
-    chartAccount: '',
-    eventDetail: '',
     hasReceipt: false,
   });
+
+  const [splitRows, setSplitRows] = useState<Split[]>([
+    { chartAccount: '', analyticsCategory: 'Soirées & Événements', eventDetail: '', amount: 0 },
+  ]);
+
+  // Tant qu'il n'y a qu'une seule ligne de ventilation, elle suit le montant
+  // total saisi en haut du formulaire — dès qu'on ajoute une ligne, chacune
+  // devient indépendante.
+  useEffect(() => {
+    setSplitRows((rows) =>
+      rows.length === 1 ? [{ ...rows[0]!, amount: parseFloat(form.amount) || 0 }] : rows,
+    );
+  }, [form.amount]);
 
   // Charge les comptes bancaires depuis Finance > Comptes bancaires
   // (collection `bankAccounts`, source unique partagée avec le RIB du club)
@@ -88,7 +105,11 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
       });
       if (data.length > 0) {
         setCategories(data.sort((a, b) => a.sortOrder - b.sortOrder));
-        setForm((f) => ({ ...f, analyticsCategory: data[0].name }));
+        setSplitRows((rows) =>
+          rows.length === 1 && !rows[0]!.analyticsCategory
+            ? [{ ...rows[0]!, analyticsCategory: data[0].name }]
+            : rows,
+        );
       }
     });
     return () => unsubscribe();
@@ -107,7 +128,11 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
       const sorted = labels.map((l) => l.label);
       setChartOptions(sorted);
       if (sorted.length > 0) {
-        setForm((f) => ({ ...f, chartAccount: f.chartAccount || sorted[0]! }));
+        setSplitRows((rows) =>
+          rows.length === 1 && !rows[0]!.chartAccount
+            ? [{ ...rows[0]!, chartAccount: sorted[0]! }]
+            : rows,
+        );
       }
     });
     return () => unsubscribe();
@@ -129,6 +154,20 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
     return () => unsubscribe();
   }, []);
 
+  const handleAddSplitRow = () => {
+    setSplitRows((rows) => [...rows, { chartAccount: '', analyticsCategory: '', eventDetail: '', amount: 0 }]);
+  };
+
+  const handleRemoveSplitRow = (idx: number) => {
+    setSplitRows((rows) => rows.filter((_, i) => i !== idx));
+  };
+
+  const handleSplitRowChange = (idx: number, patch: Partial<Split>) => {
+    setSplitRows((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  };
+
+  const splitsTotal = splitRows.reduce((sum, r) => sum + (r.amount || 0), 0);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -147,13 +186,20 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
       }
 
       if (type !== 'transfer') {
-        if (!form.chartAccount) {
-          setError('Le compte traditionnel est obligatoire');
+        if (splitRows.some((r) => !r.chartAccount || !r.analyticsCategory)) {
+          setError('Chaque ligne de ventilation doit avoir un compte traditionnel et une catégorie.');
           return;
         }
-        const selectedCategory = categories.find((c) => c.name === form.analyticsCategory);
-        if (selectedCategory?.requiresDetail && !form.eventDetail) {
-          setError(`La catégorie "${form.analyticsCategory}" nécessite un détail`);
+        const missingDetail = splitRows.find((r) => {
+          const cat = categories.find((c) => c.name === r.analyticsCategory);
+          return cat?.requiresDetail && !r.eventDetail;
+        });
+        if (missingDetail) {
+          setError(`La catégorie "${missingDetail.analyticsCategory}" nécessite un détail.`);
+          return;
+        }
+        if (Math.abs(splitsTotal - amount) > 0.01) {
+          setError(`La somme des lignes de ventilation (${splitsTotal.toFixed(2)} €) ne correspond pas au montant (${amount.toFixed(2)} €).`);
           return;
         }
       }
@@ -202,13 +248,13 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
           bankAccount: form.bankAccount,
           paymentType: form.paymentType,
           ...(form.paymentType === 'cheque' && { chequeNumber: form.chequeNumber }),
-          analyticsCategory: form.analyticsCategory,
-          splits: [{
-            chartAccount: form.chartAccount,
-            analyticsCategory: form.analyticsCategory,
-            ...(form.eventDetail && { eventDetail: form.eventDetail }),
-            amount,
-          }],
+          analyticsCategory: splitRows[0]!.analyticsCategory,
+          splits: splitRows.map((r) => ({
+            chartAccount: r.chartAccount,
+            analyticsCategory: r.analyticsCategory,
+            ...(r.eventDetail && { eventDetail: r.eventDetail }),
+            amount: r.amount,
+          })),
           reconciled: false,
           hasReceipt: form.hasReceipt,
           status: 'posted',
@@ -225,9 +271,9 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
         description: '',
         amount: '',
         chequeNumber: '',
-        eventDetail: '',
         hasReceipt: false,
       }));
+      setSplitRows((rows) => [{ ...rows[0]!, eventDetail: '', amount: 0 }]);
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la création');
@@ -415,62 +461,88 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
       </label>
 
       {type !== 'transfer' && (
-        <>
-          {/* Compte traditionnel (niveau 1, obligatoire) */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Compte traditionnel</label>
-            <select
-              value={form.chartAccount}
-              onChange={(e) => setForm({ ...form, chartAccount: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
-              required
-            >
-              <option value="">Sélectionner...</option>
-              {chartOptions.map((label) => (
-                <option key={label} value={label}>{label}</option>
-              ))}
-            </select>
+        <div>
+          <label className="block text-sm font-medium mb-2">Ventilation</label>
+          <div className="space-y-2">
+            {splitRows.map((row, idx) => {
+              const cat = categories.find((c) => c.name === row.analyticsCategory);
+              return (
+                <div key={idx} className="space-y-2 p-3 bg-gray-50 rounded-lg border">
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={row.chartAccount}
+                      onChange={(e) => handleSplitRowChange(idx, { chartAccount: e.target.value })}
+                      className="px-2 py-1.5 border rounded-lg text-sm"
+                    >
+                      <option value="">Compte traditionnel...</option>
+                      {chartOptions.map((label) => (
+                        <option key={label} value={label}>{label}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={row.analyticsCategory}
+                      onChange={(e) => handleSplitRowChange(idx, { analyticsCategory: e.target.value, eventDetail: '' })}
+                      className="px-2 py-1.5 border rounded-lg text-sm"
+                    >
+                      <option value="">Catégorie...</option>
+                      {categories.map((c) => (
+                        <option key={c.name} value={c.name}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 items-start">
+                    {cat?.requiresDetail ? (
+                      <select
+                        value={row.eventDetail || ''}
+                        onChange={(e) => handleSplitRowChange(idx, { eventDetail: e.target.value })}
+                        className="px-2 py-1.5 border rounded-lg text-sm"
+                      >
+                        <option value="">Détail (requis)...</option>
+                        {(detailOptions[row.analyticsCategory] || []).map((label) => (
+                          <option key={label} value={label}>{label}</option>
+                        ))}
+                      </select>
+                    ) : <div />}
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={row.amount || ''}
+                        onChange={(e) => handleSplitRowChange(idx, { amount: parseFloat(e.target.value) || 0 })}
+                        placeholder="Montant"
+                        className="flex-1 px-2 py-1.5 border rounded-lg text-sm"
+                      />
+                      {splitRows.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSplitRow(idx)}
+                          className="px-2 text-red-600 hover:text-red-800"
+                          title="Retirer cette ligne"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-
-          {/* Catégorie analytique (niveau 2) */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Catégorie</label>
-            <select
-              value={form.analyticsCategory}
-              onChange={(e) => setForm({ ...form, analyticsCategory: e.target.value, eventDetail: '' })}
-              className="w-full px-3 py-2 border rounded-lg"
+          <div className="flex items-center justify-between mt-2">
+            <button
+              type="button"
+              onClick={handleAddSplitRow}
+              className="text-sm text-blue-600 hover:underline"
             >
-              {categories.map((cat) => (
-                <option key={cat.name} value={cat.name}>
-                  {cat.name}
-                </option>
-              ))}
-            </select>
-            {categories.find(c => c.name === form.analyticsCategory)?.description && (
-              <p className="text-xs text-gray-500 mt-1">
-                {categories.find(c => c.name === form.analyticsCategory)?.description}
+              + Ajouter une ligne
+            </button>
+            {splitRows.length > 1 && (
+              <p className="text-sm text-gray-600">
+                Total lignes : <span className="font-mono font-semibold">{splitsTotal.toFixed(2)} €</span> / {(parseFloat(form.amount) || 0).toFixed(2)} €
               </p>
             )}
           </div>
-
-          {/* Détail (niveau 3, conditionnel) */}
-          {categories.find(c => c.name === form.analyticsCategory)?.requiresDetail && (
-            <div>
-              <label className="block text-sm font-medium mb-1">Détail</label>
-              <select
-                value={form.eventDetail}
-                onChange={(e) => setForm({ ...form, eventDetail: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg"
-                required
-              >
-                <option value="">Sélectionner...</option>
-                {(detailOptions[form.analyticsCategory] || []).map((label) => (
-                  <option key={label} value={label}>{label}</option>
-                ))}
-              </select>
-            </div>
-          )}
-        </>
+        </div>
       )}
 
       {/* Bouton */}
