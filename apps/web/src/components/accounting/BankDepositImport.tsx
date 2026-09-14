@@ -101,7 +101,7 @@ export default function BankDepositImport({ userId, onImported }: BankDepositImp
       const entryRef = await addDoc(collection(db, 'accountingEntries'), {
         seasonId,
         date: new Date(deposit.depositDate).getTime(),
-        description: deposit.label || `Remise en banque - ${METHOD_LABEL[deposit.paymentMethod]} (${deposit.itemCount})`,
+        description: deposit.label || `Remise en banque - ${METHOD_LABEL[deposit.paymentMethod] ?? 'divers'} (${deposit.itemCount})`,
         amount: deposit.totalAmount / 100,
         type: 'income',
         bankAccount: deposit.bankAccountId,
@@ -146,7 +146,7 @@ export default function BankDepositImport({ userId, onImported }: BankDepositImp
           <div key={deposit.id} className="px-6 py-4 flex items-center justify-between">
             <div>
               <p className="font-medium">
-                {deposit.label || `Remise ${METHOD_LABEL[deposit.paymentMethod]}`}
+                {deposit.label || `Remise ${METHOD_LABEL[deposit.paymentMethod] ?? 'divers'}`}
                 <span className="ml-2 text-xs text-gray-500">
                   {new Date(deposit.depositDate).toLocaleDateString('fr-FR')} · {deposit.bankAccountName} · {deposit.itemCount} élément(s)
                 </span>

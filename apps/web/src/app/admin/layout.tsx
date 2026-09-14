@@ -134,7 +134,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       <main className="flex-1 overflow-auto">
-        <div className="max-w-4xl px-8 py-8">
+        <div className={`px-8 py-8 ${pathname.startsWith('/admin/accounting') ? 'max-w-full' : 'max-w-4xl'}`}>
           {children}
         </div>
       </main>
