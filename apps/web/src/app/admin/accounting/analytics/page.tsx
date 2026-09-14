@@ -155,41 +155,75 @@ export default function AnalyticsPage() {
   const totalCharges = charges.reduce((s, a) => s + a.amount, 0);
 
   const handleExportCategories = () => {
-    const data = categoryAggs.map((c) => ({
-      'Catégorie': c.name,
-      'Recettes (€)': c.income.toFixed(2),
-      'Dépenses (€)': c.expense.toFixed(2),
-      'Solde (€)': (c.income - c.expense).toFixed(2),
-      'Écritures': c.count,
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
+    const rows: (string | number)[][] = [
+      [`Ventilation par catégorie analytique — Saison ${seasonId}`],
+      [],
+      ['Catégorie', 'Recettes (€)', 'Dépenses (€)', 'Solde (€)', 'Écritures'],
+      ...categoryAggs.map((c) => [c.name, c.income, c.expense, c.income - c.expense, c.count]),
+      ['Total', totals.income, totals.expense, totals.net, filteredEntries.length],
+      [],
+      ['Totaux généraux'],
+      ['Total recettes', totals.income],
+      ['Total dépenses', totals.expense],
+      ['Résultat net', totals.net],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 11 }];
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Par catégorie');
     XLSX.writeFile(wb, `ventilation_categories_${seasonId}.xlsx`);
   };
 
   const handleExportAccounts = () => {
-    const data = [
-      ...produits.map((a) => ({ Section: 'Produits', Compte: a.label, 'Montant (€)': a.amount.toFixed(2), Écritures: a.count })),
-      { Section: '', Compte: 'Total produits', 'Montant (€)': totalProduits.toFixed(2), Écritures: '' },
-      ...charges.map((a) => ({ Section: 'Charges', Compte: a.label, 'Montant (€)': a.amount.toFixed(2), Écritures: a.count })),
-      { Section: '', Compte: 'Total charges', 'Montant (€)': totalCharges.toFixed(2), Écritures: '' },
-      ...nonClasse.map((a) => ({ Section: 'Non classé', Compte: a.label, 'Montant (€)': a.amount.toFixed(2), Écritures: a.count })),
+    const rows: (string | number)[][] = [
+      [`Ventilation par compte traditionnel — Saison ${seasonId}`],
+      [],
+      ['Produits'],
+      ['Compte', 'Montant (€)', 'Écritures'],
+      ...produits.map((a) => [a.label, a.amount, a.count]),
+      ['Total produits', totalProduits, ''],
+      [],
+      ['Charges'],
+      ['Compte', 'Montant (€)', 'Écritures'],
+      ...charges.map((a) => [a.label, a.amount, a.count]),
+      ['Total charges', totalCharges, ''],
     ];
-    const ws = XLSX.utils.json_to_sheet(data);
+    if (nonClasse.length > 0) {
+      rows.push([], ['Non classé'], ['Compte', 'Montant (€)', 'Écritures']);
+      nonClasse.forEach((a) => rows.push([a.label, a.amount, a.count]));
+    }
+    rows.push(
+      [],
+      ['Totaux généraux'],
+      ['Total recettes', totals.income],
+      ['Total dépenses', totals.expense],
+      ['Résultat net', totals.net],
+      ['Résultat (comptes classés uniquement)', totalProduits - totalCharges],
+    );
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 34 }, { wch: 14 }, { wch: 11 }];
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Par compte');
     XLSX.writeFile(wb, `ventilation_comptes_${seasonId}.xlsx`);
   };
 
   const handleExportDetail = (category: CategoryAgg) => {
-    const data = Object.entries(category.details).map(([detail, d]) => ({
-      'Détail': detail,
-      'Recettes (€)': d.income.toFixed(2),
-      'Dépenses (€)': d.expense.toFixed(2),
-      'Écritures': d.count,
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
+    const details = Object.entries(category.details);
+    const detailIncome = details.reduce((s, [, d]) => s + d.income, 0);
+    const detailExpense = details.reduce((s, [, d]) => s + d.expense, 0);
+    const detailCount = details.reduce((s, [, d]) => s + d.count, 0);
+    const rows: (string | number)[][] = [
+      [`Détail — ${category.name} — Saison ${seasonId}`],
+      [],
+      ['Détail', 'Recettes (€)', 'Dépenses (€)', 'Écritures'],
+      ...details.map(([detail, d]) => [detail, d.income, d.expense, d.count]),
+      ['Total', detailIncome, detailExpense, detailCount],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 11 }];
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, category.name.substring(0, 31));
     XLSX.writeFile(wb, `detail_${category.name.replace(/\s+/g, '_')}.xlsx`);
