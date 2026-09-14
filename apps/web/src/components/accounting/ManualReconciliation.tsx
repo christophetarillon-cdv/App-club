@@ -30,6 +30,7 @@ interface EntryDraft {
 }
 
 const signedAmount = (e: Entry) => (e.type === 'expense' ? -e.amount : e.amount);
+const PAGE_SIZE = 25;
 
 export default function ManualReconciliation() {
   const { user } = useAuth();
@@ -44,6 +45,7 @@ export default function ManualReconciliation() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     getDocs(collection(db, 'bankAccounts')).then((snap) => {
@@ -67,6 +69,7 @@ export default function ManualReconciliation() {
     setError('');
     setSuccess('');
     setDrafts({});
+    setPage(0);
 
     Promise.all([
       getDocs(query(
@@ -138,6 +141,10 @@ export default function ManualReconciliation() {
     () => unreconciled.filter((e) => drafts[e.id]?.checked),
     [unreconciled, drafts],
   );
+
+  const totalPages = Math.max(1, Math.ceil(unreconciled.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const paginatedEntries = unreconciled.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   const checkedSum = checkedEntries.reduce((sum, e) => sum + signedAmount(e), 0);
   const openingBalance = account?.openingBalance ?? 0;
@@ -277,8 +284,10 @@ export default function ManualReconciliation() {
         ) : unreconciled.length === 0 ? (
           <div className="p-6 text-center text-gray-500">Aucune écriture non rapprochée pour ce compte</div>
         ) : (
+          <>
+          <div className="overflow-auto max-h-[65vh]">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
+            <thead className="bg-gray-50 border-b sticky top-0 z-10">
               <tr>
                 <th className="px-4 py-3 text-center font-semibold w-10">✓</th>
                 <th className="px-4 py-3 text-left font-semibold">Date</th>
@@ -289,7 +298,7 @@ export default function ManualReconciliation() {
               </tr>
             </thead>
             <tbody>
-              {unreconciled.map((entry) => {
+              {paginatedEntries.map((entry) => {
                 const draft = drafts[entry.id];
                 return (
                   <tr key={entry.id} className={`border-b ${draft?.checked ? 'bg-green-50' : ''}`}>
@@ -331,6 +340,33 @@ export default function ManualReconciliation() {
               })}
             </tbody>
           </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-6 py-3 border-t bg-gray-50 text-sm">
+              <p className="text-gray-600">
+                {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, unreconciled.length)} sur {unreconciled.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={currentPage === 0}
+                  className="px-3 py-1 bg-white border rounded-lg font-medium hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ← Précédent
+                </button>
+                <span className="text-gray-500">Page {currentPage + 1} / {totalPages}</span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={currentPage >= totalPages - 1}
+                  className="px-3 py-1 bg-white border rounded-lg font-medium hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Suivant →
+                </button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
     </div>
