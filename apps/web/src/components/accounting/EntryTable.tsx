@@ -41,6 +41,8 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingData, setEditingData] = useState<Partial<Entry>>({});
+  const [editChartAccount, setEditChartAccount] = useState('');
+  const [editEventDetail, setEditEventDetail] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [bankLabels, setBankLabels] = useState<Record<string, string>>({});
@@ -117,24 +119,46 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
   const handleEdit = (entry: Entry) => {
     setEditingId(entry.id);
     setEditingData({ ...entry });
+    setEditChartAccount(entry.splits?.[0]?.chartAccount || '');
+    setEditEventDetail(entry.splits?.[0]?.eventDetail || '');
     setError('');
   };
 
-  const handleSave = async () => {
+  const handleSave = async (entry: Entry) => {
     if (!editingId) return;
+
+    const isSingleLine = !entry.splits || entry.splits.length <= 1;
+    if (isSingleLine && !editChartAccount) {
+      setError('Le compte traditionnel est obligatoire');
+      return;
+    }
+    const selectedCategory = categoryOptions.find((c) => c.name === editingData.analyticsCategory);
+    if (isSingleLine && selectedCategory?.requiresDetail && !editEventDetail) {
+      setError(`La catégorie "${editingData.analyticsCategory}" nécessite un détail`);
+      return;
+    }
 
     setSaving(true);
     setError('');
     try {
       const entryRef = doc(db, 'accountingEntries', editingId);
-      await updateDoc(entryRef, {
+      const updates: Record<string, unknown> = {
         description: editingData.description,
         amount: editingData.amount,
         date: editingData.date,
         bankAccount: editingData.bankAccount,
         analyticsCategory: editingData.analyticsCategory,
         hasReceipt: editingData.hasReceipt ?? false,
-      });
+      };
+      if (isSingleLine) {
+        updates.splits = [{
+          chartAccount: editChartAccount,
+          analyticsCategory: editingData.analyticsCategory,
+          ...(editEventDetail && { eventDetail: editEventDetail }),
+          amount: editingData.amount,
+        }];
+      }
+      await updateDoc(entryRef, updates);
       setEditingId(null);
       setEditingData({});
     } catch (err) {
@@ -357,15 +381,53 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                             </select>
                           </div>
                         </div>
-                        <div>
-                          <label className="text-xs font-semibold text-gray-600 block mb-1">Catégorie</label>
-                          <input
-                            type="text"
-                            value={editingData.analyticsCategory || ''}
-                            onChange={(e) => setEditingData({ ...editingData, analyticsCategory: e.target.value })}
-                            className="w-full px-3 py-2 border rounded text-sm"
-                          />
-                        </div>
+                        {(!entry.splits || entry.splits.length <= 1) && (
+                          <div className="grid grid-cols-3 gap-4">
+                            <div>
+                              <label className="text-xs font-semibold text-gray-600 block mb-1">Compte traditionnel</label>
+                              <select
+                                value={editChartAccount}
+                                onChange={(e) => setEditChartAccount(e.target.value)}
+                                className="w-full px-3 py-2 border rounded text-sm"
+                              >
+                                <option value="">Sélectionner...</option>
+                                {chartOptions.map((label) => (
+                                  <option key={label} value={label}>{label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-600 block mb-1">Catégorie</label>
+                              <select
+                                value={editingData.analyticsCategory || ''}
+                                onChange={(e) => {
+                                  setEditingData({ ...editingData, analyticsCategory: e.target.value });
+                                  setEditEventDetail('');
+                                }}
+                                className="w-full px-3 py-2 border rounded text-sm"
+                              >
+                                {categoryOptions.map((c) => (
+                                  <option key={c.name} value={c.name}>{c.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            {categoryOptions.find((c) => c.name === editingData.analyticsCategory)?.requiresDetail && (
+                              <div>
+                                <label className="text-xs font-semibold text-gray-600 block mb-1">Détail</label>
+                                <select
+                                  value={editEventDetail}
+                                  onChange={(e) => setEditEventDetail(e.target.value)}
+                                  className="w-full px-3 py-2 border rounded text-sm"
+                                >
+                                  <option value="">Sélectionner...</option>
+                                  {(detailOptions[editingData.analyticsCategory || ''] || []).map((label) => (
+                                    <option key={label} value={label}>{label}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                           <input
                             type="checkbox"
@@ -377,7 +439,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                         </label>
                         <div className="flex gap-2">
                           <button
-                            onClick={handleSave}
+                            onClick={() => handleSave(entry)}
                             disabled={saving}
                             className="px-4 py-2 bg-green-500 text-white rounded text-sm font-medium hover:bg-green-600 disabled:opacity-50"
                           >
