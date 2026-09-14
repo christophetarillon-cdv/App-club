@@ -82,6 +82,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
         date: editingData.date,
         bankAccount: editingData.bankAccount,
         analyticsCategory: editingData.analyticsCategory,
+        hasReceipt: editingData.hasReceipt ?? false,
       });
       setEditingId(null);
       setEditingData({});
@@ -123,6 +124,7 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
             <th className="px-6 py-3 text-left font-semibold">Compte</th>
             <th className="px-6 py-3 text-left font-semibold">Catégorie</th>
             <th className="px-6 py-3 text-center font-semibold">État</th>
+            <th className="px-6 py-3 text-center font-semibold">Facture</th>
           </tr>
         </thead>
         <tbody>
@@ -189,11 +191,20 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                     {entry.status === 'posted' ? 'Validée' : 'Brouillon'}
                   </span>
                 </td>
+                <td className="px-6 py-4 text-center">
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${
+                    entry.hasReceipt
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {entry.hasReceipt ? 'Oui' : 'Non'}
+                  </span>
+                </td>
               </tr>
 
               {expandedId === entry.id && (
                 <tr className="bg-blue-50 border-b">
-                  <td colSpan={8} className="px-6 py-4">
+                  <td colSpan={9} className="px-6 py-4">
                     {editingId === entry.id ? (
                       <div className="space-y-4">
                         <div>
@@ -247,6 +258,15 @@ export default function EntryTable({ entries, loading, seasonId }: EntryTablePro
                             className="w-full px-3 py-2 border rounded text-sm"
                           />
                         </div>
+                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editingData.hasReceipt ?? false}
+                            onChange={(e) => setEditingData({ ...editingData, hasReceipt: e.target.checked })}
+                            className="w-4 h-4"
+                          />
+                          Facture correspondante disponible
+                        </label>
                         <div className="flex gap-2">
                           <button
                             onClick={handleSave}
