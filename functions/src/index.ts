@@ -4076,7 +4076,9 @@ export const getGoogleContactGroupEmails = onCall(
 // onPaymentCreated a été retiré : il écrivait dans accountingEntries avec un
 // schéma abandonné (débit/crédit, codes de compte inexistants) et aurait fait
 // doublon avec l'import des mises en banque désormais utilisé à la place.
+// aggregateAccountingData a aussi été retiré : même bug (référence à `db`
+// jamais défini, plantait à chaque exécution) + même schéma abandonné.
+// Ventilations et Rapports calculent tout côté client à la place.
 export {
-  aggregateAccountingData,
   initializeAccounting,
 } from './accounting';
