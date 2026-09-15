@@ -91,7 +91,8 @@ service cloud.firestore {
         roles.hasAny(perms.get('/admin/notification-channels', ['admin'])) ||
         roles.hasAny(perms.get('/admin/notifications/send', ['admin'])) ||
         roles.hasAny(perms.get('/admin/private-messages', ['admin'])) ||
-        roles.hasAny(perms.get('/admin/emails', ['admin']));
+        roles.hasAny(perms.get('/admin/emails', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/accounting/reports', ['admin']));
     }
 
     // Écriture memberships/paymentGroups : réservé aux pages qui approuvent
@@ -669,6 +670,17 @@ service cloud.firestore {
       allow read: if hasAccountingAccess();
       allow create, update: if hasAccountingAccess();
       allow delete: if isAdmin();
+    }
+
+    // Bilan annuel : report à nouveau initial (une valeur unique) et
+    // saisies manuelles par saison (immobilisations, dettes).
+    match /accountingSettings/{id} {
+      allow read: if hasAccountingAccess();
+      allow write: if hasPagePermission('/admin/accounting/reports');
+    }
+    match /balanceSheetInputs/{id} {
+      allow read: if hasAccountingAccess();
+      allow write: if hasPagePermission('/admin/accounting/reports');
     }
 
   }
