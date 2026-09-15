@@ -28,7 +28,7 @@ const GENDER_OPTIONS = [
   { value: 'other', label: 'Autre' },
 ];
 
-interface Dancer { id: string; firstName: string; lastName: string; accountEmail?: string; }
+interface Dancer { id: string; firstName: string; lastName: string; accountId: string; accountEmail?: string; }
 interface Season { id: string; label: string; }
 interface PricingPlan { id: string; label: string; amount: number; conditions: string; seasonId: string; }
 interface BankAccount { id: string; name: string; bank: string; accountNumber: string; holder: string; label: string; }
@@ -88,13 +88,22 @@ const METHOD_LABEL: Record<PaymentMethod, string> = {
 async function loadSeasonMemberships(
   userId: string, dancerId: string, seasonId: string, dancerMap: Map<string, Dancer>
 ): Promise<{ memberships: MembershipEntry[]; groups: PaymentGroup[] }> {
-  const [membershipSnap, groupsSnap] = await Promise.all([
+  // Deux requêtes par collection : `userId` (payeur) et `visibleUserIds`
+  // (danseur d'un autre compte inclus dans une cotisation payée par
+  // quelqu'un d'autre) — fusionnées ci-dessous. Les règles Firestore
+  // n'acceptent que des requêtes correspondant exactement à l'une des deux
+  // branches autorisées en lecture.
+  const [membershipSnapA, membershipSnapB, groupsSnapA, groupsSnapB] = await Promise.all([
     getDocs(query(collection(db, 'memberships'), where('userId', '==', userId), where('seasonId', '==', seasonId))),
+    getDocs(query(collection(db, 'memberships'), where('visibleUserIds', 'array-contains', userId), where('seasonId', '==', seasonId))),
     getDocs(query(collection(db, 'paymentGroups'), where('userId', '==', userId), where('seasonId', '==', seasonId))),
+    getDocs(query(collection(db, 'paymentGroups'), where('visibleUserIds', 'array-contains', userId), where('seasonId', '==', seasonId))),
   ]);
+  const membershipDocs = [...new Map([...membershipSnapA.docs, ...membershipSnapB.docs].map(d => [d.id, d])).values()];
+  const groupsSnap = { docs: [...new Map([...groupsSnapA.docs, ...groupsSnapB.docs].map(d => [d.id, d])).values()] };
 
   const loadedMemberships: MembershipEntry[] = await Promise.all(
-    membershipSnap.docs.map(async md => {
+    membershipDocs.map(async md => {
       const data = md.data();
       let dancerName: string | undefined;
       const mDancerId: string | undefined = data.dancerId;
@@ -257,13 +266,15 @@ export default function MembershipPage() {
     setViewedSeasonId(null);
     (async () => {
       try {
-      const [seasonsSnap, dancerMembershipsSnap] = await Promise.all([
+      const [seasonsSnap, dancerMembershipsSnapA, dancerMembershipsSnapB] = await Promise.all([
         getDocs(query(collection(db, 'seasons'), orderBy('startDate', 'desc'))),
         // Les règles Firestore n'autorisent la lecture de `memberships` que
-        // via `userId` (voir firestore.rules) : une requête filtrée
-        // uniquement par dancerId est refusée même si les documents seraient
-        // légitimes. On garde donc le même filtre userId que le reste de la page.
+        // via `userId` ou `visibleUserIds` (voir firestore.rules) : une
+        // requête filtrée uniquement par dancerId est refusée même si les
+        // documents seraient légitimes. On garde donc le même filtre que le
+        // reste de la page, en deux requêtes fusionnées ensuite.
         getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid), where('dancerId', '==', selectedDancer.id))),
+        getDocs(query(collection(db, 'memberships'), where('visibleUserIds', 'array-contains', user.uid), where('dancerId', '==', selectedDancer.id))),
       ]);
 
       const allSeasonsList: Season[] = seasonsSnap.docs.map(d => ({ id: d.id, label: d.data().label as string }));
@@ -273,7 +284,10 @@ export default function MembershipPage() {
 
       // Saisons passées où ce danseur a une cotisation — pas toutes les
       // saisons du club, pour ne rien montrer à un adhérent sans historique.
-      const dancerSeasonIds = new Set(dancerMembershipsSnap.docs.map(d => d.data().seasonId as string));
+      const dancerSeasonIds = new Set([
+        ...dancerMembershipsSnapA.docs.map(d => d.data().seasonId as string),
+        ...dancerMembershipsSnapB.docs.map(d => d.data().seasonId as string),
+      ]);
       setPastSeasons(allSeasonsList.filter(s => s.id !== activeSeason?.id && dancerSeasonIds.has(s.id)));
 
       const accSnap = await getDoc(doc(db, 'accounts', user.uid));
@@ -283,7 +297,7 @@ export default function MembershipPage() {
         const dancerDocs = await Promise.all(dancerIds.map(id => getDoc(doc(db, 'dancers', id))));
         myDancersList = dancerDocs
           .filter(d => d.exists())
-          .map(d => ({ id: d.id, firstName: d.data()!.firstName ?? '', lastName: d.data()!.lastName ?? '' }));
+          .map(d => ({ id: d.id, firstName: d.data()!.firstName ?? '', lastName: d.data()!.lastName ?? '', accountId: d.data()!.accountId ?? '' }));
         setMyDancers(myDancersList);
         if (myDancersList[0]) setSelectedDancerIds(new Set([myDancersList[0].id]));
       }
@@ -415,6 +429,7 @@ export default function MembershipPage() {
         id: d.id,
         firstName: d.data().firstName ?? '',
         lastName: d.data().lastName ?? '',
+        accountId: d.data().accountId ?? '',
       }));
     setAllOtherDancers(others);
   };
@@ -689,6 +704,7 @@ export default function MembershipPage() {
 
       await setDoc(mRef, {
         userId: user.uid,
+        visibleUserIds: [...new Set([user.uid, dancer.accountId])],
         dancerId: dancer.id,
         seasonId: season.id,
         pricingPlanId: planId,
@@ -738,6 +754,7 @@ export default function MembershipPage() {
         const plan = plans.find(p => p.id === planId)!;
         const ref = await addDoc(collection(db, 'memberships'), {
           userId: user.uid,
+          visibleUserIds: [...new Set([user.uid, dancer.accountId])],
           dancerId: dancer.id,
           seasonId: season.id,
           pricingPlanId: planId,
@@ -766,6 +783,10 @@ export default function MembershipPage() {
         const groupRef = doc(collection(db, 'paymentGroups'));
         const batch = writeBatch(db);
         const membershipIds: string[] = [];
+        // Le groupe doit rester visible du payeur ET de chaque danseur inclus,
+        // même si l'un d'eux vient d'un autre compte ("Moi + danseurs d'un
+        // autre compte") — sinon son titulaire ne voit jamais sa cotisation.
+        const groupVisibleUserIds = [...new Set([user.uid, ...dancersToCreate.map(d => d.accountId)])];
 
         for (const dancer of dancersToCreate) {
           const planId = selectedPlanIds[dancer.id]!;
@@ -774,6 +795,7 @@ export default function MembershipPage() {
           membershipIds.push(mRef.id);
           batch.set(mRef, {
             userId: user.uid,
+            visibleUserIds: [...new Set([user.uid, dancer.accountId])],
             dancerId: dancer.id,
             seasonId: season.id,
             pricingPlanId: planId,
@@ -800,6 +822,7 @@ export default function MembershipPage() {
 
         batch.set(groupRef, {
           userId: user.uid,
+          visibleUserIds: groupVisibleUserIds,
           membershipIds,
           totalDue,
           totalPaid: 0,

@@ -26,6 +26,7 @@ interface Membership {
   installmentIds: string[];
   seasonId: string;
   userId: string;
+  visibleUserIds: string[];
 }
 
 interface PaymentGroup {
@@ -36,6 +37,7 @@ interface PaymentGroup {
   paymentPlanStatus: string;
   installmentIds: string[];
   userId: string;
+  visibleUserIds: string[];
   dancers: { name: string; planLabel: string }[];
 }
 
@@ -84,13 +86,14 @@ export default function PaymentPlanPage() {
             totalDue: data.totalDue, paymentMethod: data.paymentMethod,
             paymentPlanStatus: data.paymentPlanStatus,
             installmentIds: data.installmentIds ?? [],
-            userId: data.userId, dancers,
+            userId: data.userId, visibleUserIds: data.visibleUserIds ?? [data.userId], dancers,
           });
         }
       } else if (membershipId) {
         const snap = await getDoc(doc(db, 'memberships', membershipId));
         if (snap.exists()) {
-          setMembership({ id: snap.id, ...snap.data() as Omit<Membership, 'id'> });
+          const data = snap.data();
+          setMembership({ id: snap.id, ...data as Omit<Membership, 'id' | 'visibleUserIds'>, visibleUserIds: data.visibleUserIds ?? [data.userId] });
         }
       } else {
         const seasonsSnap = await getDocs(query(collection(db, 'seasons'), where('isActive', '==', true)));
@@ -100,7 +103,8 @@ export default function PaymentPlanPage() {
           where('userId', '==', user.uid),
           where('seasonId', '==', seasonId)));
         if (!snap.empty) {
-          setMembership({ id: snap.docs[0]!.id, ...snap.docs[0]!.data() as Omit<Membership, 'id'> });
+          const data = snap.docs[0]!.data();
+          setMembership({ id: snap.docs[0]!.id, ...data as Omit<Membership, 'id' | 'visibleUserIds'>, visibleUserIds: data.visibleUserIds ?? [data.userId] });
         }
       }
       setLoading(false);
@@ -177,6 +181,7 @@ export default function PaymentPlanPage() {
         batch.set(ref, {
           paymentGroupId: group.id,
           userId: user.uid,
+          visibleUserIds: group.visibleUserIds,
           amount: Math.round(parseFloat(i.amount) * 100),
           method: instMethod,
           expectedDate: i.expectedDate,
@@ -197,6 +202,7 @@ export default function PaymentPlanPage() {
         batch.set(ref, {
           membershipId: membership.id,
           userId: user.uid,
+          visibleUserIds: membership.visibleUserIds,
           amount: Math.round(parseFloat(i.amount) * 100),
           method: instMethod,
           expectedDate: i.expectedDate,

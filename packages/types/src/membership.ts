@@ -8,6 +8,13 @@ export type RefundMethod = 'cheque' | 'transfer' | 'cash';
 export interface Membership extends WithTimestamps {
   id: string;
   userId: string;
+  // Comptes autorisés à LIRE ce document en plus de `userId` — nécessaire
+  // quand le payeur règle la cotisation d'un danseur d'un autre compte
+  // ("Moi + danseurs d'un autre compte") : sans ça, le titulaire du danseur
+  // ne peut jamais voir sa propre cotisation depuis son compte (règles
+  // Firestore scopées sur `userId`). Absent sur les documents créés avant
+  // ce correctif (pas de migration des données historiques).
+  visibleUserIds?: string[];
   seasonId: string;
   pricingPlanId: string;
   totalDue: number;        // cents

@@ -31,6 +31,7 @@ type InstallmentX = PaymentInstallment & {
 interface PaymentGroup {
   id: string;
   userId: string;
+  visibleUserIds?: string[];
   seasonId: string;
   membershipIds: string[];
   installmentIds: string[];
@@ -295,10 +296,20 @@ export default function MembershipScreen() {
     setLoadingEntries(true);
     setEntries([]);
     try {
-      const [membershipSnap, groupSnap, planSnap] = await Promise.all([
+      // Deux requêtes par collection : `userId` (payeur) et `visibleUserIds`
+      // (danseur d'un autre compte inclus dans une cotisation payée par
+      // quelqu'un d'autre) — fusionnées ci-dessous. Nécessaire car les
+      // règles Firestore n'acceptent que des requêtes qui correspondent
+      // exactement à une des deux branches autorisées en lecture.
+      const [membershipSnapA, membershipSnapB, groupSnapA, groupSnapB, planSnap] = await Promise.all([
         getDocs(query(
           collection(db, 'memberships'),
           where('userId', '==', user.uid),
+          where('seasonId', '==', s.id),
+        )),
+        getDocs(query(
+          collection(db, 'memberships'),
+          where('visibleUserIds', 'array-contains', user.uid),
           where('seasonId', '==', s.id),
         )),
         getDocs(query(
@@ -306,12 +317,29 @@ export default function MembershipScreen() {
           where('userId', '==', user.uid),
           where('seasonId', '==', s.id),
         )),
+        getDocs(query(
+          collection(db, 'paymentGroups'),
+          where('visibleUserIds', 'array-contains', user.uid),
+          where('seasonId', '==', s.id),
+        )),
         getDocs(query(collection(db, 'pricingPlans'), where('seasonId', '==', s.id))),
       ]);
 
-      const memberships = membershipSnap.docs.map(d => ({ id: d.id, ...d.data() } as MembershipX));
-      const groups      = groupSnap.docs.map(d => ({ id: d.id, ...d.data() } as PaymentGroup));
-      const plans       = planSnap.docs
+      const dedupeById = <T extends { id: string }>(a: T[], b: T[]): T[] => {
+        const map = new Map(a.map(x => [x.id, x]));
+        for (const x of b) map.set(x.id, x);
+        return [...map.values()];
+      };
+
+      const memberships = dedupeById(
+        membershipSnapA.docs.map(d => ({ id: d.id, ...d.data() } as MembershipX)),
+        membershipSnapB.docs.map(d => ({ id: d.id, ...d.data() } as MembershipX)),
+      );
+      const groups = dedupeById(
+        groupSnapA.docs.map(d => ({ id: d.id, ...d.data() } as PaymentGroup)),
+        groupSnapB.docs.map(d => ({ id: d.id, ...d.data() } as PaymentGroup)),
+      );
+      const plans = planSnap.docs
         .map(d => ({ id: d.id, ...d.data() } as PricingPlan))
         .filter(p => p.isActive);
 
@@ -385,14 +413,15 @@ export default function MembershipScreen() {
     if (!user) return;
     (async () => {
       try {
-        const [seasonsSnap, dancerMembershipsSnap] = await Promise.all([
+        const [seasonsSnap, dancerMembershipsSnapA, dancerMembershipsSnapB] = await Promise.all([
           getDocs(query(collection(db, 'seasons'), orderBy('startDate', 'desc'))),
           // Les règles Firestore n'autorisent la lecture de `memberships` que
-          // via `userId` (voir firestore.rules) : une requête filtrée
-          // uniquement par dancerId est refusée même si les documents
-          // seraient légitimes. On garde donc le même filtre userId que le
-          // reste de la page.
+          // via `userId` ou `visibleUserIds` (voir firestore.rules) : une
+          // requête filtrée uniquement par dancerId est refusée même si les
+          // documents seraient légitimes. On garde donc le même filtre que
+          // le reste de la page, en deux requêtes fusionnées ensuite.
           getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid), where('dancerId', '==', id))),
+          getDocs(query(collection(db, 'memberships'), where('visibleUserIds', 'array-contains', user.uid), where('dancerId', '==', id))),
         ]);
         if (seasonsSnap.empty) return;
         const all = seasonsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Season));
@@ -400,7 +429,10 @@ export default function MembershipScreen() {
         const best = all.find(s => s.isActive) ?? all.find(s => s.registrationOpen) ?? all[0]!;
         // Les saisons passées ne sont proposées que si ce danseur y a une
         // cotisation — pas de chips de saisons vides à faire défiler.
-        const seasonIdsWithData = new Set(dancerMembershipsSnap.docs.map(d => d.data().seasonId as string));
+        const seasonIdsWithData = new Set([
+          ...dancerMembershipsSnapA.docs.map(d => d.data().seasonId as string),
+          ...dancerMembershipsSnapB.docs.map(d => d.data().seasonId as string),
+        ]);
         setAvailableSeasons(all.filter(s => s.id === best.id || seasonIdsWithData.has(s.id)));
         setSeason(best);
         await loadForSeason(best);

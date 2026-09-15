@@ -7,6 +7,8 @@ export interface PaymentInstallment {
   id: string;
   membershipId: string;
   userId: string;
+  // Voir Membership.visibleUserIds — même mécanisme pour les échéances.
+  visibleUserIds?: string[];
   amount: number;          // cents
   method: PaymentMethod;
   expectedDate: string;    // ISO date string YYYY-MM-DD

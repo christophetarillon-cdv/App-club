@@ -94,8 +94,8 @@ interface BankAccount {
 }
 
 type CreationResult =
-  | { kind: 'solo'; membershipId: string; totalDue: number; method: string }
-  | { kind: 'group'; groupId: string; totalDue: number; method: string };
+  | { kind: 'solo'; membershipId: string; totalDue: number; method: string; visibleUserIds: string[] }
+  | { kind: 'group'; groupId: string; totalDue: number; method: string; visibleUserIds: string[] };
 
 // ── Utilitaires ──────────────────────────────────────────────────────────────
 
@@ -327,12 +327,18 @@ export default function MembershipCreateScreen() {
           const snap = await getDoc(doc(db, 'memberships', resumeMembershipId));
           if (!snap.exists() || snap.data().paymentPlanStatus !== 'pending') { setResuming(false); return; }
           const d = snap.data();
-          result = { kind: 'solo', membershipId: snap.id, totalDue: d.totalDue, method: d.paymentMethod };
+          result = {
+            kind: 'solo', membershipId: snap.id, totalDue: d.totalDue, method: d.paymentMethod,
+            visibleUserIds: d.visibleUserIds ?? [d.userId],
+          };
         } else {
           const snap = await getDoc(doc(db, 'paymentGroups', resumeGroupId!));
           if (!snap.exists() || snap.data().paymentPlanStatus !== 'pending') { setResuming(false); return; }
           const d = snap.data();
-          result = { kind: 'group', groupId: snap.id, totalDue: d.totalDue, method: d.paymentMethod };
+          result = {
+            kind: 'group', groupId: snap.id, totalDue: d.totalDue, method: d.paymentMethod,
+            visibleUserIds: d.visibleUserIds ?? [d.userId],
+          };
         }
         setCreationResult(result);
 
@@ -651,6 +657,7 @@ export default function MembershipCreateScreen() {
 
       await setDoc(mRef, {
         userId: user.uid,
+        visibleUserIds: [...new Set([user.uid, dancer.accountId])],
         dancerId: dancer.id,
         seasonId: season.id,
         pricingPlanId: plan.id,
@@ -694,8 +701,10 @@ export default function MembershipCreateScreen() {
         // Cotisation solo
         const dancer = allSelected[0]!;
         const plan = plans.find(p => p.id === planIds[dancer.id])!;
+        const visibleUserIds = [...new Set([user.uid, dancer.accountId])];
         const ref = await addDoc(collection(db, 'memberships'), {
           userId: user.uid,
+          visibleUserIds,
           dancerId: dancer.id,
           seasonId: season.id,
           pricingPlanId: plan.id,
@@ -713,19 +722,24 @@ export default function MembershipCreateScreen() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        result = { kind: 'solo', membershipId: ref.id, totalDue: plan.amount, method };
+        result = { kind: 'solo', membershipId: ref.id, totalDue: plan.amount, method, visibleUserIds };
       } else {
         // Cotisations groupées
         const batch = writeBatch(db);
         const groupRef = doc(collection(db, 'paymentGroups'));
         const membershipIds: string[] = [];
         let groupTotal = 0;
+        // Le groupe doit rester visible du payeur ET de chaque danseur inclus,
+        // meme si l'un d'eux vient d'un autre compte ("Moi + danseurs d'un
+        // autre compte") — sinon son titulaire ne voit jamais sa cotisation.
+        const groupVisibleUserIds = [...new Set([user.uid, ...allSelected.map(d => d.accountId)])];
 
         for (const dancer of allSelected) {
           const plan = plans.find(p => p.id === planIds[dancer.id])!;
           const mRef = doc(collection(db, 'memberships'));
           batch.set(mRef, {
             userId: user.uid,
+            visibleUserIds: [...new Set([user.uid, dancer.accountId])],
             dancerId: dancer.id,
             seasonId: season.id,
             pricingPlanId: plan.id,
@@ -749,6 +763,7 @@ export default function MembershipCreateScreen() {
 
         batch.set(groupRef, {
           userId: user.uid,
+          visibleUserIds: groupVisibleUserIds,
           membershipIds,
           totalDue: groupTotal,
           totalPaid: 0,
@@ -761,7 +776,7 @@ export default function MembershipCreateScreen() {
         });
 
         await batch.commit();
-        result = { kind: 'group', groupId: groupRef.id, totalDue: groupTotal, method };
+        result = { kind: 'group', groupId: groupRef.id, totalDue: groupTotal, method, visibleUserIds: groupVisibleUserIds };
       }
 
       // Danseurs d'un autre compte dont la fiche est incomplète et que je
@@ -853,6 +868,7 @@ export default function MembershipCreateScreen() {
             ? { membershipId: creationResult.membershipId }
             : { paymentGroupId: creationResult.groupId }),
           userId: user.uid,
+          visibleUserIds: creationResult.visibleUserIds,
           amount: Math.round(parseFloat(inst.amount) * 100),
           method: instMethod,
           expectedDate: inst.date,

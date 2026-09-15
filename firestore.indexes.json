@@ -227,6 +227,30 @@
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "generatedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "memberships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visibleUserIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "seasonId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "memberships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visibleUserIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "dancerId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "paymentGroups",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visibleUserIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "seasonId", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -36,6 +36,16 @@ service cloud.firestore {
       return isAuth() && request.auth.uid == uid;
     }
 
+    // Cotisation/échéance payée par un autre compte ("Moi + danseurs d'un
+    // autre compte") : le document reste scopé sur `userId` (le payeur),
+    // mais `visibleUserIds` liste en plus les comptes des danseurs concernés
+    // pour qu'ils puissent voir leur propre cotisation. Ne fait aucun get(),
+    // safe à combiner avec une fonction de type hasAnyAdminAccess().
+    function isVisibleTo(data) {
+      return isOwner(data.userId) ||
+        (isAuth() && data.get('visibleUserIds', []).hasAny([request.auth.uid]));
+    }
+
     function isInstructor() {
       return isAuth() && userRoles().hasAny(['instructor', 'admin', 'pointage']);
     }
@@ -373,7 +383,7 @@ service cloud.firestore {
     }
 
     match /memberships/{id} {
-      allow read: if isOwner(resource.data.userId) || hasAnyAdminAccess();
+      allow read: if isVisibleTo(resource.data) || hasAnyAdminAccess();
       allow create: if (isAuth() && request.auth.uid == request.resource.data.userId) || hasPagePermission('/admin/payments/new');
       allow update: if hasMembershipWriteAccess() || (
         isOwner(resource.data.userId) &&
@@ -389,7 +399,7 @@ service cloud.firestore {
     }
 
     match /paymentGroups/{id} {
-      allow read: if isOwner(resource.data.userId) || hasAnyAdminAccess();
+      allow read: if isVisibleTo(resource.data) || hasAnyAdminAccess();
       allow create: if (isAuth() && request.auth.uid == request.resource.data.userId) || hasPagePermission('/admin/payments/new');
       allow update: if hasMembershipWriteAccess() || (
         isOwner(resource.data.userId) &&
@@ -409,7 +419,7 @@ service cloud.firestore {
     }
 
     match /paymentInstallments/{id} {
-      allow read: if isOwner(resource.data.userId) || hasAnyAdminAccess();
+      allow read: if isVisibleTo(resource.data) || hasAnyAdminAccess();
       allow create: if (isAuth() && request.auth.uid == request.resource.data.userId) || hasPagePermission('/admin/payments/new');
       allow update, delete: if hasInstallmentWriteAccess();
     }
