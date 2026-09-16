@@ -47,6 +47,7 @@ export default function SessionAttendancePage() {
   const { account, dancers } = useAuth();
   const [session, setSession] = useState<Session | null>(null);
   const [course, setCourse] = useState<Course | null>(null);
+  const [levelName, setLevelName] = useState<string | null>(null);
   const [attendances, setAttendances] = useState<AttendanceRow[]>([]);
   const [allDancers, setAllDancers] = useState<SearchableDancer[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,7 +65,14 @@ export default function SessionAttendancePage() {
     setSession(sessionData);
 
     const courseSnap = await getDoc(doc(db, 'courses', sessionData.courseId));
-    if (courseSnap.exists()) setCourse({ id: courseSnap.id, ...courseSnap.data() } as Course);
+    if (courseSnap.exists()) {
+      const courseData = { id: courseSnap.id, ...courseSnap.data() } as Course;
+      setCourse(courseData);
+      // Désambiguïse des cours qui partagent le même nom de style (ex :
+      // plusieurs "Danse en solo" à des niveaux différents).
+      const levelSnap = await getDoc(doc(db, 'levels', courseData.levelId));
+      if (levelSnap.exists()) setLevelName((levelSnap.data() as any).name ?? null);
+    }
 
     const attendanceSnap = await getDocs(query(
       collection(db, 'attendances'),
@@ -160,7 +168,9 @@ export default function SessionAttendancePage() {
           </svg>
           Mes séances
         </Link>
-        <h1 className="text-xl font-bold text-gray-800">{course?.name ?? '…'}</h1>
+        <h1 className="text-xl font-bold text-gray-800">
+          {course ? (levelName ? `${course.name} · ${levelName}` : course.name) : '…'}
+        </h1>
         <p className="text-gray-500 mt-0.5">
           {formatDate(session.date)} · {session.startTime}–{session.endTime}
         </p>

@@ -32,12 +32,24 @@ export default function InstructorPage() {
       const from = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const to = today.toISOString().slice(0, 10);
 
+      // Charge les niveaux pour désambiguïser des cours qui partagent le même
+      // nom de style (ex : plusieurs "Danse en solo" à des niveaux différents,
+      // sinon impossible à distinguer dans cette liste).
+      const levelSnap = await getDocs(collection(db, 'levels'));
+      const levelNameById = new Map<string, string>();
+      levelSnap.docs.forEach(d => levelNameById.set(d.id, (d.data() as any).name ?? ''));
+      const courseLabel = (c: Course) => {
+        const baseName = c.name.trim();
+        const levelName = levelNameById.get(c.levelId);
+        return levelName ? `${baseName} · ${levelName}` : baseName;
+      };
+
       const courses = new Map<string, string>();
 
       if (isAdmin || isBureau) {
         // Admin/bureau : tous les cours
         const snap = await getDocs(collection(db, 'courses'));
-        snap.docs.forEach(d => courses.set(d.id, (d.data() as Course).name));
+        snap.docs.forEach(d => courses.set(d.id, courseLabel(d.data() as Course)));
       } else {
         // Moniteur : uniquement ses cours
         const myDancerIds = dancers
@@ -50,7 +62,7 @@ export default function InstructorPage() {
           )
         );
         courseSnaps.forEach(snap =>
-          snap.docs.forEach(d => courses.set(d.id, (d.data() as Course).name))
+          snap.docs.forEach(d => courses.set(d.id, courseLabel(d.data() as Course)))
         );
       }
 
