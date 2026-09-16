@@ -74,7 +74,10 @@ function LineChart({ data, labels, color, width }: {
   const W = width - PAD.left - PAD.right;
   const n = data.length;
   if (n < 2) return null;
-  const min = Math.min(...data);
+  // Axe à 0 comme sur le web (beginAtZero) — sinon une petite baisse entre
+  // deux valeurs proches (ex: 50 → 46) est cadrée sur [46,50] et ressemble
+  // visuellement à une chute vers zéro alors qu'elle ne l'est pas.
+  const min = Math.min(0, ...data);
   const max = Math.max(...data);
   const range = max - min || 1;
   const xStep = W / (n - 1);
