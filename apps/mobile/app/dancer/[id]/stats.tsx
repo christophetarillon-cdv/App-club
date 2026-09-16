@@ -17,6 +17,8 @@ type RawSession    = { id: string; courseId: string; date: string; status: strin
 type RawAttendance = { id: string; sessionId: string; dancerId: string; status: string };
 type WeekStat      = { label: string; total: number; unique: number };
 type CourseStat    = { name: string; avg: number };
+type CourseWeek    = { courseId: string; courseName: string; weeks: Map<string, number> };
+type AssiduityBucket = { label: string; count: number };
 type SeasonEntry   = { id: string; label: string; from: string; to: string; isActive: boolean };
 type PeriodFilter  =
   | { kind: 'weeks'; weeks: number }
@@ -60,7 +62,8 @@ async function batchAttendances(sessionIds: string[]): Promise<RawAttendance[]> 
   return snaps.flatMap(s => s.docs.map(d => ({ id: d.id, ...d.data() } as RawAttendance)));
 }
 
-const CHART_COLORS = ['#378ADD', '#534AB7', '#1D9E75', '#EF9F27', '#D4537E', '#E24B4A'];
+const CHART_COLORS = ['#378ADD', '#534AB7', '#1D9E75', '#EF9F27', '#D4537E', '#E24B4A', '#0F6E56', '#854F0B'];
+const COURSE_DASHES: number[][] = [[], [4, 3], [2, 2], [6, 2], [3, 5], []];
 
 // ── SVG Charts ────────────────────────────────────────────────────────────────
 
@@ -122,6 +125,89 @@ function HBarChart({ data, width }: { data: CourseStat[]; width: number }) {
           </G>
         );
       })}
+    </Svg>
+  );
+}
+
+function MultiLineChart({ series, labels, width }: {
+  series: { name: string; color: string; dash: number[]; values: (number | null)[] }[];
+  labels: string[];
+  width: number;
+}) {
+  const H = 170; const PAD = { top: 12, bottom: 28, left: 28, right: 8 };
+  const W = width - PAD.left - PAD.right;
+  const n = labels.length;
+  if (n < 2) return null;
+  const allValues = series.flatMap(sr => sr.values.filter((v): v is number => v !== null));
+  if (!allValues.length) return null;
+  const min = Math.min(0, ...allValues);
+  const max = Math.max(...allValues);
+  const range = max - min || 1;
+  const xStep = W / (n - 1);
+  const xOf = (i: number) => PAD.left + i * xStep;
+  const yOf = (v: number) => PAD.top + (1 - (v - min) / range) * (H - PAD.top - PAD.bottom);
+  const step = Math.ceil(n / 6);
+
+  return (
+    <Svg width={width} height={H}>
+      <Line x1={PAD.left} y1={H - PAD.bottom} x2={PAD.left + W} y2={H - PAD.bottom} stroke="#E5E7EB" strokeWidth={1} />
+      {series.map((sr, si) => {
+        // Segments séparés à chaque trou (semaine sans séance pour ce cours) —
+        // pas d'interpolation à travers un gap, comme spanGaps:false côté web.
+        const segments: string[] = [];
+        let current = '';
+        sr.values.forEach((v, i) => {
+          if (v === null) { if (current) { segments.push(current); current = ''; } return; }
+          const cmd = `${xOf(i)},${yOf(v)}`;
+          current = current ? `${current} L${cmd}` : `M${cmd}`;
+        });
+        if (current) segments.push(current);
+        return (
+          <G key={sr.name + si}>
+            {segments.map((d, i) => (
+              <Path key={i} d={d} stroke={sr.color} strokeWidth={2} fill="none"
+                strokeLinecap="round" strokeLinejoin="round"
+                {...(sr.dash.length ? { strokeDasharray: sr.dash.join(',') } : {})} />
+            ))}
+            {sr.values.map((v, i) => v !== null ? (
+              <Circle key={i} cx={xOf(i)} cy={yOf(v)} r={2.5} fill={sr.color} />
+            ) : null)}
+          </G>
+        );
+      })}
+      {labels.map((l, i) => i % step === 0 ? (
+        <SvgText key={i} x={xOf(i)} y={H - PAD.bottom + 14} fontSize={9} fill="#9CA3AF" textAnchor="middle">{l}</SvgText>
+      ) : null)}
+      <SvgText x={PAD.left - 4} y={PAD.top + 4} fontSize={9} fill="#9CA3AF" textAnchor="end">{max}</SvgText>
+      <SvgText x={PAD.left - 4} y={H - PAD.bottom} fontSize={9} fill="#9CA3AF" textAnchor="end">{min}</SvgText>
+    </Svg>
+  );
+}
+
+function VBarChart({ data, width }: { data: AssiduityBucket[]; width: number }) {
+  const H = 170; const PAD = { top: 10, bottom: 34, left: 24, right: 8 };
+  const W = width - PAD.left - PAD.right;
+  const n = data.length;
+  if (!n) return null;
+  const maxVal = Math.max(...data.map(d => d.count), 1);
+  const gap = 3;
+  const barW = Math.max((W - gap * (n - 1)) / n, 2);
+  const yOf = (v: number) => PAD.top + (1 - v / maxVal) * (H - PAD.top - PAD.bottom);
+  return (
+    <Svg width={width} height={H}>
+      <Line x1={PAD.left} y1={H - PAD.bottom} x2={PAD.left + W} y2={H - PAD.bottom} stroke="#E5E7EB" strokeWidth={1} />
+      {data.map((d, i) => {
+        const x = PAD.left + i * (barW + gap);
+        const y = yOf(d.count);
+        return (
+          <G key={d.label}>
+            <Rect x={x} y={y} width={barW} height={Math.max(H - PAD.bottom - y, 0)} rx={2} fill="#534AB7" opacity={0.85} />
+            <SvgText x={x + barW / 2} y={H - PAD.bottom + 14} fontSize={8} fill="#9CA3AF" textAnchor="middle">{d.label}</SvgText>
+          </G>
+        );
+      })}
+      <SvgText x={PAD.left - 4} y={PAD.top + 4} fontSize={9} fill="#9CA3AF" textAnchor="end">{maxVal}</SvgText>
+      <SvgText x={PAD.left - 4} y={H - PAD.bottom} fontSize={9} fill="#9CA3AF" textAnchor="end">0</SvgText>
     </Svg>
   );
 }
@@ -356,6 +442,52 @@ export default function StatsScreen() {
     return { thisWeek: thisW.total, uniqueThisWeek: thisW.ids.size, returnRate: ret, avg };
   }, [filteredSessions, filteredAttendances, attBySession, today]);
 
+  // Suivi par cours récurrent : une série par cours actif sur la période,
+  // uniquement quand aucun filtre de cours n'est appliqué (comme sur le web).
+  const courseWeeksAll = useMemo<CourseWeek[]>(() => {
+    const cwMap = new Map<string, Map<string, number>>();
+    filteredSessions.forEach(s => {
+      const wk = getMondayKey(s.date);
+      if (!cwMap.has(s.courseId)) cwMap.set(s.courseId, new Map());
+      const m = cwMap.get(s.courseId)!;
+      m.set(wk, (m.get(wk) ?? 0) + (attBySession.get(s.id) ?? []).length);
+    });
+    return [...cwMap.entries()].map(([courseId, weeks]) => ({
+      courseId,
+      courseName: courses.find(c => c.id === courseId)?.name ?? courseId,
+      weeks,
+    }));
+  }, [filteredSessions, attBySession, courses]);
+
+  const courseWeekLabels = useMemo(
+    () => [...new Set(courseWeeksAll.flatMap(cw => [...cw.weeks.keys()]))].sort(),
+    [courseWeeksAll],
+  );
+
+  const courseWeekSeries = useMemo(
+    () => courseWeeksAll.map((cw, i) => ({
+      name: cw.courseName,
+      color: CHART_COLORS[i % CHART_COLORS.length],
+      dash: COURSE_DASHES[i % COURSE_DASHES.length]!,
+      values: courseWeekLabels.map(wk => cw.weeks.get(wk) ?? null),
+    })),
+    [courseWeeksAll, courseWeekLabels],
+  );
+
+  // Assiduité individuelle : nombre de danseurs par nombre de séances suivies
+  // sur la période (respecte le filtre de cours, comme sur le web).
+  const assiduityBuckets = useMemo<AssiduityBucket[]>(() => {
+    const dancerCount = new Map<string, number>();
+    filteredAttendances.forEach(a => dancerCount.set(a.dancerId, (dancerCount.get(a.dancerId) ?? 0) + 1));
+    const histogram = new Map<number, number>();
+    [...dancerCount.values()].forEach(n => histogram.set(n, (histogram.get(n) ?? 0) + 1));
+    const maxSessions = Math.max(...histogram.keys(), 0);
+    return Array.from({ length: maxSessions }, (_, i) => ({
+      label: String(i + 1),
+      count: histogram.get(i + 1) ?? 0,
+    }));
+  }, [filteredAttendances]);
+
   const { members, trial, walkIn } = statusBreak;
   const statTotal = members + trial + walkIn;
   const pct = (n: number) => statTotal ? Math.round(n / statTotal * 100) : 0;
@@ -542,6 +674,41 @@ export default function StatsScreen() {
               </View>
             </View>
           )}
+
+          {/* Suivi par cours récurrent */}
+          {courseFilter === null && courseWeeksAll.length > 1 && (
+            <View style={s.card}>
+              <Text style={s.cardTitle}>Suivi par cours récurrent</Text>
+              <Text style={s.cardSub}>Présences semaine par semaine, un cours par ligne</Text>
+              <View style={s.courseLegendWrap}>
+                {courseWeekSeries.map(cs => (
+                  <View key={cs.name} style={s.courseLegendItem}>
+                    <View style={[
+                      s.courseLegendSwatch,
+                      cs.dash.length
+                        ? { borderTopWidth: 2, borderTopColor: cs.color, borderStyle: 'dashed' }
+                        : { backgroundColor: cs.color },
+                    ]} />
+                    <Text style={s.legendText}>{cs.name}</Text>
+                  </View>
+                ))}
+              </View>
+              <MultiLineChart
+                series={courseWeekSeries}
+                labels={courseWeekLabels.map(weekLabel)}
+                width={chartW}
+              />
+            </View>
+          )}
+
+          {/* Assiduité individuelle */}
+          {assiduityBuckets.length > 0 && (
+            <View style={s.card}>
+              <Text style={s.cardTitle}>Assiduité individuelle</Text>
+              <Text style={s.cardSub}>Nombre de danseurs selon leur nombre de séances suivies</Text>
+              <VBarChart data={assiduityBuckets} width={chartW} />
+            </View>
+          )}
         </ScrollView>
       )}
 
@@ -587,6 +754,10 @@ const s = StyleSheet.create({
   toggleActive:    { backgroundColor: '#EBF4FD', borderColor: '#378ADD' },
   toggleText:      { fontSize: 11, color: Colors.textSecondary },
   toggleTextActive:{ color: '#185FA5', fontWeight: '600' },
+
+  courseLegendWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8, marginBottom: 4 },
+  courseLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  courseLegendSwatch: { width: 14, height: 2, borderRadius: 1 },
 
   donutRow:   { flexDirection: 'row', alignItems: 'center', gap: 20, marginTop: 12 },
   donutLegend:{ flex: 1, gap: 10 },
