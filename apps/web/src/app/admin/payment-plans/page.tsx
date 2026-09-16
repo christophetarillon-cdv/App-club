@@ -115,8 +115,12 @@ function InstallmentRow({
     <div className="flex items-center justify-between text-sm gap-3">
       <span className="text-gray-600">
         Versement {idx + 1} — {inst.expectedDate}
-        {inst.method === 'cheque' && inst.chequeNumber && (
-          <span className="text-gray-400"> · N°{inst.chequeNumber}{inst.draweeBank ? ` · ${inst.draweeBank}` : ''}{inst.draweeCity ? ` · ${inst.draweeCity}` : ''}</span>
+        {inst.method === 'cheque' && (
+          <span className="text-gray-400">
+            {' · N°'}{inst.chequeNumber || '—'}
+            {' · '}{inst.draweeBank || '—'}
+            {' · '}{inst.draweeCity || '—'}
+          </span>
         )}
       </span>
       <div className="flex items-center gap-2 shrink-0">
