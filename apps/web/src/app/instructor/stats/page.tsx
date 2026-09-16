@@ -136,13 +136,24 @@ export default function StatsPage() {
         to   = season.to < today ? season.to : today;
       }
 
-      // 1. Load all courses
-      const courseSnap = await getDocs(collection(db, 'courses'));
+      // 1. Load all courses (+ niveaux, pour désambiguïser des cours qui
+      // partagent le même nom de style — ex : 3 "Rock / Salsa" à des niveaux
+      // différents, sinon impossible à distinguer dans les filtres/légendes).
+      const [courseSnap, levelSnap] = await Promise.all([
+        getDocs(collection(db, 'courses')),
+        getDocs(collection(db, 'levels')),
+      ]);
+      const levelNameById = new Map<string, string>();
+      levelSnap.docs.forEach(d => levelNameById.set(d.id, (d.data() as any).name ?? ''));
       const courseMap  = new Map<string, string>();
       const allCourses: RawCourse[] = [];
       courseSnap.docs.forEach(d => {
-        courseMap.set(d.id, (d.data() as any).name ?? d.id);
-        allCourses.push({ id: d.id, name: (d.data() as any).name ?? d.id });
+        const data = d.data() as any;
+        const baseName = (data.name ?? d.id).trim();
+        const levelName = levelNameById.get(data.levelId);
+        const label = levelName ? `${baseName} · ${levelName}` : baseName;
+        courseMap.set(d.id, label);
+        allCourses.push({ id: d.id, name: label });
       });
       allCourses.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
       setCourses(allCourses);

@@ -314,9 +314,22 @@ export default function StatsScreen() {
         to   = season.to < today ? season.to : today;
       }
 
-      const courseSnap = await getDocs(collection(db, 'courses'));
+      const [courseSnap, levelSnap] = await Promise.all([
+        getDocs(collection(db, 'courses')),
+        getDocs(collection(db, 'levels')),
+      ]);
+      const levelNameById = new Map<string, string>();
+      levelSnap.docs.forEach(d => levelNameById.set(d.id, (d.data() as any).name ?? ''));
+      // Plusieurs cours partagent souvent le même nom de style ("Rock / Salsa")
+      // mais pas le même niveau — sans le niveau en suffixe, impossible de les
+      // distinguer dans les filtres/légendes (cas réel : 3 "Rock / Salsa").
       const cMap = new Map<string, string>();
-      courseSnap.docs.forEach(d => cMap.set(d.id, (d.data() as any).name ?? d.id));
+      courseSnap.docs.forEach(d => {
+        const data = d.data() as any;
+        const baseName = (data.name ?? d.id).trim();
+        const levelName = levelNameById.get(data.levelId);
+        cMap.set(d.id, levelName ? `${baseName} · ${levelName}` : baseName);
+      });
 
       const sessSnap = await getDocs(query(
         collection(db, 'sessions'),
