@@ -27,6 +27,10 @@ interface Installment {
   expectedDate: string;
   amount: number;
   status: string;
+  method?: string;
+  chequeNumber?: string;
+  draweeBank?: string;
+  draweeCity?: string;
 }
 
 interface Row extends Membership {
@@ -64,6 +68,68 @@ interface GroupRow extends PaymentGroupDoc {
 
 const METHOD_LABEL: Record<string, string> = { cheque: 'Chèque', transfer: 'Virement', cash: 'Espèces', mixed: 'Mixte' };
 
+function InstallmentRow({
+  inst, idx, editing, editForm, saving, onStartEdit, onCancelEdit, onSave, onFormChange,
+}: {
+  inst: Installment;
+  idx: number;
+  editing: boolean;
+  editForm: { expectedDate: string; chequeNumber: string; draweeBank: string; draweeCity: string };
+  saving: boolean;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onSave: () => void;
+  onFormChange: (patch: Partial<typeof editForm>) => void;
+}) {
+  const INPUT = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50';
+
+  if (editing) {
+    return (
+      <div className="py-2 space-y-2 bg-blue-50/50 rounded-lg px-2 -mx-2">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-gray-500 shrink-0">Versement {idx + 1}</span>
+          <input type="date" value={editForm.expectedDate} onChange={e => onFormChange({ expectedDate: e.target.value })} className={INPUT} />
+          <span className="font-medium text-gray-800 ml-auto">{(inst.amount / 100).toFixed(2)} €</span>
+        </div>
+        {inst.method === 'cheque' && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <input type="text" placeholder="N° chèque" value={editForm.chequeNumber}
+              onChange={e => onFormChange({ chequeNumber: e.target.value })} className={`${INPUT} w-28`} />
+            <input type="text" placeholder="Banque" value={editForm.draweeBank}
+              onChange={e => onFormChange({ draweeBank: e.target.value })} className={`${INPUT} w-32`} />
+            <input type="text" placeholder="Ville" value={editForm.draweeCity}
+              onChange={e => onFormChange({ draweeCity: e.target.value })} className={`${INPUT} w-28`} />
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <button onClick={onSave} disabled={saving} className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+          <button onClick={onCancelEdit} disabled={saving} className="text-xs text-gray-500 hover:text-gray-700">Annuler</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between text-sm gap-3">
+      <span className="text-gray-600">
+        Versement {idx + 1} — {inst.expectedDate}
+        {inst.method === 'cheque' && inst.chequeNumber && (
+          <span className="text-gray-400"> · N°{inst.chequeNumber}{inst.draweeBank ? ` · ${inst.draweeBank}` : ''}{inst.draweeCity ? ` · ${inst.draweeCity}` : ''}</span>
+        )}
+      </span>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${inst.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+          {inst.status === 'paid' ? 'Encaissé' : 'En attente'}
+        </span>
+        <span className="font-medium text-gray-800 w-16 text-right">{(inst.amount / 100).toFixed(2)} €</span>
+        <button onClick={onStartEdit} className="text-xs text-blue-500 hover:text-blue-700 hover:underline">Modifier</button>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPaymentPlansPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [groupRows, setGroupRows] = useState<GroupRow[]>([]);
@@ -71,6 +137,9 @@ export default function AdminPaymentPlansPage() {
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [actionId, setActionId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [editingInstId, setEditingInstId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ expectedDate: '', chequeNumber: '', draweeBank: '', draweeCity: '' });
+  const [savingInst, setSavingInst] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
   const [seasons, setSeasons] = useState<{ id: string; label: string }[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
@@ -114,8 +183,12 @@ export default function AdminPaymentPlansPage() {
       const installments: Installment[] = await Promise.all(
         (m.installmentIds ?? []).map(async (id) => {
           const iSnap = await getDoc(doc(db, 'paymentInstallments', id));
+          const d = iSnap.data();
           return iSnap.exists()
-            ? { id, expectedDate: iSnap.data().expectedDate, amount: iSnap.data().amount, status: iSnap.data().status }
+            ? {
+                id, expectedDate: d!.expectedDate, amount: d!.amount, status: d!.status,
+                method: d!.method, chequeNumber: d!.chequeNumber, draweeBank: d!.draweeBank, draweeCity: d!.draweeCity,
+              }
             : { id, expectedDate: '', amount: 0, status: 'unknown' };
         })
       );
@@ -171,8 +244,12 @@ export default function AdminPaymentPlansPage() {
       const installments: Installment[] = await Promise.all(
         (g.installmentIds ?? []).map(async (id) => {
           const iSnap = await getDoc(doc(db, 'paymentInstallments', id));
+          const d = iSnap.data();
           return iSnap.exists()
-            ? { id, expectedDate: iSnap.data().expectedDate, amount: iSnap.data().amount, status: iSnap.data().status }
+            ? {
+                id, expectedDate: d!.expectedDate, amount: d!.amount, status: d!.status,
+                method: d!.method, chequeNumber: d!.chequeNumber, draweeBank: d!.draweeBank, draweeCity: d!.draweeCity,
+              }
             : { id, expectedDate: '', amount: 0, status: 'unknown' };
         })
       );
@@ -327,6 +404,43 @@ export default function AdminPaymentPlansPage() {
     setGroupRows(prev => prev.filter(r => r.id !== g.id));
   };
 
+  // Les danseurs saisissent eux-mêmes la date et le numéro de chèque en
+  // créant leur échéancier — erreurs de saisie fréquentes (ex : date par
+  // défaut 1970-01-01 jamais changée). Permet à l'admin de corriger
+  // directement depuis cette page plutôt que d'aller éditer en base.
+  const startEditInstallment = (inst: Installment) => {
+    setEditingInstId(inst.id);
+    setEditForm({
+      expectedDate: inst.expectedDate ?? '',
+      chequeNumber: inst.chequeNumber ?? '',
+      draweeBank: inst.draweeBank ?? '',
+      draweeCity: inst.draweeCity ?? '',
+    });
+  };
+
+  const cancelEditInstallment = () => {
+    setEditingInstId(null);
+  };
+
+  const handleSaveInstallment = async (instId: string) => {
+    setSavingInst(true);
+    try {
+      const updates = {
+        expectedDate: editForm.expectedDate,
+        chequeNumber: editForm.chequeNumber.trim() || null,
+        draweeBank: editForm.draweeBank.trim() || null,
+        draweeCity: editForm.draweeCity.trim() || null,
+      };
+      await updateDoc(doc(db, 'paymentInstallments', instId), updates);
+      const patch = (inst: Installment) => inst.id === instId ? { ...inst, ...updates, chequeNumber: updates.chequeNumber ?? undefined, draweeBank: updates.draweeBank ?? undefined, draweeCity: updates.draweeCity ?? undefined } : inst;
+      setRows(prev => prev.map(r => ({ ...r, installments: r.installments.map(patch) })));
+      setGroupRows(prev => prev.map(g => ({ ...g, installments: g.installments.map(patch) })));
+      setEditingInstId(null);
+    } finally {
+      setSavingInst(false);
+    }
+  };
+
   const totalItems = rows.length + groupRows.length;
 
   return (
@@ -413,15 +527,15 @@ export default function AdminPaymentPlansPage() {
               {expanded === row.id && row.installments.length > 0 && (
                 <div className="border-t border-gray-100 px-5 py-3 space-y-1.5">
                   {row.installments.map((inst, idx) => (
-                    <div key={inst.id} className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600">Versement {idx + 1} — {inst.expectedDate}</span>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${inst.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                          {inst.status === 'paid' ? 'Encaissé' : 'En attente'}
-                        </span>
-                        <span className="font-medium text-gray-800 w-16 text-right">{(inst.amount / 100).toFixed(2)} €</span>
-                      </div>
-                    </div>
+                    <InstallmentRow
+                      key={inst.id} inst={inst} idx={idx}
+                      editing={editingInstId === inst.id}
+                      editForm={editForm} saving={savingInst}
+                      onStartEdit={() => startEditInstallment(inst)}
+                      onCancelEdit={cancelEditInstallment}
+                      onSave={() => handleSaveInstallment(inst.id)}
+                      onFormChange={patch => setEditForm(prev => ({ ...prev, ...patch }))}
+                    />
                   ))}
                 </div>
               )}
@@ -475,15 +589,15 @@ export default function AdminPaymentPlansPage() {
               {expanded === g.id && g.installments.length > 0 && (
                 <div className="border-t border-gray-100 px-5 py-3 space-y-1.5">
                   {g.installments.map((inst, idx) => (
-                    <div key={inst.id} className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600">Versement {idx + 1} — {inst.expectedDate}</span>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${inst.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                          {inst.status === 'paid' ? 'Encaissé' : 'En attente'}
-                        </span>
-                        <span className="font-medium text-gray-800 w-16 text-right">{(inst.amount / 100).toFixed(2)} €</span>
-                      </div>
-                    </div>
+                    <InstallmentRow
+                      key={inst.id} inst={inst} idx={idx}
+                      editing={editingInstId === inst.id}
+                      editForm={editForm} saving={savingInst}
+                      onStartEdit={() => startEditInstallment(inst)}
+                      onCancelEdit={cancelEditInstallment}
+                      onSave={() => handleSaveInstallment(inst.id)}
+                      onFormChange={patch => setEditForm(prev => ({ ...prev, ...patch }))}
+                    />
                   ))}
                 </div>
               )}

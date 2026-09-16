@@ -148,6 +148,10 @@ service cloud.firestore {
         roles.hasAny(perms.get('/admin/payments/cheques', ['admin'])) ||
         roles.hasAny(perms.get('/admin/payments/new', ['admin'])) ||
         roles.hasAny(perms.get('/admin/payments/bank-deposits', ['admin'])) ||
+        // Correction d'une date/n° de chèque saisi par erreur par le danseur
+        // (ex: date par défaut 1970-01-01 jamais changée), depuis l'écran de
+        // validation des plans de paiement.
+        roles.hasAny(perms.get('/admin/payment-plans', ['admin'])) ||
         roles.hasAny(perms.get('/admin/dancers', ['admin']));
     }
 
