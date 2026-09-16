@@ -588,8 +588,11 @@ export default function StatsScreen() {
                 style={[s.chip, courseFilter === c.id && s.chipCourseActive]}
                 activeOpacity={0.7}
               >
-                <Text style={[s.chipText, courseFilter === c.id && s.chipTextCourseActive]}>
-                  {c.name.length > 22 ? c.name.slice(0, 20) + '…' : c.name}
+                <Text
+                  style={[s.chipText, courseFilter === c.id && s.chipTextCourseActive]}
+                  numberOfLines={1}
+                >
+                  {c.name}
                 </Text>
               </TouchableOpacity>
             ))}
