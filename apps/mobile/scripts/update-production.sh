@@ -12,6 +12,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# `pnpm run update:production -- "message"` transmet littéralement le "--"
+# comme premier argument (vérifié sur cette install pnpm) — on l'ignore.
+[ "${1:-}" = "--" ] && shift
 MESSAGE="${1:?Usage: pnpm run update:production -- \"message\"}"
 
 export EXPO_PUBLIC_FIREBASE_API_KEY="AIzaSyCKIDFu3Ds2cJPgHiqVJdmQfZ3eGMOE71Q"
@@ -31,11 +34,11 @@ if [ -z "$BUNDLE" ]; then
   echo "ERREUR : bundle iOS introuvable dans dist/ — impossible de vérifier la config publiée." >&2
   exit 1
 fi
-if ! strings "$BUNDLE" | grep -q "AIzaSyCKIDFu3Ds2cJPgHiqVJdmQfZ3eGMOE71Q"; then
+if ! grep -qa "AIzaSyCKIDFu3Ds2cJPgHiqVJdmQfZ3eGMOE71Q" "$BUNDLE"; then
   echo "ERREUR CRITIQUE : le bundle production publié NE CONTIENT PAS la clé API clubvoiron-prod." >&2
   exit 1
 fi
-if strings "$BUNDLE" | grep -q "clubvoiron-dev.firebasestorage.app"; then
+if grep -qa "clubvoiron-dev.firebasestorage.app" "$BUNDLE"; then
   echo "ERREUR CRITIQUE : le bundle production publié contient le bucket clubvoiron-dev." >&2
   exit 1
 fi
