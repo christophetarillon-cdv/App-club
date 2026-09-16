@@ -10,8 +10,8 @@
     "build:dev": "eas build --profile development",
     "build:preview": "eas build --profile preview",
     "build:production": "eas build --profile production",
-    "update:preview": "EAS_SKIP_AUTO_FINGERPRINT=1 eas update --branch preview",
-    "update:production": "EAS_SKIP_AUTO_FINGERPRINT=1 eas update --branch production"
+    "update:preview": "bash scripts/update-preview.sh",
+    "update:production": "bash scripts/update-production.sh"
   },
   "dependencies": {
     "@cdv/types": "workspace:*",
