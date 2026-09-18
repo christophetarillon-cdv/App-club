@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions,
-  PanResponder, BackHandler, Alert, ActivityIndicator, ScrollView,
+  PanResponder, BackHandler, Alert, ActivityIndicator, ScrollView, TextInput,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import Slider from '@react-native-community/slider';
@@ -16,13 +16,14 @@ const SHEET_H = Math.round(SCREEN_H * 0.86);
 const SPEED_PRESETS = [0.75, 1, 1.25, 1.5];
 
 export default function VideoPlayerSheet({
-  video, styleColor, seasonBadge, onClose, onDelete,
+  video, styleColor, seasonBadge, onClose, onDelete, onRename,
 }: {
   video: Media;
   styleColor: string;
   seasonBadge: string;
   onClose: () => void;
   onDelete?: () => void;
+  onRename?: (newTitle: string) => Promise<void>;
 }) {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(SHEET_H)).current;
@@ -31,6 +32,9 @@ export default function VideoPlayerSheet({
   const [speed, setSpeed] = useState(1);
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(video.title);
+  const [savingTitle, setSavingTitle] = useState(false);
 
   const player = useVideoPlayer(video.sourceUrl, p => { p.loop = false; p.play(); });
 
@@ -69,6 +73,20 @@ export default function VideoPlayerSheet({
     const r = Math.max(0.25, Math.min(2, Math.round(v * 100) / 100));
     setSpeed(r);
     player.playbackRate = r;
+  };
+
+  const handleSaveTitle = async () => {
+    const trimmed = titleDraft.trim();
+    if (!trimmed || !onRename) return;
+    setSavingTitle(true);
+    try {
+      await onRename(trimmed);
+      setEditingTitle(false);
+    } catch {
+      Alert.alert('Erreur', 'Impossible de renommer la vidéo.');
+    } finally {
+      setSavingTitle(false);
+    }
   };
 
   const handleDownload = async () => {
@@ -114,7 +132,36 @@ export default function VideoPlayerSheet({
           </View>
 
           <View style={styles.meta}>
-            <Text style={styles.title}>{video.title}</Text>
+            {editingTitle ? (
+              <View>
+                <TextInput
+                  style={styles.titleInput}
+                  value={titleDraft}
+                  onChangeText={setTitleDraft}
+                  autoFocus
+                  editable={!savingTitle}
+                />
+                <View style={styles.titleEditRow}>
+                  <TouchableOpacity onPress={handleSaveTitle} disabled={savingTitle || !titleDraft.trim()}>
+                    <Text style={[styles.titleEditSave, (savingTitle || !titleDraft.trim()) && { opacity: 0.4 }]}>
+                      {savingTitle ? 'Enregistrement…' : 'Enregistrer'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => { setTitleDraft(video.title); setEditingTitle(false); }} disabled={savingTitle}>
+                    <Text style={styles.titleEditCancel}>Annuler</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.titleRow}>
+                <Text style={styles.title}>{video.title}</Text>
+                {onRename && (
+                  <TouchableOpacity onPress={() => { setTitleDraft(video.title); setEditingTitle(true); }} hitSlop={8}>
+                    <Text style={styles.editIcon}>✎</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
             <View style={styles.chips}>
               <View style={[styles.chip, { backgroundColor: styleColor + '22' }]}>
                 <Text style={[styles.chipText, { color: styleColor }]}>{seasonBadge}</Text>
@@ -191,7 +238,16 @@ const styles = StyleSheet.create({
   video: { width: '100%', height: '100%' },
 
   meta: { paddingTop: 14 },
-  title: { fontSize: 18, fontWeight: '600', color: Colors.text },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { fontSize: 18, fontWeight: '600', color: Colors.text, flexShrink: 1 },
+  editIcon: { fontSize: 16, color: Colors.textSecondary },
+  titleInput: {
+    fontSize: 18, fontWeight: '600', color: Colors.text,
+    borderWidth: 1, borderColor: '#2F86C0', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6,
+  },
+  titleEditRow: { flexDirection: 'row', gap: 16, marginTop: 8 },
+  titleEditSave: { fontSize: 14, fontWeight: '600', color: '#2F86C0' },
+  titleEditCancel: { fontSize: 14, color: Colors.textSecondary },
   chips: { flexDirection: 'row', gap: 7, marginTop: 8 },
   chip: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12 },
   chipText: { fontSize: 11, fontWeight: '500' },

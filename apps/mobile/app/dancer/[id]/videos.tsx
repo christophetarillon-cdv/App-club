@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, Pressable, Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -92,6 +92,12 @@ export default function VideosScreen() {
     getDocs(query(collection(db, 'media'), orderBy('uploadedAt', 'desc')))
       .then(snap => setAllMedia(snap.docs.map(d => ({ id: d.id, ...d.data() } as Media))))
       .catch(() => {});
+  };
+
+  const handleRenameVideo = async (video: Media, newTitle: string) => {
+    await updateDoc(doc(db, 'media', video.id), { title: newTitle });
+    setAllMedia(prev => prev.map(m => m.id === video.id ? { ...m, title: newTitle } : m));
+    setActiveVideo(prev => prev && prev.id === video.id ? { ...prev, title: newTitle } : prev);
   };
 
   const handleDeleteVideo = (video: Media) => {
@@ -374,6 +380,7 @@ export default function VideosScreen() {
           seasonBadge={seasonBadge(activeVideo.seasonId)}
           onClose={() => setActiveVideo(null)}
           onDelete={isAdmin ? () => handleDeleteVideo(activeVideo) : undefined}
+          onRename={isAdmin ? (newTitle) => handleRenameVideo(activeVideo, newTitle) : undefined}
         />
       )}
 

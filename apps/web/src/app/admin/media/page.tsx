@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { collection, getDocs, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc, query, orderBy, updateDoc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions';
 import { db, storage, functions } from '@/lib/firebase';
@@ -52,6 +52,11 @@ export default function AdminMediaPage() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Renommage
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [renaming, setRenaming] = useState(false);
 
   // Expanded player
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -163,6 +168,24 @@ export default function AdminMediaPage() {
     } finally {
       setUploading(false);
       setUploadProgress(null);
+    }
+  };
+
+  const handleStartRename = (m: Media) => {
+    setRenamingId(m.id);
+    setRenameDraft(m.title);
+  };
+
+  const handleSaveRename = async (m: Media) => {
+    const trimmed = renameDraft.trim();
+    if (!trimmed) return;
+    setRenaming(true);
+    try {
+      await updateDoc(doc(db, 'media', m.id), { title: trimmed });
+      setMedia(prev => prev.map(x => x.id === m.id ? { ...x, title: trimmed } : x));
+      setRenamingId(null);
+    } finally {
+      setRenaming(false);
     }
   };
 
@@ -341,7 +364,24 @@ export default function AdminMediaPage() {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 truncate">{m.title}</p>
+                  {renamingId === m.id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text" autoFocus value={renameDraft}
+                        onChange={e => setRenameDraft(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSaveRename(m); if (e.key === 'Escape') setRenamingId(null); }}
+                        className="flex-1 min-w-0 border border-blue-300 rounded-lg px-2 py-1 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      />
+                      <button onClick={() => handleSaveRename(m)} disabled={renaming || !renameDraft.trim()}
+                        className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-40 shrink-0">
+                        {renaming ? '…' : 'OK'}
+                      </button>
+                      <button onClick={() => setRenamingId(null)} disabled={renaming}
+                        className="text-xs text-gray-400 hover:text-gray-600 shrink-0">Annuler</button>
+                    </div>
+                  ) : (
+                    <p className="font-semibold text-gray-900 truncate">{m.title}</p>
+                  )}
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.type === 'audio' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                       {m.type === 'audio' ? 'Audio' : 'Vidéo'}
@@ -369,6 +409,12 @@ export default function AdminMediaPage() {
                     className="text-xs font-medium text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {expanded === m.id ? 'Fermer' : 'Écouter'}
+                  </button>
+                  <button
+                    onClick={() => handleStartRename(m)}
+                    className="text-xs font-medium text-gray-500 hover:text-gray-800 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Renommer
                   </button>
                   <button
                     onClick={() => handleDelete(m)}
