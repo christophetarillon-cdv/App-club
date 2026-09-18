@@ -161,6 +161,10 @@ export default function AdminCreatePaymentPlanPage() {
         const dancer = selectedDancers[0]!;
         const plan = plans.find(p => p.id === selectedPlanIds[dancer.id])!;
         const mRef = doc(collection(db, 'memberships'));
+        // L'admin peut choisir un danseur d'un compte différent de
+        // targetUserId (ex: conjoint) — sans ça, ce compte ne verrait jamais
+        // sa propre cotisation (règles Firestore scopées sur userId).
+        const visibleUserIds = [...new Set([targetUserId, dancer.accountId])];
 
         for (let i = 0; i < installments.length; i++) {
           const inst = installments[i]!;
@@ -168,6 +172,7 @@ export default function AdminCreatePaymentPlanPage() {
           batch.set(installmentRefs[i]!, {
             membershipId: mRef.id,
             userId: targetUserId,
+            visibleUserIds,
             amount: Math.round(parseFloat(inst.amount) * 100),
             method: instMethod,
             expectedDate: inst.expectedDate,
@@ -178,6 +183,7 @@ export default function AdminCreatePaymentPlanPage() {
 
         batch.set(mRef, {
           userId: targetUserId,
+          visibleUserIds,
           dancerId: dancer.id,
           seasonId: season.id,
           pricingPlanId: selectedPlanIds[dancer.id]!,
@@ -193,6 +199,9 @@ export default function AdminCreatePaymentPlanPage() {
       } else {
         const groupRef = doc(collection(db, 'paymentGroups'));
         const membershipIds: string[] = [];
+        // Idem branche solo, mais pour tous les danseurs du groupe — chacun
+        // doit pouvoir voir sa cotisation depuis son propre compte.
+        const groupVisibleUserIds = [...new Set([targetUserId, ...selectedDancers.map(d => d.accountId)])];
 
         for (const dancer of selectedDancers) {
           const plan = plans.find(p => p.id === selectedPlanIds[dancer.id])!;
@@ -200,6 +209,7 @@ export default function AdminCreatePaymentPlanPage() {
           membershipIds.push(mRef.id);
           batch.set(mRef, {
             userId: targetUserId,
+            visibleUserIds: [...new Set([targetUserId, dancer.accountId])],
             dancerId: dancer.id,
             seasonId: season.id,
             pricingPlanId: selectedPlanIds[dancer.id]!,
@@ -221,6 +231,7 @@ export default function AdminCreatePaymentPlanPage() {
           batch.set(installmentRefs[i]!, {
             paymentGroupId: groupRef.id,
             userId: targetUserId,
+            visibleUserIds: groupVisibleUserIds,
             amount: Math.round(parseFloat(inst.amount) * 100),
             method: instMethod,
             expectedDate: inst.expectedDate,
@@ -231,6 +242,7 @@ export default function AdminCreatePaymentPlanPage() {
 
         batch.set(groupRef, {
           userId: targetUserId,
+          visibleUserIds: groupVisibleUserIds,
           membershipIds,
           totalDue,
           totalPaid: 0,
