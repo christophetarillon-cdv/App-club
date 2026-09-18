@@ -212,28 +212,33 @@ export default function SessionDetailScreen() {
             </View>
             )}
 
-            {/* Vidéo */}
-            {(canViewVideo && videos.length > 0) && (
+            {/* Vidéo(s) — plusieurs possibles pour la même séance */}
+            {((canViewVideo && videos.length > 0) || canUploadVideo) && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Vidéo</Text>
-                {videos.map(v => (
-                  <TouchableOpacity key={v.id} style={styles.videoRow} onPress={() => setPlayingVideo(v)} activeOpacity={0.8}>
-                    <View style={[styles.videoIcon, { backgroundColor: `${styleColor}25` }]}>
-                      <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-                        <Path d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653z" fill={styleColor} />
-                      </Svg>
-                    </View>
-                    <Text style={styles.videoTitle} numberOfLines={1}>{v.title}</Text>
+                {canViewVideo && videos.length > 0 && (
+                  <View style={styles.videoList}>
+                    {videos.map(v => (
+                      <TouchableOpacity key={v.id} style={styles.videoRow} onPress={() => setPlayingVideo(v)} activeOpacity={0.8}>
+                        <View style={[styles.videoIcon, { backgroundColor: `${styleColor}25` }]}>
+                          <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                            <Path d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653z" fill={styleColor} />
+                          </Svg>
+                        </View>
+                        <Text style={styles.videoTitle} numberOfLines={1}>{v.title}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                {canUploadVideo && (
+                  <TouchableOpacity
+                    style={[styles.addVideoBtn, videos.length > 0 && { marginTop: 8 }]}
+                    onPress={() => setShowUpload(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.addVideoBtnText}>+ Ajouter une vidéo</Text>
                   </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            {(canUploadVideo && videos.length === 0) && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Vidéo</Text>
-                <TouchableOpacity style={styles.addVideoBtn} onPress={() => setShowUpload(true)} activeOpacity={0.8}>
-                  <Text style={styles.addVideoBtnText}>+ Ajouter une vidéo</Text>
-                </TouchableOpacity>
+                )}
               </View>
             )}
           </ScrollView>
@@ -301,6 +306,7 @@ const styles = StyleSheet.create({
   noteBtn: { backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 9, paddingHorizontal: 16 },
   noteBtnText: { fontSize: 13, color: '#fff', fontWeight: '600' },
 
+  videoList: { gap: 8 },
   videoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fff', borderRadius: 12, padding: 12 },
   videoIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   videoTitle: { fontSize: 14, fontWeight: '500', color: Colors.text, flex: 1 },
