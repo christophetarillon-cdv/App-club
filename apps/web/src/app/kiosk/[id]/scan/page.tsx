@@ -192,7 +192,7 @@ export default function KioskScanPage() {
       setScanResult({ status: 'error', message: msg });
     } finally {
       setProcessing(false);
-      resetTimerRef.current = setTimeout(resetScan, 4000);
+      resetTimerRef.current = setTimeout(resetScan, 2000);
     }
   }, [kioskSessionId, processing, resetScan]);
 
