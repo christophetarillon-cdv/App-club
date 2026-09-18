@@ -33,6 +33,7 @@ interface Installment {
   amount: number;
   userId: string;
   membershipId: string;
+  paymentGroupId?: string;
 }
 
 function confidenceClass(c?: string) {
@@ -62,6 +63,7 @@ export default function ChequeDetailPage() {
   const [savingMeta, setSavingMeta] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [planApproved, setPlanApproved] = useState<boolean | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -91,6 +93,15 @@ export default function ChequeDetailPage() {
           setInstallment(inst as Installment);
           const accSnap = await getDoc(doc(db, 'accounts', inst.userId));
           if (accSnap.exists()) setMemberName(accSnap.data().displayName);
+
+          // Un chèque ne doit pouvoir être validé (encaissé) que si le plan
+          // de paiement dont il fait partie a déjà été approuvé par un admin.
+          const planSnap = inst.paymentGroupId
+            ? await getDoc(doc(db, 'paymentGroups', inst.paymentGroupId))
+            : inst.membershipId
+            ? await getDoc(doc(db, 'memberships', inst.membershipId))
+            : null;
+          setPlanApproved(planSnap?.exists() ? planSnap.data()?.paymentPlanStatus === 'approved' : null);
         }
       }
 
@@ -255,6 +266,10 @@ export default function ChequeDetailPage() {
                 <span className="text-green-700 text-sm font-semibold">Validé — {(cheque.validatedAmount! / 100).toFixed(2)} €</span>
                 <span className="text-xs text-gray-400">{cheque.validatedAt?.toDate().toLocaleDateString('fr-FR')}</span>
               </div>
+            ) : planApproved === false ? (
+              <p className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                Le plan de paiement associé n'est pas encore approuvé — validez-le d'abord sur la page Plans de paiement avant d'encaisser ce chèque.
+              </p>
             ) : (
               <>
                 <div>

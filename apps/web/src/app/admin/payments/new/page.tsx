@@ -103,10 +103,12 @@ export default function AdminNewPaymentPage() {
 
     const allPlans: Plan[] = [];
 
-    // Solo memberships (not part of a group)
+    // Solo memberships (not part of a group) — seuls les plans validés par
+    // un admin doivent pouvoir recevoir un paiement enregistré ici.
     membershipSnap.docs.forEach(d => {
       if (d.data().paymentGroupId) return;
       const data = d.data();
+      if (data.paymentPlanStatus !== 'approved') return;
       allPlans.push({
         id: d.id,
         kind: 'solo',
@@ -123,6 +125,7 @@ export default function AdminNewPaymentPage() {
     // Group plans
     groupSnap.docs.forEach(d => {
       const data = d.data();
+      if (data.paymentPlanStatus !== 'approved') return;
       allPlans.push({
         id: d.id,
         kind: 'group',
