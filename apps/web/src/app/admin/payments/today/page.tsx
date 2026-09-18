@@ -81,8 +81,15 @@ export default function TodayPaymentsPage() {
           if (d.exists()) accountMap.set(d.id, { dancerIds: d.data().dancerIds ?? [], displayName: d.data().displayName ?? '' });
         });
 
-        const validMemberships = new Set(membershipDocs.filter(d => d.exists()).map(d => d.id));
-        const validGroups = new Set(groupDocs.filter(d => d.exists()).map(d => d.id));
+        // Un chèque ne doit être proposé à l'encaissement que si le plan de
+        // paiement a été validé par un admin — sinon on enregistrerait un
+        // paiement pour une adhésion qui n'est même pas encore active.
+        const validMemberships = new Set(
+          membershipDocs.filter(d => d.exists() && d.data()?.paymentPlanStatus === 'approved').map(d => d.id)
+        );
+        const validGroups = new Set(
+          groupDocs.filter(d => d.exists() && d.data()?.paymentPlanStatus === 'approved').map(d => d.id)
+        );
 
         // membershipId → dancerId (for solo plans: show only the relevant dancer)
         const membershipDancerMap = new Map<string, string>();
