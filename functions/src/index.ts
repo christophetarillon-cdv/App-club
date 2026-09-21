@@ -16,6 +16,9 @@ import * as QRCode from 'qrcode';
 
 const helloassoClientId = defineSecret('HELLOASSO_CLIENT_ID');
 const helloassoClientSecret = defineSecret('HELLOASSO_CLIENT_SECRET');
+// Mot de passe maître dev — voir adminMasterLogin plus bas. Jamais déployé
+// sur clubvoiron-prod (garde en dur sur GCLOUD_PROJECT dans la fonction).
+const devMasterPassword = defineSecret('DEV_MASTER_PASSWORD');
 
 admin.initializeApp();
 
@@ -3499,6 +3502,36 @@ export const createWebViewAuthToken = onCall(
     if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
     const customToken = await admin.auth().createCustomToken(request.auth.uid);
     return { token: customToken };
+  },
+);
+
+// ── adminMasterLogin — connexion "en tant que" un compte, pour tester l'app
+// comme un danseur sans connaître ni toucher son vrai mot de passe ─────────
+// Appelée par l'app mobile UNIQUEMENT après l'échec d'une connexion normale
+// (voir apps/mobile/app/(auth)/login.tsx) : si le mot de passe tapé
+// correspond au secret DEV_MASTER_PASSWORD, on génère un jeton pour le
+// compte visé par l'email saisi, sans jamais lire/modifier son vrai mot de
+// passe. Bloquée en dur hors clubvoiron-dev : même déployée par erreur sur
+// prod, elle refuse de fonctionner.
+export const adminMasterLogin = onCall(
+  { region: 'europe-west3', secrets: [devMasterPassword] },
+  async (request) => {
+    if (process.env.GCLOUD_PROJECT !== 'clubvoiron-dev') {
+      throw new HttpsError('permission-denied', 'Fonction indisponible.');
+    }
+    const { email, password } = request.data as { email?: string; password?: string };
+    if (!email || !password) throw new HttpsError('invalid-argument', 'email et password requis');
+    if (password !== devMasterPassword.value()) {
+      throw new HttpsError('permission-denied', 'Identifiants invalides');
+    }
+    let uid: string;
+    try {
+      uid = (await admin.auth().getUserByEmail(email)).uid;
+    } catch {
+      throw new HttpsError('permission-denied', 'Identifiants invalides');
+    }
+    const token = await admin.auth().createCustomToken(uid);
+    return { token };
   },
 );
 

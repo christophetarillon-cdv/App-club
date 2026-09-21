@@ -3,8 +3,9 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Alert,
 } from 'react-native';
-import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { signInWithEmailAndPassword, signInWithCustomToken, sendPasswordResetEmail } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
+import { auth, functions, isProdEnvironment } from '@/lib/firebase';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -90,9 +91,29 @@ export default function LoginScreen() {
       await signInWithEmailAndPassword(auth, email.trim(), password);
       offerBiometric(email.trim(), password);
     } catch {
+      // Dev uniquement : si ce n'est pas le vrai mot de passe, on tente le
+      // mot de passe maître (permet de tester l'app "comme" un danseur sans
+      // connaître ni toucher son vrai mot de passe). Sans effet sur prod —
+      // isProdEnvironment coupe court, et la fonction n'existe même pas là-bas.
+      if (!isProdEnvironment && await tryMasterLogin(email.trim(), password)) {
+        setLoading(false);
+        return;
+      }
       setError('Email ou mot de passe incorrect.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const tryMasterLogin = async (emailVal: string, passwordVal: string): Promise<boolean> => {
+    try {
+      const res = await httpsCallable<{ email: string; password: string }, { token: string }>(
+        functions, 'adminMasterLogin',
+      )({ email: emailVal, password: passwordVal });
+      await signInWithCustomToken(auth, res.data.token);
+      return true;
+    } catch {
+      return false;
     }
   };
 
