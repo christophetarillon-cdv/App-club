@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { signInWithEmailAndPassword, signInWithCustomToken, sendPasswordResetEmail } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { auth, functions, isProdEnvironment } from '@/lib/firebase';
+import { auth, functions } from '@/lib/firebase';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -91,11 +91,11 @@ export default function LoginScreen() {
       await signInWithEmailAndPassword(auth, email.trim(), password);
       offerBiometric(email.trim(), password);
     } catch {
-      // Dev uniquement : si ce n'est pas le vrai mot de passe, on tente le
-      // mot de passe maître (permet de tester l'app "comme" un danseur sans
-      // connaître ni toucher son vrai mot de passe). Sans effet sur prod —
-      // isProdEnvironment coupe court, et la fonction n'existe même pas là-bas.
-      if (!isProdEnvironment && await tryMasterLogin(email.trim(), password)) {
+      // Si ce n'est pas le vrai mot de passe, on tente le mot de passe
+      // maître admin (permet de se connecter "comme" un danseur sans
+      // connaître ni toucher son vrai mot de passe — valeur différente sur
+      // dev et prod, voir adminMasterLogin côté functions).
+      if (await tryMasterLogin(email.trim(), password)) {
         setLoading(false);
         return;
       }
