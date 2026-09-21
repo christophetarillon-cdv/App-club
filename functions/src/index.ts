@@ -2540,6 +2540,10 @@ async function generateReceipt(installmentId: string, data: admin.firestore.Docu
     const memberName = dancerData.firstName && dancerData.lastName
       ? `${dancerData.firstName} ${dancerData.lastName}`
       : (accountData.displayName ?? accountData.email ?? 'Membre');
+    // Cotisation payée par un autre compte ("Moi + danseurs d'un autre
+    // compte") — sans ça, le reçu reste invisible pour le vrai titulaire.
+    const dancerAccountId = dancerData.accountId as string | undefined;
+    const visibleUserIds = dancerAccountId ? [...new Set([userId, dancerAccountId])] : [userId];
 
     // Numéro de reçu unique
     const counterRef = db.doc('config/receiptCounter');
@@ -2651,6 +2655,7 @@ async function generateReceipt(installmentId: string, data: admin.firestore.Docu
     // Crée le doc Firestore
     await db.collection('documents').add({
       userId,
+      visibleUserIds,
       dancerId,
       type: 'receipt',
       fileUrl,
@@ -2741,6 +2746,10 @@ async function generateMembershipAttestation(
       ? `${dancerData.firstName} ${dancerData.lastName}`
       : (accountData.displayName ?? accountData.email ?? 'Membre');
     const memberNumber: string = (dancerData.memberNumber as string | undefined) ?? '';
+    // Cotisation payée par un autre compte ("Moi + danseurs d'un autre
+    // compte") — sans ça, l'attestation reste invisible pour le vrai titulaire.
+    const dancerAccountId = dancerData.accountId as string | undefined;
+    const visibleUserIds = dancerAccountId ? [...new Set([userId, dancerAccountId])] : [userId];
     const seasonLabel: string = (seasonSnap.data()?.label as string | undefined) ?? '';
 
     const clubData = clubSnap.data() ?? {};
@@ -2932,6 +2941,7 @@ async function generateMembershipAttestation(
     // Crée le doc Firestore
     await db.collection('documents').add({
       userId,
+      visibleUserIds,
       dancerId,
       type: 'attestation',
       fileUrl,
@@ -2988,6 +2998,9 @@ async function generateCancellationCertificate(
 
   let dancerId: string | null = null;
   let memberName = '';
+  // Cotisation payée par un autre compte ("Moi + danseurs d'un autre
+  // compte") — sans ça, le certificat reste invisible pour le vrai titulaire.
+  const dancerAccountIds: string[] = [];
 
   if (kind === 'solo') {
     dancerId = (after.dancerId as string | undefined) ?? null;
@@ -2996,6 +3009,7 @@ async function generateCancellationCertificate(
       if (dSnap.exists) {
         const d = dSnap.data()!;
         memberName = `${d.firstName ?? ''} ${d.lastName ?? ''}`.trim();
+        if (d.accountId) dancerAccountIds.push(d.accountId as string);
       }
     }
   } else {
@@ -3010,11 +3024,13 @@ async function generateCancellationCertificate(
         if (dSnap.exists) {
           const d = dSnap.data()!;
           names.push(`${d.firstName ?? ''} ${d.lastName ?? ''}`.trim());
+          if (d.accountId) dancerAccountIds.push(d.accountId as string);
         }
       }
     }
     memberName = names.join(' & ');
   }
+  const visibleUserIds = [...new Set([userId, ...dancerAccountIds])];
 
   const accountData = accountSnap.data() ?? {};
   if (!memberName) memberName = (accountData.displayName as string | undefined) ?? (accountData.email as string | undefined) ?? 'Membre';
@@ -3145,6 +3161,7 @@ async function generateCancellationCertificate(
 
   await db.collection('documents').add({
     userId,
+    visibleUserIds,
     dancerId,
     type: 'cancellation',
     fileUrl,

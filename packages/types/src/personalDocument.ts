@@ -5,6 +5,10 @@ export type PersonalDocumentType = 'receipt' | 'attestation' | 'invoice' | 'canc
 export interface PersonalDocument {
   id: string;
   userId: string;
+  // Voir Membership.visibleUserIds — même mécanisme : un reçu/attestation
+  // généré pour une cotisation payée par un autre compte doit rester
+  // consultable par le compte du danseur concerné.
+  visibleUserIds?: string[];
   dancerId?: string;
   type: PersonalDocumentType;
   fileUrl: string;

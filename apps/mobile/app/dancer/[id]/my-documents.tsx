@@ -108,16 +108,21 @@ export default function MyDocumentsScreen() {
     if (!user || !id) return;
     Promise.all([
       getDocs(query(collection(db, 'documents'), where('userId', '==', user.uid), orderBy('generatedAt', 'desc'))),
+      // Cotisation payée par un autre compte ("Moi + danseurs d'un autre
+      // compte") — sans ça, le reçu/attestation reste invisible pour ce danseur.
+      getDocs(query(collection(db, 'documents'), where('visibleUserIds', 'array-contains', user.uid), orderBy('generatedAt', 'desc'))),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
       // Cotisation payée par un autre compte ("Moi + danseurs d'un autre
       // compte") — sans ça, les saisons validées restent bloquées à tort.
       getDocs(query(collection(db, 'memberships'), where('visibleUserIds', 'array-contains', user.uid))),
       getDocs(collection(db, 'seasons')),
-    ]).then(([docsSnap, membershipSnapA, membershipSnapB, seasonSnap]) => {
+    ]).then(([docsSnapA, docsSnapB, membershipSnapA, membershipSnapB, seasonSnap]) => {
+      const mergedDocs = [...new Map([...docsSnapA.docs, ...docsSnapB.docs].map(d => [d.id, d])).values()]
+        .sort((a, b) => (b.data().generatedAt?.seconds ?? 0) - (a.data().generatedAt?.seconds ?? 0));
       // Ne garder que les documents de CE danseur — éviter d'exposer les
       // documents d'un autre danseur du même compte (ex : fratrie).
       setAllDocs(
-        docsSnap.docs
+        mergedDocs
           .map(d => ({ id: d.id, ...d.data() } as PersonalDocument))
           .filter(d => d.dancerId === id),
       );
