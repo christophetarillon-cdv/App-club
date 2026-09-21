@@ -133,15 +133,19 @@ export default function VideosScreen() {
       getDocs(collection(db, 'seasons')),
       getDocs(collection(db, 'danceStyles')),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
+      // Cotisation payée par un autre compte ("Moi + danseurs d'un autre
+      // compte") — sans ça, l'accès média reste bloqué à tort pour ce danseur.
+      getDocs(query(collection(db, 'memberships'), where('visibleUserIds', 'array-contains', user.uid))),
       getDocs(query(collection(db, 'courses'), orderBy('name'))),
       getDocs(query(collection(db, 'levels'), orderBy('order'))),
-    ]).then(([mediaSnap, seasonSnap, styleSnap, membershipSnap, courseSnap, levelSnap]) => {
+    ]).then(([mediaSnap, seasonSnap, styleSnap, membershipSnapA, membershipSnapB, courseSnap, levelSnap]) => {
       setAllMedia(mediaSnap.docs.map(d => ({ id: d.id, ...d.data() } as Media)));
       setSeasons(seasonSnap.docs.map(d => ({
         id: d.id, label: d.data().label ?? d.id, isActive: d.data().isActive === true,
       })));
       setStyleList(styleSnap.docs.map(d => ({ id: d.id, name: d.data().name ?? '', color: d.data().color ?? FALLBACK_COLOR })));
-      const paid = membershipSnap.docs
+      const membershipDocs = [...new Map([...membershipSnapA.docs, ...membershipSnapB.docs].map(d => [d.id, d])).values()];
+      const paid = membershipDocs
         .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
         .map(d => d.data().seasonId as string).filter(Boolean);
       setPaidSeasonIds([...new Set(paid)]);

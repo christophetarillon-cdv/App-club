@@ -251,6 +251,15 @@
         { "fieldPath": "visibleUserIds", "arrayConfig": "CONTAINS" },
         { "fieldPath": "seasonId", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "memberships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visibleUserIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "seasonId", "order": "ASCENDING" },
+        { "fieldPath": "dancerId", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

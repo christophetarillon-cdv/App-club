@@ -48,8 +48,11 @@ export default function MyDocumentsPage() {
     Promise.all([
       getDocs(query(collection(db, 'documents'), where('userId', '==', user.uid), orderBy('generatedAt', 'desc'))),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
+      // Cotisation payée par un autre compte ("Moi + danseurs d'un autre
+      // compte") — sans ça, les saisons validées restent bloquées à tort.
+      getDocs(query(collection(db, 'memberships'), where('visibleUserIds', 'array-contains', user.uid))),
       getDocs(collection(db, 'seasons')),
-    ]).then(([docsSnap, membershipSnap, seasonSnap]) => {
+    ]).then(([docsSnap, membershipSnapA, membershipSnapB, seasonSnap]) => {
       // Ne garder que les documents de CE danseur — éviter d'exposer les
       // documents d'un autre danseur du même compte (ex : fratrie).
       setAllDocuments(
@@ -58,8 +61,9 @@ export default function MyDocumentsPage() {
           .filter(d => d.dancerId === selectedDancer.id),
       );
 
+      const membershipDocs = [...new Map([...membershipSnapA.docs, ...membershipSnapB.docs].map(d => [d.id, d])).values()];
       const paidIds = new Set(
-        membershipSnap.docs
+        membershipDocs
           .filter(d => d.data().dancerId === selectedDancer.id)
           .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
           .map(d => d.data().seasonId as string).filter(Boolean),

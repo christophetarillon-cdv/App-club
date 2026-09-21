@@ -80,15 +80,19 @@ export default function ChatListScreen() {
 
   const load = useCallback(async () => {
     if (!selectedDancer || !user) return;
-    const [chSnap, membershipSnap, seasonSnap] = await Promise.all([
+    const [chSnap, membershipSnapA, membershipSnapB, seasonSnap] = await Promise.all([
       getDocs(query(collection(db, 'chatChannels'), where('isActive', '==', true), orderBy('createdAt', 'asc'))),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
+      // Cotisation payée par un autre compte ("Moi + danseurs d'un autre
+      // compte") — sans ça, l'accès au chat reste bloqué à tort.
+      getDocs(query(collection(db, 'memberships'), where('visibleUserIds', 'array-contains', user.uid))),
       getDocs(collection(db, 'seasons')),
     ]);
 
     const isAdminOrInstructor = selectedDancer.roles.includes('admin') || selectedDancer.roles.includes('instructor');
+    const membershipDocs = [...new Map([...membershipSnapA.docs, ...membershipSnapB.docs].map(d => [d.id, d])).values()];
     const paidIds = new Set(
-      membershipSnap.docs
+      membershipDocs
         .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
         .map(d => d.data().seasonId as string).filter(Boolean),
     );

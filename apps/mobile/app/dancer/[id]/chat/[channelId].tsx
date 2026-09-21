@@ -130,11 +130,15 @@ export default function ChatChannelScreen() {
     if (isAdminOrInstructor) { setSeasonFloorMs(0); return; }
     Promise.all([
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
+      // Cotisation payée par un autre compte ("Moi + danseurs d'un autre
+      // compte") — sans ça, le plancher de saison reste calculé à tort.
+      getDocs(query(collection(db, 'memberships'), where('visibleUserIds', 'array-contains', user.uid))),
       getDocs(collection(db, 'seasons')),
-    ]).then(([membershipSnap, seasonSnap]) => {
+    ]).then(([membershipSnapA, membershipSnapB, seasonSnap]) => {
+      const membershipDocs = [...new Map([...membershipSnapA.docs, ...membershipSnapB.docs].map(d => [d.id, d])).values()];
       // Map seasonId → createdAt (date d'adhésion effective)
       const membershipBySeason = new Map<string, number | undefined>();
-      membershipSnap.docs
+      membershipDocs
         .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
         .forEach(d => {
           const sid = d.data().seasonId as string | undefined;

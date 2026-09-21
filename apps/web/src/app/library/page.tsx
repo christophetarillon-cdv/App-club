@@ -58,9 +58,13 @@ export default function LibraryPage() {
     Promise.all([
       getDocs(query(collection(db, 'documentLibrary'), where('isActive', '==', true), orderBy('category', 'asc'))),
       getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid))),
-    ]).then(([docsSnap, membershipSnap]) => {
+      // Cotisation payée par un autre compte ("Moi + danseurs d'un autre
+      // compte") — sans ça, l'accès reste bloqué à tort pour ce danseur.
+      getDocs(query(collection(db, 'memberships'), where('visibleUserIds', 'array-contains', user.uid))),
+    ]).then(([docsSnap, membershipSnapA, membershipSnapB]) => {
       setAllDocs(docsSnap.docs.map(d => ({ id: d.id, ...d.data() } as DocumentLibrary)));
-      const paid = membershipSnap.docs
+      const membershipDocs = [...new Map([...membershipSnapA.docs, ...membershipSnapB.docs].map(d => [d.id, d])).values()];
+      const paid = membershipDocs
         .filter(d => d.data().paymentPlanStatus === 'approved' || d.data().status === 'active')
         .map(d => d.data().seasonId as string).filter(Boolean);
       setPaidSeasonIds([...new Set(paid)]);

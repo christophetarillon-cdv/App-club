@@ -108,13 +108,25 @@ export default function DancerHubPage() {
         const seasonsSnap = await getDocs(query(collection(db, 'seasons'), where('isActive', '==', true)));
         if (seasonsSnap.empty) { setCotisationSeasonLabel(null); return; }
         const activeSeason = seasonsSnap.docs[0]!;
-        const membershipsSnap = await getDocs(query(
-          collection(db, 'memberships'),
-          where('userId', '==', user.uid),
-          where('seasonId', '==', activeSeason.id),
-          where('dancerId', '==', dancer.id),
-        ));
-        setCotisationSeasonLabel(membershipsSnap.empty ? (activeSeason.data().label as string) : null);
+        // Deux requêtes : `userId` (payeur) et `visibleUserIds` (danseur d'un
+        // autre compte inclus dans une cotisation payée par quelqu'un
+        // d'autre) — sinon le bandeau reste affiché à tort pour ce danseur.
+        const [byUserId, byVisible] = await Promise.all([
+          getDocs(query(
+            collection(db, 'memberships'),
+            where('userId', '==', user.uid),
+            where('seasonId', '==', activeSeason.id),
+            where('dancerId', '==', dancer.id),
+          )),
+          getDocs(query(
+            collection(db, 'memberships'),
+            where('visibleUserIds', 'array-contains', user.uid),
+            where('seasonId', '==', activeSeason.id),
+            where('dancerId', '==', dancer.id),
+          )),
+        ]);
+        const hasMembership = !byUserId.empty || !byVisible.empty;
+        setCotisationSeasonLabel(hasMembership ? null : (activeSeason.data().label as string));
       } catch (err) {
         console.error('cotisation status:', err);
         setCotisationSeasonLabel(null);
