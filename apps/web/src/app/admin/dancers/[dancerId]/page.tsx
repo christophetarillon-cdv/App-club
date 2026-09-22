@@ -18,6 +18,7 @@ import type { ProfileFieldsConfig, CustomField, RoleConfig, PersonalDocument } f
 import { DEFAULT_PROFILE_FIELDS, validateContactFields } from '@cdv/types';
 import { BirthDateSelect } from '@/components/BirthDateSelect';
 import DancerAttendanceHistory from './DancerAttendanceHistory';
+import DancerPrivateMessages from './DancerPrivateMessages';
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   receipt: 'Reçu de paiement',
@@ -2081,6 +2082,14 @@ export default function DancerDetailPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {dancer.accountId && (
+        <DancerPrivateMessages
+          dancerId={dancerId}
+          dancerName={`${dancer.firstName} ${dancer.lastName}`.trim()}
+          accountId={dancer.accountId}
+        />
       )}
 
       <DancerAttendanceHistory dancerId={dancerId} />
