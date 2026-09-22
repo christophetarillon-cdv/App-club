@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { collection, query, orderBy, onSnapshot, updateDoc, doc, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, onSnapshot, updateDoc, doc, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import type { PrivateMessage } from '@cdv/types';
+
+interface DancerOption { id: string; accountId: string; name: string; }
 
 function timeAgo(ts: any): string {
   if (!ts) return '';
@@ -35,10 +37,48 @@ export default function AdminPrivateMessagesPage() {
   const [messages, setMessages] = useState<PrivateMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [openDancerId, setOpenDancerId] = useState<string | null>(null);
+  // Cible d'un nouveau message pas encore envoyé (aucun privateMessages pour
+  // ce danseur pour l'instant) — remplacé automatiquement par une vraie
+  // Conversation dès que le premier message arrive via le snapshot temps réel.
+  const [newTarget, setNewTarget] = useState<DancerOption | null>(null);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [dancerOptions, setDancerOptions] = useState<DancerOption[]>([]);
+  const [dancerSearch, setDancerSearch] = useState('');
+  const [dancersLoaded, setDancersLoaded] = useState(false);
+
+  const loadDancerOptions = () => {
+    if (dancersLoaded) return;
+    setDancersLoaded(true);
+    getDocs(query(collection(db, 'dancers'), orderBy('lastName'))).then(snap => {
+      setDancerOptions(
+        snap.docs
+          .map(d => ({
+            id: d.id,
+            accountId: d.data().accountId as string,
+            name: `${d.data().firstName ?? ''} ${d.data().lastName ?? ''}`.trim(),
+          }))
+          .filter(d => d.accountId && d.name),
+      );
+    }).catch(() => setDancersLoaded(false));
+  };
+
+  const filteredDancerOptions = useMemo(() => {
+    const q = dancerSearch.trim().toLowerCase();
+    if (!q) return dancerOptions.slice(0, 30);
+    return dancerOptions.filter(d => d.name.toLowerCase().includes(q)).slice(0, 30);
+  }, [dancerOptions, dancerSearch]);
+
+  const startNewMessage = (dancer: DancerOption) => {
+    setNewTarget(dancer);
+    setOpenDancerId(dancer.id);
+    setPickerOpen(false);
+    setDancerSearch('');
+  };
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -78,6 +118,16 @@ export default function AdminPrivateMessagesPage() {
   const openConversation = conversations.find(c => c.dancerId === openDancerId) ?? null;
   const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
 
+  // Vraie conversation si elle existe déjà (au moins un message échangé),
+  // sinon fil vide pour le danseur qu'on vient de choisir dans "Nouveau
+  // message" — dès que le 1er message part, le snapshot temps réel fait
+  // apparaître openConversation, qui prend le dessus automatiquement.
+  const activeTarget = openConversation ?? (
+    newTarget && newTarget.id === openDancerId
+      ? { accountId: newTarget.accountId, dancerId: newTarget.id, dancerName: newTarget.name, messages: [] as PrivateMessage[], unreadCount: 0 }
+      : null
+  );
+
   useEffect(() => {
     if (!openConversation) return;
     const unread = openConversation.messages.filter(m => !m.fromAdmin && !m.readAt);
@@ -86,17 +136,17 @@ export default function AdminPrivateMessagesPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [openConversation?.messages.length]);
+  }, [activeTarget?.messages.length]);
 
   const handleReply = async () => {
-    if (!openConversation || !reply.trim() || sending) return;
+    if (!activeTarget || !reply.trim() || sending) return;
     setSending(true);
     setSendError(null);
     try {
       await addDoc(collection(db, 'privateMessages'), {
-        fromAccountId: openConversation.accountId,
-        fromDancerId: openConversation.dancerId,
-        fromDancerName: openConversation.dancerName,
+        fromAccountId: activeTarget.accountId,
+        fromDancerId: activeTarget.dancerId,
+        fromDancerName: activeTarget.dancerName,
         text: reply.trim(),
         fromAdmin: true,
         // Timestamp client : evite le placeholder null pendant l'ecriture
@@ -114,17 +164,22 @@ export default function AdminPrivateMessagesPage() {
     }
   };
 
-  if (openConversation) {
+  if (activeTarget) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <div className="max-w-2xl mx-auto w-full px-4 py-6 flex flex-col flex-1">
           <div className="flex items-center gap-3 mb-4">
-            <button onClick={() => setOpenDancerId(null)} className="text-sm text-gray-400 hover:text-gray-700">← Conversations</button>
-            <h1 className="text-lg font-bold text-gray-900">{openConversation.dancerName}</h1>
+            <button onClick={() => { setOpenDancerId(null); setNewTarget(null); }} className="text-sm text-gray-400 hover:text-gray-700">← Conversations</button>
+            <h1 className="text-lg font-bold text-gray-900">{activeTarget.dancerName}</h1>
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto bg-white rounded-2xl border border-gray-200 shadow-sm px-4 py-4 mb-4">
-            {openConversation.messages.map(m => (
+            {activeTarget.messages.length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-6">
+                Aucun message pour l'instant — écrivez le premier ci-dessous.
+              </p>
+            )}
+            {activeTarget.messages.map(m => (
               <div key={m.id} className={`flex ${m.fromAdmin ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${m.fromAdmin ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'}`}>
                   <p className="text-sm whitespace-pre-line">{m.text}</p>
@@ -166,11 +221,48 @@ export default function AdminPrivateMessagesPage() {
       <div className="max-w-2xl mx-auto px-4 py-8">
         <div className="flex items-center gap-3 mb-6">
           <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-700">← Admin</Link>
-          <h1 className="text-2xl font-bold text-gray-900">Messages privés</h1>
+          <h1 className="text-2xl font-bold text-gray-900 flex-1">Messages privés</h1>
           {totalUnread > 0 && (
             <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{totalUnread}</span>
           )}
+          <button
+            onClick={() => { loadDancerOptions(); setPickerOpen(true); }}
+            className="text-sm font-semibold bg-blue-600 text-white px-3.5 py-1.5 rounded-lg hover:bg-blue-700"
+          >
+            + Nouveau message
+          </button>
         </div>
+
+        {pickerOpen && (
+          <div className="fixed inset-0 bg-black/30 flex items-start justify-center pt-24 z-50" onClick={() => setPickerOpen(false)}>
+            <div className="bg-white rounded-2xl shadow-lg w-full max-w-md mx-4 p-4" onClick={e => e.stopPropagation()}>
+              <p className="text-sm font-semibold text-gray-800 mb-3">Écrire à un danseur</p>
+              <input
+                autoFocus
+                type="text"
+                value={dancerSearch}
+                onChange={e => setDancerSearch(e.target.value)}
+                placeholder="Rechercher un nom…"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 mb-2"
+              />
+              <div className="max-h-72 overflow-y-auto -mx-1">
+                {filteredDancerOptions.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-6">Aucun résultat.</p>
+                ) : (
+                  filteredDancerOptions.map(d => (
+                    <button
+                      key={d.id}
+                      onClick={() => startNewMessage(d)}
+                      className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-800 hover:bg-gray-50"
+                    >
+                      {d.name}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>

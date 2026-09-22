@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput, ActivityIndicator,
+  View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput, ActivityIndicator, Modal, Pressable,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -35,6 +35,8 @@ interface Conversation {
   unread: number;
 }
 
+interface DancerOption { id: string; accountId: string; name: string; }
+
 export default function AdminInboxScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -46,6 +48,43 @@ export default function AdminInboxScreen() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState('');
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [dancerOptions, setDancerOptions] = useState<DancerOption[]>([]);
+  const [dancerSearch, setDancerSearch] = useState('');
+  const [dancersLoaded, setDancersLoaded] = useState(false);
+
+  const openPicker = () => {
+    setPickerOpen(true);
+    if (dancersLoaded) return;
+    setDancersLoaded(true);
+    getDocs(query(collection(db, 'dancers'), orderBy('lastName'))).then(snap => {
+      setDancerOptions(
+        snap.docs
+          .map(d => ({
+            id: d.id,
+            accountId: d.data().accountId as string,
+            name: `${d.data().firstName ?? ''} ${d.data().lastName ?? ''}`.trim(),
+          }))
+          .filter(d => d.accountId && d.name),
+      );
+    }).catch(() => setDancersLoaded(false));
+  };
+
+  const filteredDancerOptions = useMemo(() => {
+    const q = dancerSearch.trim().toLowerCase();
+    if (!q) return dancerOptions.slice(0, 40);
+    return dancerOptions.filter(d => d.name.toLowerCase().includes(q)).slice(0, 40);
+  }, [dancerOptions, dancerSearch]);
+
+  const startNewMessage = (dancer: DancerOption) => {
+    setPickerOpen(false);
+    setDancerSearch('');
+    router.push({
+      pathname: `/dancer/${id}/chat/admin`,
+      params: { targetDancerId: dancer.id, targetAccountId: dancer.accountId, targetName: dancer.name },
+    } as any);
+  };
 
   const loadPage = useCallback(async (after: QueryDocumentSnapshot<DocumentData> | null) => {
     // Tri decroissant : les conversations actives remontent en premier, et la
@@ -123,7 +162,38 @@ export default function AdminInboxScreen() {
             Messages privés{totalUnread > 0 ? ` (${totalUnread})` : ''}
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.newBtn} onPress={openPicker} activeOpacity={0.8}>
+          <Text style={styles.newBtnText}>+ Nouveau</Text>
+        </TouchableOpacity>
       </View>
+
+      <Modal visible={pickerOpen} transparent animationType="fade" onRequestClose={() => setPickerOpen(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setPickerOpen(false)}>
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <Text style={styles.modalTitle}>Écrire à un danseur</Text>
+            <TextInput
+              autoFocus
+              style={styles.modalSearch}
+              value={dancerSearch}
+              onChangeText={setDancerSearch}
+              placeholder="Rechercher un nom…"
+              placeholderTextColor={Colors.textLight}
+            />
+            <FlatList
+              data={filteredDancerOptions}
+              keyExtractor={d => d.id}
+              style={{ maxHeight: 340 }}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={<Text style={styles.empty}>Aucun résultat.</Text>}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.modalOption} onPress={() => startNewMessage(item)} activeOpacity={0.7}>
+                  <Text style={styles.modalOptionText}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <TextInput
         style={styles.search}
@@ -194,10 +264,22 @@ export default function AdminInboxScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
-  header: { backgroundColor: '#2F86C0', paddingHorizontal: 16, paddingBottom: 14 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  header: { backgroundColor: '#2F86C0', paddingHorizontal: 16, paddingBottom: 14, flexDirection: 'row', alignItems: 'center' },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
   backChevron: { color: '#fff', fontSize: 26, marginTop: -2 },
   headerTitle: { color: '#fff', fontSize: 18, fontWeight: '600', flex: 1 },
+  newBtn: { backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
+  newBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', paddingHorizontal: 20 },
+  modalSheet: { backgroundColor: '#fff', borderRadius: 18, padding: 16, maxHeight: '70%' },
+  modalTitle: { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 10 },
+  modalSearch: {
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, color: Colors.text, marginBottom: 8,
+  },
+  modalOption: { paddingVertical: 12, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
+  modalOptionText: { fontSize: 15, color: Colors.text },
 
   search: {
     margin: 14, marginBottom: 6, borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)',
