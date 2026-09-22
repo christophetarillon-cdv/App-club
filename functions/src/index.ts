@@ -2336,7 +2336,11 @@ export const onPrivateMessageCreated = onDocumentCreated(
     await sendPushToTokens(tokens, {
       title,
       body: text,
-      data: { type: 'private_message', accountId: msg.fromAccountId },
+      // dancerId/dancerName ajoutés pour permettre à l'app mobile de
+      // rediriger au bon endroit au tap (voir _layout.tsx) : sans dancerId,
+      // impossible de distinguer "mon propre fil" de "le fil d'un autre
+      // danseur" côté admin, ni de construire l'URL vers la bonne conversation.
+      data: { type: 'private_message', accountId: msg.fromAccountId, dancerId: msg.fromDancerId ?? '', dancerName },
       link: '/admin/private-messages',
     });
   },

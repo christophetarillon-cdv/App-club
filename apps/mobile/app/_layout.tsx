@@ -5,10 +5,11 @@ import { useEffect, useRef } from 'react';
 import { ActivityIndicator, View, Text, StyleSheet } from 'react-native';
 import { Slot, useRouter, useSegments, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import { DancerProvider } from '@/contexts/DancerContext';
+import { DancerProvider, useDancer } from '@/contexts/DancerContext';
 import { PagePermissionsProvider } from '@/contexts/PagePermissionsContext';
 import { Colors } from '@/constants/Colors';
 import { registerForPushNotificationsAsync } from '@/lib/pushNotifications';
@@ -36,6 +37,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function Gate() {
   const { user, account, dancers, loading } = useAuth();
+  const { selectedDancer, selectDancer } = useDancer();
   const router = useRouter();
   const segments = useSegments();
   const pathname = usePathname();
@@ -47,6 +49,58 @@ function Gate() {
   useEffect(() => {
     if (user) registerForPushNotificationsAsync(user.uid);
   }, [user]);
+
+  // Redirige vers la bonne conversation au tap d'une notif de message privé
+  // — sans ça, l'app rouvrait juste sur son écran habituel, pas sur le fil
+  // concerné. dancerId identifie TOUJOURS le danseur dont c'est le fil (voir
+  // onPrivateMessageCreated) : si c'est un des miens, c'est ma conversation
+  // (vue danseur) ; sinon c'est un tiers dont je suis notifié en tant
+  // qu'admin (vue admin, avec les paramètres target*).
+  const coldStartHandledRef = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+
+    const handleResponse = (response: Notifications.NotificationResponse) => {
+      const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+      if (data?.type !== 'private_message') return;
+      const dancerId = typeof data.dancerId === 'string' ? data.dancerId : '';
+      if (!dancerId) return;
+
+      const isMyOwnThread = dancers.some(d => d.id === dancerId);
+      if (isMyOwnThread) {
+        selectDancer(dancerId);
+        router.push(`/dancer/${dancerId}/chat/admin` as any);
+        return;
+      }
+
+      const myDancerId = selectedDancer?.id ?? dancers[0]?.id;
+      if (!myDancerId) return;
+      router.push({
+        pathname: `/dancer/${myDancerId}/chat/admin`,
+        params: {
+          targetDancerId: dancerId,
+          targetAccountId: typeof data.accountId === 'string' ? data.accountId : '',
+          targetName: typeof data.dancerName === 'string' ? data.dancerName : 'Danseur',
+        },
+      } as any);
+    };
+
+    // Notification tapée pendant que l'app tournait (arrière-plan ou premier plan).
+    const sub = Notifications.addNotificationResponseReceivedListener(handleResponse);
+    // Notification tapée alors que l'app était fermée (démarrage à froid) :
+    // ce cas ne déclenche pas le listener ci-dessus, il faut le lire à part.
+    // getLastNotificationResponseAsync() renvoie la MÊME réponse tant qu'aucune
+    // nouvelle notif n'est tapée — sans le verrou ci-dessous, chaque
+    // ré-exécution de cet effet (dancers/selectedDancer qui changent pendant
+    // l'usage normal) reredirigerait vers ce fil, bien après le démarrage.
+    if (!coldStartHandledRef.current) {
+      coldStartHandledRef.current = true;
+      Notifications.getLastNotificationResponseAsync().then(response => {
+        if (response) handleResponse(response);
+      });
+    }
+    return () => sub.remove();
+  }, [loading, dancers, selectedDancer, selectDancer, router]);
 
   // Tracing d'usage — un session_start par connexion, un screen_view par
   // écran principal ouvert (voir @/lib/analytics pour la liste suivie).
