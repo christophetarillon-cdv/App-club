@@ -17,6 +17,7 @@ import { useParams } from 'next/navigation';
 import type { ProfileFieldsConfig, CustomField, RoleConfig, PersonalDocument } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS, validateContactFields } from '@cdv/types';
 import { BirthDateSelect } from '@/components/BirthDateSelect';
+import DancerAttendanceHistory from './DancerAttendanceHistory';
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   receipt: 'Reçu de paiement',
@@ -2081,6 +2082,8 @@ export default function DancerDetailPage() {
           ))}
         </div>
       )}
+
+      <DancerAttendanceHistory dancerId={dancerId} />
     </div>
   );
 }

@@ -140,6 +140,14 @@
       ]
     },
     {
+      "collectionGroup": "attendances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dancerId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "kioskSessions",
       "queryScope": "COLLECTION",
       "fields": [

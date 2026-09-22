@@ -50,6 +50,19 @@ service cloud.firestore {
       return isAuth() && userRoles().hasAny(['instructor', 'admin', 'pointage']);
     }
 
+    // Lecture de attendances : instructeur/pointage/admin (rôle), export, ou
+    // page Danseurs (fiche détail → historique de présence). Une seule
+    // évaluation de userRoles()/pagePerms() partagée entre les 3 conditions
+    // au lieu d'empiler isInstructor() + 2x hasPagePermission() séparément,
+    // qui dépasserait le quota de get() pour un rôle sans accès instructeur.
+    function hasAttendanceReadAccess() {
+      let roles = userRoles();
+      let perms = pagePerms();
+      return roles.hasAny(['instructor', 'admin', 'pointage']) ||
+        roles.hasAny(perms.get('/admin/exports', ['admin'])) ||
+        roles.hasAny(perms.get('/admin/dancers', ['admin']));
+    }
+
     function hasPagePermission(page) {
       let roles = userRoles();
       let perms = pagePerms();
@@ -456,7 +469,7 @@ service cloud.firestore {
     }
 
     match /attendances/{id} {
-      allow read: if isInstructor() || hasPagePermission('/admin/exports');
+      allow read: if hasAttendanceReadAccess();
       allow create: if false; // Cloud Function uniquement
       allow update, delete: if isAdmin();
     }
