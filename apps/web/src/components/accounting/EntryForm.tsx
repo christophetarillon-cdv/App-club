@@ -426,11 +426,11 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
           onChange={(e) => setForm({ ...form, paymentType: e.target.value, chequeNumber: '' })}
           className="w-full px-3 py-2 border rounded-lg"
         >
-          <option value="virement">Virement</option>
           <option value="cheque">Chèque</option>
           <option value="cb">Carte bancaire</option>
-          <option value="especes">Espèces</option>
           <option value="prelevement">Prélèvement</option>
+          <option value="virement">Virement</option>
+          <option value="especes">Espèces</option>
           <option value="autre">Autre</option>
         </select>
       </div>
