@@ -429,8 +429,8 @@ export default function EntryForm({ seasonId, userId, onSuccess }: EntryFormProp
           <option value="virement">Virement</option>
           <option value="cheque">Chèque</option>
           <option value="cb">Carte bancaire</option>
-          <option value="prelevement">Prélèvement</option>
           <option value="especes">Espèces</option>
+          <option value="prelevement">Prélèvement</option>
           <option value="autre">Autre</option>
         </select>
       </div>
