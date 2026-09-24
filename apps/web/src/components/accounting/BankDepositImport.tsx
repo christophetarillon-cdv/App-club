@@ -92,13 +92,16 @@ export default function BankDepositImport({ userId, onImported }: BankDepositImp
   }, []);
 
   // Comptes traditionnels, catégories analytiques et leurs détails (niveaux
-  // 1/2/3 de ventilation) — mêmes listes que le Journal.
+  // 1/2/3 de ventilation) — mêmes listes que le Journal, mais restreintes aux
+  // comptes de type "produit" : une mise en banque est toujours une recette
+  // (type: 'income' à l'import, voir handleConfirmImport), un compte de
+  // charge n'a donc pas de sens ici.
   useEffect(() => {
     const unsubChart = onSnapshot(query(collection(db, 'chartOfAccounts')), (snapshot) => {
       const labels: string[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
-        if (data.isActive !== false) labels.push(data.label);
+        if (data.isActive !== false && data.type === 'produit') labels.push(data.label);
       });
       setChartOptions(labels);
     });

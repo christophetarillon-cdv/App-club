@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
-  TextInput, Image, ActivityIndicator, useWindowDimensions,
+  TextInput, Image, ActivityIndicator, useWindowDimensions, Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
@@ -36,8 +36,9 @@ export default function TrombinoscopeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const itemWidth = (width - H_PAD * 2 - GAP * (NUM_COLS - 1)) / NUM_COLS;
+  const zoomSize = Math.min(width - 48, height * 0.6);
 
   const { selectedDancer } = useDancer();
   const isAdmin = selectedDancer?.roles?.includes('admin') ?? false;
@@ -46,6 +47,20 @@ export default function TrombinoscopeScreen() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState('');
   const [accessDenied, setAccessDenied] = useState(false);
+  const [zoomedDancer, setZoomedDancer] = useState<Dancer | null>(null);
+
+  const handleMessage = (target: Dancer) => {
+    if (!selectedDancer) return;
+    setZoomedDancer(null);
+    router.push({
+      pathname: `/dancer/${selectedDancer.id}/chat/admin`,
+      params: {
+        targetDancerId: target.id,
+        targetAccountId: target.accountId,
+        targetName: `${target.firstName} ${target.lastName}`,
+      },
+    } as any);
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -177,7 +192,11 @@ export default function TrombinoscopeScreen() {
             const idx = avatarIdx(d);
             const size = itemWidth - 8;
             return (
-              <View style={[styles.cell, { width: itemWidth }]}>
+              <TouchableOpacity
+                style={[styles.cell, { width: itemWidth }]}
+                onPress={() => setZoomedDancer(d)}
+                activeOpacity={0.8}
+              >
                 {d.photoUrl ? (
                   <Image
                     source={{ uri: d.photoUrl }}
@@ -191,11 +210,53 @@ export default function TrombinoscopeScreen() {
                   </View>
                 )}
                 <Text style={styles.cellName} numberOfLines={2}>{d.firstName}</Text>
-              </View>
+              </TouchableOpacity>
             );
           }}
         />
       )}
+
+      {/* Modal photo agrandie — ouvert à tous, sans rôle/email/statut */}
+      <Modal
+        visible={!!zoomedDancer}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setZoomedDancer(null)}
+      >
+        <TouchableOpacity
+          style={styles.zoomOverlay}
+          activeOpacity={1}
+          onPress={() => setZoomedDancer(null)}
+        >
+          {zoomedDancer && (() => {
+            const idx = avatarIdx(zoomedDancer);
+            return (
+              <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.zoomCard}>
+                {zoomedDancer.photoUrl ? (
+                  <Image
+                    source={{ uri: zoomedDancer.photoUrl }}
+                    style={[styles.zoomPhoto, { width: zoomSize, height: zoomSize }]}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[styles.zoomPhoto, styles.zoomPlaceholder, { width: zoomSize, height: zoomSize, backgroundColor: AVATAR_BG[idx] }]}>
+                    <Text style={[styles.zoomInitials, { color: AVATAR_TEXT[idx], fontSize: zoomSize * 0.32 }]}>
+                      {zoomedDancer.firstName[0]?.toUpperCase() ?? '?'}
+                    </Text>
+                  </View>
+                )}
+                <Text style={styles.zoomName}>{zoomedDancer.firstName} {zoomedDancer.lastName}</Text>
+
+                {isAdmin && zoomedDancer.id !== selectedDancer?.id && (
+                  <TouchableOpacity style={styles.messageBtn} onPress={() => handleMessage(zoomedDancer)}>
+                    <Text style={styles.messageBtnText}>💬 Envoyer un message</Text>
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            );
+          })()}
+        </TouchableOpacity>
+      </Modal>
 
     </View>
   );
@@ -237,4 +298,13 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
   emptySub: { fontSize: 13, color: Colors.textSecondary },
 
+  // Modal photo agrandie
+  zoomOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  zoomCard: { alignItems: 'center', gap: 16 },
+  zoomPhoto: { borderRadius: 24 },
+  zoomPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  zoomInitials: { fontWeight: '700' },
+  zoomName: { fontSize: 18, fontWeight: '700', color: '#fff' },
+  messageBtn: { backgroundColor: '#2F86C0', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
+  messageBtnText: { fontSize: 14, fontWeight: '600', color: '#fff' },
 });
