@@ -82,7 +82,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <nav className="flex-1 px-2 py-3 space-y-4 overflow-y-auto">
           {visibleNav.map((group) => (
             <div key={group.label}>
-              <p className="px-2 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+              <p className="px-2 mb-1 text-xs font-bold text-red-600 uppercase tracking-wider">
                 {group.label}
               </p>
               <ul className="space-y-0.5">
