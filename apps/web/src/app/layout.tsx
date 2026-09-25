@@ -19,8 +19,8 @@ function DevBadge() {
     <div
       style={{
         position: 'fixed',
-        top: 8,
-        right: 8,
+        bottom: 8,
+        left: 8,
         padding: '3px 10px',
         borderRadius: 20,
         backgroundColor: '#EF4444',
