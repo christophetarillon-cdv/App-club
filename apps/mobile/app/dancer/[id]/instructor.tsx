@@ -5,10 +5,8 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '@/lib/firebase';
+import { functions, webBaseUrl as WEB_BASE_URL } from '@/lib/firebase';
 import { Colors } from '@/constants/Colors';
-
-const WEB_BASE_URL = 'https://espace-perso.clubdedanse.net';
 
 export default function InstructorScreen() {
   const router = useRouter();

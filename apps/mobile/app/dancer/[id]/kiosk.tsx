@@ -5,11 +5,11 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { doc, getDoc } from 'firebase/firestore';
-import { db, functions } from '@/lib/firebase';
+import { db, functions, webBaseUrl } from '@/lib/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { Colors } from '@/constants/Colors';
 
-const KIOSK_URL = 'https://app-club-web.vercel.app/kiosk/setup';
+const KIOSK_URL = `${webBaseUrl}/kiosk/setup`;
 
 export default function KioskScreen() {
   const router = useRouter();

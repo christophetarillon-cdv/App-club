@@ -7,8 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import BottomTabBar from '@/components/BottomTabBar';
 import { useDancer } from '@/contexts/DancerContext';
-
-const WEB_BASE = 'https://app-club-web.vercel.app';
+import { webBaseUrl as WEB_BASE } from '@/lib/firebase';
 
 const SECTIONS = [
   {

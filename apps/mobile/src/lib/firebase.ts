@@ -44,3 +44,13 @@ export const functionsBaseUrl = `https://europe-west3-${firebaseConfig.projectId
 // Utilisé pour afficher un repère visuel "DEV" dans l'app quand elle n'est
 // pas connectée aux vraies données (clubvoiron-prod) — voir app/_layout.tsx.
 export const isProdEnvironment = firebaseConfig.projectId === 'clubvoiron-prod';
+
+// Base de l'appli web à charger dans les WebView (kiosk, settings, instructor).
+// Sans ce switch, une build dev pointait sur le déploiement web de prod —
+// jeton d'auth minté pour clubvoiron-dev envoyé à une page branchée
+// clubvoiron-prod, et données de prod affichées dans l'appli dev.
+// app-club-dev.vercel.app est repointé manuellement (pas d'auto-tracking
+// Vercel comme pour app-club-web.vercel.app) après chaque déploiement preview.
+export const webBaseUrl = isProdEnvironment
+  ? 'https://app-club-web.vercel.app'
+  : 'https://app-club-dev.vercel.app';
