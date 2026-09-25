@@ -179,7 +179,7 @@ export default function AdminPaymentPlansPage() {
       if (dancerId) {
         const dancerSnap = await getDoc(doc(db, 'dancers', dancerId));
         if (dancerSnap.exists()) {
-          dancerName = `${dancerSnap.data().firstName ?? ''} ${dancerSnap.data().lastName ?? ''}`.trim();
+          dancerName = `${dancerSnap.data().lastName ?? ''} ${dancerSnap.data().firstName ?? ''}`.trim();
           resolvedDancerRoles = dancerSnap.data().roles ?? [];
         }
       }
@@ -209,6 +209,7 @@ export default function AdminPaymentPlansPage() {
         installments,
       };
     }));
+    enriched.sort((a, b) => (a.dancerName || a.displayName).localeCompare(b.dancerName || b.displayName, 'fr'));
     setRows(enriched);
 
     // Payment groups
@@ -230,7 +231,7 @@ export default function AdminPaymentPlansPage() {
           let name = '—';
           if (md.dancerId) {
             const dSnap = await getDoc(doc(db, 'dancers', md.dancerId));
-            if (dSnap.exists()) name = `${dSnap.data().firstName} ${dSnap.data().lastName}`.trim();
+            if (dSnap.exists()) name = `${dSnap.data().lastName} ${dSnap.data().firstName}`.trim();
           }
           let planLabel = '—';
           if (md.pricingPlanId) {
@@ -257,17 +258,19 @@ export default function AdminPaymentPlansPage() {
             : { id, expectedDate: '', amount: 0, status: 'unknown' };
         })
       );
+      const sortedDancers = [...dancers].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
       return {
         ...g,
         displayName: accountSnap.exists() ? accountSnap.data().displayName : g.userId,
         email: accountSnap.exists() ? accountSnap.data().email : '—',
         seasonLabel: seasonSnap.exists() ? seasonSnap.data().label : g.seasonId,
-        dancers: dancers.map(d => ({ name: d.name, planLabel: d.planLabel })),
+        dancers: sortedDancers.map(d => ({ name: d.name, planLabel: d.planLabel })),
         dancerIds: dancers.map(d => d.dancerId).filter((id): id is string => !!id),
         dancerRoleMap: Object.fromEntries(dancers.filter(d => d.dancerId).map(d => [d.dancerId!, d.roles ?? []])),
         installments,
       };
     }));
+    enrichedGroups.sort((a, b) => (a.dancers[0]?.name || a.displayName).localeCompare(b.dancers[0]?.name || b.displayName, 'fr'));
     setGroupRows(enrichedGroups);
     } catch (err) {
       console.error('[admin/payment-plans] load failed:', err);
