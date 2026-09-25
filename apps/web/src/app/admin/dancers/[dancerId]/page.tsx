@@ -286,6 +286,11 @@ export default function DancerDetailPage() {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelConfirmText, setCancelConfirmText] = useState('');
 
+  const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteSaving, setDeleteSaving] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const [activeSeason, setActiveSeason] = useState<{ id: string; label: string } | null>(null);
   const [grantingFree, setGrantingFree] = useState(false);
   const [grantFreeError, setGrantFreeError] = useState<string | null>(null);
@@ -693,6 +698,46 @@ export default function DancerDetailPage() {
       setCancelError(err instanceof Error ? err.message : 'Erreur lors de l\'annulation.');
     } finally {
       setCancelSaving(false);
+    }
+  };
+
+  const openDeletePanel = (entryId: string) => {
+    setDeletingEntryId(entryId);
+    setDeleteConfirmText('');
+    setDeleteError(null);
+  };
+
+  // Suppression complète (pas une simple annulation) — réservée aux plans
+  // rejetés/annulés sans aucun encaissement, pour purger un doublon créé par
+  // erreur (ex: plan rejeté puis refait) qui sinon reste visible partout
+  // (recherche danseurs, etc.) sans plus avoir aucune utilité. Un plan avec
+  // de l'argent déjà reçu doit passer par "Annuler l'adhésion" pour garder
+  // une trace comptable.
+  const handleDeleteMembership = async (entry: Entry) => {
+    if (!isAdmin) return;
+    if (deleteConfirmText.trim().toUpperCase() !== 'SUPPRIMER') return;
+
+    setDeleteSaving(true);
+    setDeleteError(null);
+    try {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, entry.kind === 'group' ? 'paymentGroups' : 'memberships', entry.id));
+      for (const instId of entry.installmentIds) {
+        batch.delete(doc(db, 'paymentInstallments', instId));
+      }
+      if (entry.kind === 'group' && entry.membershipIds) {
+        for (const mid of entry.membershipIds) {
+          batch.delete(doc(db, 'memberships', mid));
+        }
+      }
+      await batch.commit();
+
+      setEntries(prev => prev.filter(e => e.id !== entry.id));
+      setDeletingEntryId(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Erreur lors de la suppression.');
+    } finally {
+      setDeleteSaving(false);
     }
   };
 
@@ -1662,6 +1707,14 @@ export default function DancerDetailPage() {
                       Annuler l'adhésion
                     </button>
                   )}
+                  {isAdmin && (entry.status === 'rejected' || entry.status === 'cancelled') && entry.totalPaid === 0 && (
+                    <button
+                      onClick={() => openDeletePanel(entry.id)}
+                      className="text-xs text-red-600 hover:text-red-800 font-medium"
+                    >
+                      Supprimer définitivement
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1837,6 +1890,46 @@ export default function DancerDetailPage() {
                     </button>
                     <button
                       onClick={() => setCancelingEntryId(null)}
+                      className="text-sm text-gray-500 hover:text-gray-700 px-3 py-2"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {deletingEntryId === entry.id && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl space-y-3">
+                  <p className="text-sm font-semibold text-red-800">Suppression définitive — {entry.seasonLabel}</p>
+                  <p className="text-xs text-red-700">
+                    Le plan{entry.kind === 'group' ? ' groupé' : ''} et ses {entry.installmentIds.length} versement{entry.installmentIds.length > 1 ? 's' : ''}
+                    {' '}seront effacés sans laisser de trace — action irréversible, à réserver aux plans créés par erreur.
+                  </p>
+
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">
+                      Tapez <span className="font-mono font-semibold">SUPPRIMER</span> pour confirmer
+                    </label>
+                    <input
+                      type="text"
+                      value={deleteConfirmText}
+                      onChange={e => setDeleteConfirmText(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-400"
+                    />
+                  </div>
+
+                  {deleteError && <p className="text-xs text-red-700">{deleteError}</p>}
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleDeleteMembership(entry)}
+                      disabled={deleteSaving || deleteConfirmText.trim().toUpperCase() !== 'SUPPRIMER'}
+                      className="bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {deleteSaving ? 'Suppression…' : 'Confirmer la suppression'}
+                    </button>
+                    <button
+                      onClick={() => setDeletingEntryId(null)}
                       className="text-sm text-gray-500 hover:text-gray-700 px-3 py-2"
                     >
                       Annuler
