@@ -7,7 +7,7 @@ export default function ConfidentialitePage() {
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-2xl mx-auto px-4 py-12 prose prose-sm">
         <h1 className="text-2xl font-bold text-gray-900">Politique de confidentialité — CDCV (Club de Danse Coublevie Voiron)</h1>
-        <p className="text-gray-500">Dernière mise à jour : 14 juillet 2026</p>
+        <p className="text-gray-500">Dernière mise à jour : 25 septembre 2026</p>
 
         <p>
           Cette politique de confidentialité décrit comment l&apos;association Club de Danse Coublevie Voiron
@@ -39,6 +39,29 @@ export default function ConfidentialitePage() {
           Vos données ne sont ni vendues ni partagées avec des tiers à des fins commerciales. Elles peuvent être
           transmises à des prestataires techniques strictement nécessaires au fonctionnement de l&apos;application
           (hébergement et stockage Google Firebase), soumis à des obligations de confidentialité.
+        </p>
+
+        <h2>3bis. Intégration Google Contacts et Gmail</h2>
+        <p>
+          Un administrateur du Club peut connecter un compte Google associatif à l&apos;application pour deux
+          fonctionnalités optionnelles :
+        </p>
+        <ul>
+          <li>
+            <strong>Synchronisation des contacts</strong> (accès en lecture/écriture au carnet de contacts Google) :
+            nom, prénom, email, téléphone, adresse postale et date de naissance des adhérents sont répliqués dans des
+            groupes de contacts Google (« Tous les danseurs », un groupe par saison, un groupe « Essais ») afin de
+            faciliter la communication du Club. Un adhérent peut demander à être exclu de cette synchronisation à
+            tout moment en contactant le Club.
+          </li>
+          <li>
+            <strong>Envoi d&apos;emails</strong> (envoi seul, sans lecture de la boîte de réception) : permet au Club
+            d&apos;envoyer des communications aux adhérents directement depuis ce compte Google associatif.
+          </li>
+        </ul>
+        <p>
+          Seul le compte Google d&apos;un administrateur est connecté (pas celui des adhérents). Ces données ne
+          quittent jamais l&apos;écosystème Google du Club et ne sont partagées avec aucun autre tiers.
         </p>
 
         <h2>4. Conservation des données</h2>
