@@ -279,18 +279,26 @@ export default function KioskScanPage() {
     <div className="min-h-screen flex flex-col bg-gray-950">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-5 py-3.5 bg-gray-900 border-b border-gray-800 shrink-0">
+      <div className="flex items-center px-5 py-3.5 bg-gray-900 border-b border-gray-800 shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />
           <span className="text-white font-semibold text-sm">{courseName || '…'}</span>
         </div>
-        <button
-          onClick={handleClose}
-          className="px-3.5 py-2 bg-red-950/60 hover:bg-red-900/60 border border-red-900/50 rounded-xl text-sm font-medium text-red-400 hover:text-red-300 transition-colors"
-        >
-          Fermer
-        </button>
       </div>
+
+      {/* Bouton fermer flottant — volontairement pas dans le header : sur iOS
+          (WebView embarquée dans l'appli mobile), cette zone haute cumule la
+          barre de statut, l'encoche et le badge DEV natif de l'appli, qui se
+          superposent et rendaient le bouton inaccessible au clic. Positionné
+          juste au-dessus du pied de page (texte + bouton caméra) pour ne pas
+          le chevaucher non plus. */}
+      <button
+        onClick={handleClose}
+        style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 76px)' }}
+        className="fixed right-4 z-20 px-3.5 py-2 bg-red-950/80 hover:bg-red-900/80 border border-red-900/50 rounded-xl text-sm font-medium text-red-400 hover:text-red-300 transition-colors shadow-lg"
+      >
+        Fermer
+      </button>
 
       {/* ── Infos séance ── */}
       <div className="text-center px-6 pt-5 pb-3">
