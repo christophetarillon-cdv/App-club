@@ -97,10 +97,10 @@ export default function NewBankDepositPage() {
               const dancerId = ms.data().dancerId as string | undefined;
               if (dancerId) {
                 const ds = await getDoc(doc(db, 'dancers', dancerId));
-                if (ds.exists()) names.push(`${ds.data().firstName} ${ds.data().lastName}`.trim());
+                if (ds.exists()) names.push(`${ds.data().lastName} ${ds.data().firstName}`.trim());
               }
             }
-            if (names.length > 0) memberName = names.join(' & ');
+            if (names.length > 0) memberName = names.sort((a, b) => a.localeCompare(b, 'fr')).join(' & ');
           }
         }
 
@@ -111,7 +111,7 @@ export default function NewBankDepositPage() {
             const dancerId = msSnap.data().dancerId as string | undefined;
             if (dancerId) {
               const ds = await getDoc(doc(db, 'dancers', dancerId));
-              if (ds.exists()) memberName = `${ds.data().firstName} ${ds.data().lastName}`.trim();
+              if (ds.exists()) memberName = `${ds.data().lastName} ${ds.data().firstName}`.trim();
             }
           }
         }
@@ -121,7 +121,7 @@ export default function NewBankDepositPage() {
             const dancerIds: string[] = accSnap.data().dancerIds ?? [];
             if (dancerIds.length > 0) {
               const ds = await getDoc(doc(db, 'dancers', dancerIds[0]!));
-              if (ds.exists()) memberName = `${ds.data().firstName} ${ds.data().lastName}`.trim();
+              if (ds.exists()) memberName = `${ds.data().lastName} ${ds.data().firstName}`.trim();
             }
             if (!memberName) memberName = accSnap.data().displayName;
           }
@@ -144,6 +144,7 @@ export default function NewBankDepositPage() {
         };
       }));
 
+      loadedRows.sort((a, b) => (a.memberName ?? a.userId).localeCompare(b.memberName ?? b.userId, 'fr'));
       setRows(loadedRows);
       setSelected(new Set(loadedRows.map(r => r.id)));
     } catch (err) {
@@ -217,21 +218,21 @@ export default function NewBankDepositPage() {
 
       // En-têtes selon méthode
       if (paymentMethod === 'cheque') {
-        page.drawText('Prénom Nom', { x: 50, y, size: 10, font: fontBold });
+        page.drawText('Nom Prénom', { x: 50, y, size: 10, font: fontBold });
         page.drawText('Banque / Ville', { x: 200, y, size: 10, font: fontBold });
         page.drawText('N° chèque', { x: 360, y, size: 10, font: fontBold });
         page.drawText('Montant', { x: 460, y, size: 10, font: fontBold });
       } else if (paymentMethod === 'transfer') {
-        page.drawText('Prénom Nom', { x: 50, y, size: 10, font: fontBold });
+        page.drawText('Nom Prénom', { x: 50, y, size: 10, font: fontBold });
         page.drawText('Référence', { x: 260, y, size: 10, font: fontBold });
         page.drawText('Date', { x: 390, y, size: 10, font: fontBold });
         page.drawText('Montant', { x: 460, y, size: 10, font: fontBold });
       } else if (paymentMethod === 'helloasso') {
-        page.drawText('Prénom Nom', { x: 50, y, size: 10, font: fontBold });
+        page.drawText('Nom Prénom', { x: 50, y, size: 10, font: fontBold });
         page.drawText('Date paiement', { x: 310, y, size: 10, font: fontBold });
         page.drawText('Montant', { x: 460, y, size: 10, font: fontBold });
       } else {
-        page.drawText('Prénom Nom', { x: 50, y, size: 10, font: fontBold });
+        page.drawText('Nom Prénom', { x: 50, y, size: 10, font: fontBold });
         page.drawText('N° reçu', { x: 310, y, size: 10, font: fontBold });
         page.drawText('Montant', { x: 460, y, size: 10, font: fontBold });
       }
