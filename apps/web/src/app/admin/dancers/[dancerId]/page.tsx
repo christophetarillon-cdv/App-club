@@ -708,7 +708,7 @@ export default function DancerDetailPage() {
   };
 
   // Suppression complète (pas une simple annulation) — réservée aux plans
-  // rejetés/annulés sans aucun encaissement, pour purger un doublon créé par
+  // rejetés/annulés/en attente sans aucun encaissement, pour purger un doublon créé par
   // erreur (ex: plan rejeté puis refait) qui sinon reste visible partout
   // (recherche danseurs, etc.) sans plus avoir aucune utilité. Un plan avec
   // de l'argent déjà reçu doit passer par "Annuler l'adhésion" pour garder
@@ -1707,7 +1707,7 @@ export default function DancerDetailPage() {
                       Annuler l'adhésion
                     </button>
                   )}
-                  {isAdmin && (entry.status === 'rejected' || entry.status === 'cancelled') && entry.totalPaid === 0 && (
+                  {isAdmin && (entry.status === 'rejected' || entry.status === 'cancelled' || entry.status === 'pending') && entry.totalPaid === 0 && (
                     <button
                       onClick={() => openDeletePanel(entry.id)}
                       className="text-xs text-red-600 hover:text-red-800 font-medium"
