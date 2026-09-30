@@ -92,6 +92,7 @@ export const ADMIN_NAV: NavGroup[] = [
       { label: 'Encaissements', href: '/admin/payments/today', highlight: true },
       { label: 'Bordereaux', href: '/admin/payments/bank-deposits' },
       { label: 'Tarifs', href: '/admin/pricing-plans' },
+      { label: 'Codes de réduction', href: '/admin/discount-codes' },
       { label: 'Comptes bancaires', href: '/admin/settings/bank-accounts' },
       { label: 'Infos de paiement', href: '/admin/settings/payment-info' },
       { label: 'Chèques', href: '/admin/payments/cheques' },

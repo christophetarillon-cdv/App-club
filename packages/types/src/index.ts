@@ -31,3 +31,4 @@ export * from './role';
 export * from './validation';
 export * from './raffleEntry';
 export * from './raffleWinnerCode';
+export * from './discountCode';

@@ -7,7 +7,7 @@ import { logEvent } from '@/lib/analytics';
 import { getApp } from 'firebase/app';
 import {
   collection, getDocs, query, where, orderBy, addDoc, doc, getDoc, setDoc, updateDoc,
-  deleteDoc, writeBatch, serverTimestamp,
+  deleteDoc, writeBatch, serverTimestamp, increment, arrayUnion, Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -245,6 +245,16 @@ export default function MembershipPage() {
   const [codeChecking, setCodeChecking] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [codeApplied, setCodeApplied] = useState<{ code: string } | null>(null);
+
+  // Code de réduction (montant fixe, réutilisable, danseur(s) optionnel) —
+  // cotisation solo uniquement, comme le code gagnant. Réduit totalDue mais
+  // ne dispense pas de choisir un mode de paiement sur le reste, contrairement
+  // au code gagnant qui approuve directement à 0€.
+  const [showDiscountInput, setShowDiscountInput] = useState(false);
+  const [discountCodeInput, setDiscountCodeInput] = useState('');
+  const [discountChecking, setDiscountChecking] = useState(false);
+  const [discountError, setDiscountError] = useState<string | null>(null);
+  const [discountApplied, setDiscountApplied] = useState<{ code: string; amount: number } | null>(null);
 
   // Fiches complètes des danseurs d'autres comptes sélectionnés (pour
   // vérifier les champs obligatoires manquants).
@@ -684,6 +694,32 @@ export default function MembershipPage() {
     }
   };
 
+  const checkDiscountCode = async () => {
+    const code = discountCodeInput.trim().toUpperCase();
+    if (!code || !season || dancersToCreate.length !== 1) return;
+    setDiscountChecking(true);
+    setDiscountError(null);
+    try {
+      const snap = await getDoc(doc(db, 'discountCodes', code));
+      if (!snap.exists()) { setDiscountError('Code invalide.'); return; }
+      const data = snap.data();
+      if (data.active === false) { setDiscountError('Ce code a été désactivé.'); return; }
+      if (data.seasonId !== season.id) { setDiscountError('Ce code n\'est pas valable pour cette saison.'); return; }
+      if ((data.usesCount ?? 0) >= (data.maxUses ?? 0)) { setDiscountError('Ce code a atteint son nombre maximal d\'utilisations.'); return; }
+      const allowed: string[] = data.allowedDancerIds ?? [];
+      const dancer = dancersToCreate[0]!;
+      if (allowed.length > 0 && !allowed.includes(dancer.id)) {
+        setDiscountError('Ce code n\'est pas valable pour ce danseur.');
+        return;
+      }
+      setDiscountApplied({ code, amount: data.discountAmount ?? 0 });
+    } catch {
+      setDiscountError('Erreur de vérification, réessayez.');
+    } finally {
+      setDiscountChecking(false);
+    }
+  };
+
   const handleCreateFree = async () => {
     if (!user || !season || !codeApplied || dancersToCreate.length !== 1) return;
     setSubmitting(true);
@@ -752,13 +788,15 @@ export default function MembershipPage() {
         const dancer = dancersToCreate[0]!;
         const planId = selectedPlanIds[dancer.id]!;
         const plan = plans.find(p => p.id === planId)!;
+        const discountAmount = discountApplied?.amount ?? 0;
+        const totalDue = Math.max(0, plan.amount - discountAmount);
         const ref = await addDoc(collection(db, 'memberships'), {
           userId: user.uid,
           visibleUserIds: [...new Set([user.uid, dancer.accountId])],
           dancerId: dancer.id,
           seasonId: season.id,
           pricingPlanId: planId,
-          totalDue: plan.amount,
+          totalDue,
           totalPaid: 0,
           paymentMethod: selectedMethod,
           paymentPlanStatus: 'pending',
@@ -771,10 +809,24 @@ export default function MembershipPage() {
           dancerName: `${dancer.firstName} ${dancer.lastName}`,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
+          ...(discountApplied ? { discountCode: discountApplied.code, discountAmount } : {}),
         });
+        // Le code est consommé APRÈS coup ici (pas avant comme le code
+        // gagnant) : on connaît déjà l'id du membership à ce stade sans avoir
+        // à pré-générer la référence, et un échec de cette écriture (code
+        // épuisé entre-temps par un autre appareil) ne doit pas faire perdre
+        // la cotisation déjà créée avec la réduction — juste ne pas compter
+        // cette utilisation, acceptable pour ce cas d'usage à faible enjeu.
+        if (discountApplied) {
+          updateDoc(doc(db, 'discountCodes', discountApplied.code), {
+            usesCount: increment(1),
+            redemptions: arrayUnion({ dancerId: dancer.id, membershipId: ref.id, redeemedAt: Timestamp.now() }),
+            updatedAt: serverTimestamp(),
+          }).catch(() => {});
+        }
         logEvent('membership_started', { userId: user.uid });
         if (selectedMethod === 'helloasso') {
-          await handlePayOnline(ref.id, null, plan.amount);
+          await handlePayOnline(ref.id, null, totalDue);
         } else {
           window.location.href = `/membership/payment-plan?membershipId=${ref.id}`;
         }
@@ -1394,6 +1446,45 @@ export default function MembershipPage() {
                           <button type="button" onClick={() => setShowCodeInput(true)}
                             className="text-sm font-medium text-blue-600 hover:underline">
                             J&apos;ai un code gagnant
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {dancersToCreate.length === 1 && !codeApplied && (
+                      <div>
+                        {discountApplied ? (
+                          <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                            <p className="text-sm font-medium text-green-700">
+                              ✓ Code {discountApplied.code} appliqué — {(discountApplied.amount / 100).toFixed(2)} € de réduction
+                            </p>
+                            <button type="button" onClick={() => { setDiscountApplied(null); setDiscountCodeInput(''); }}
+                              className="text-xs font-medium text-gray-500 hover:text-gray-700">
+                              Retirer
+                            </button>
+                          </div>
+                        ) : showDiscountInput ? (
+                          <div>
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Code de réduction</p>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={discountCodeInput}
+                                onChange={e => { setDiscountCodeInput(e.target.value.toUpperCase()); setDiscountError(null); }}
+                                placeholder="Ex : AB23CD45"
+                                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                              />
+                              <button type="button" onClick={checkDiscountCode} disabled={!discountCodeInput.trim() || discountChecking}
+                                className="bg-blue-600 text-white font-semibold px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors">
+                                {discountChecking ? '…' : 'Valider'}
+                              </button>
+                            </div>
+                            {discountError && <p className="text-xs text-red-600 mt-1">{discountError}</p>}
+                          </div>
+                        ) : (
+                          <button type="button" onClick={() => setShowDiscountInput(true)}
+                            className="text-sm font-medium text-blue-600 hover:underline">
+                            J&apos;ai un code de réduction
                           </button>
                         )}
                       </div>

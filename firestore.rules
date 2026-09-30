@@ -602,6 +602,28 @@ service cloud.firestore {
       allow delete: if hasPagePermission('/admin/tirage-au-sort');
     }
 
+    // ── discountCodes (réduction paramétrable : montant, nb d'utilisations,
+    // danseur(s) restreints, saison) ────────────────────────────────────────
+    // Même principe que raffleWinnerCodes : connaître le code suffit à le lire
+    // (`get`), pas de `list` public. La consommation incrémente usesCount au
+    // lieu de basculer un simple booléen — protégé de la même façon (la règle
+    // exige l'ancienne valeur de usesCount ET la nouvelle == ancienne+1, donc
+    // deux écritures concurrentes ne peuvent pas dépasser maxUses : Firestore
+    // sérialise les écritures sur un même document, la seconde voit forcément
+    // le usesCount déjà incrémenté par la première et échoue la condition).
+    match /discountCodes/{code} {
+      allow get: if isAuth();
+      allow list: if hasPagePermission('/admin/discount-codes');
+      allow create: if hasPagePermission('/admin/discount-codes');
+      allow update: if hasPagePermission('/admin/discount-codes') ||
+        (isAuth() &&
+          resource.data.active == true &&
+          resource.data.usesCount < resource.data.maxUses &&
+          request.resource.data.usesCount == resource.data.usesCount + 1 &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usesCount', 'redemptions', 'updatedAt']));
+      allow delete: if hasPagePermission('/admin/discount-codes');
+    }
+
     // ── analyticsEvents (tracing usage : sessions, écrans, cotisation, médias)
     // Écriture libre pour tout utilisateur connecté (l'événement ne peut être
     // rattaché qu'à lui-même), jamais de lecture/modif/suppression côté

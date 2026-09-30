@@ -1134,6 +1134,15 @@ export const webhookHelloAsso = onRequest(
           totalPaid: admin.firestore.FieldValue.increment(totalAmount),
           installmentIds: admin.firestore.FieldValue.arrayUnion(installRef.id),
         };
+        // Resynchronise paymentMethod avec la réalité du versement -- sans ça,
+        // un plan créé avec une intention (ex: chèque) puis finalement payé en
+        // ligne garde pour toujours l'étiquette de départ, jamais corrigée par
+        // ce webhook qui ne touchait avant que totalPaid/installmentIds/statut.
+        if (d.paymentMethod && d.paymentMethod !== 'helloasso' && d.paymentMethod !== 'mixed') {
+          updates.paymentMethod = 'mixed';
+        } else if (!d.paymentMethod) {
+          updates.paymentMethod = 'helloasso';
+        }
         if ((d.totalDue ?? 0) > 0 && newTotalPaid >= (d.totalDue ?? 0)) {
           updates.paymentPlanStatus = 'approved';
           updates.status = 'active';
@@ -1146,6 +1155,11 @@ export const webhookHelloAsso = onRequest(
           totalPaid: admin.firestore.FieldValue.increment(totalAmount),
           installmentIds: admin.firestore.FieldValue.arrayUnion(installRef.id),
         };
+        if (d.paymentMethod && d.paymentMethod !== 'helloasso' && d.paymentMethod !== 'mixed') {
+          updates.paymentMethod = 'mixed';
+        } else if (!d.paymentMethod) {
+          updates.paymentMethod = 'helloasso';
+        }
         const nowApproved = (d.totalDue ?? 0) > 0 && newTotalPaid >= (d.totalDue ?? 0);
         if (nowApproved) {
           updates.paymentPlanStatus = 'approved';
@@ -2883,7 +2897,7 @@ async function generateMembershipAttestation(
     // Montant et mode de règlement
     const totalDue: number = after.totalDue ?? 0;
     const paymentMethod: string = after.paymentMethod ?? '';
-    const methodLabel = paymentMethod === 'cheque' ? 'Chèque' : paymentMethod === 'transfer' ? 'Virement bancaire' : paymentMethod === 'cash' ? 'Espèces' : paymentMethod === 'mixed' ? 'Paiement mixte' : paymentMethod;
+    const methodLabel = paymentMethod === 'cheque' ? 'Chèque' : paymentMethod === 'transfer' ? 'Virement bancaire' : paymentMethod === 'cash' ? 'Espèces' : paymentMethod === 'helloasso' ? 'CB' : paymentMethod === 'mixed' ? 'Paiement mixte' : paymentMethod;
     const amountStr = `${(totalDue / 100).toFixed(2).replace('.', ',')} €`;
 
     page.drawText('Cotisation :', { x: 60, y, size: 11, font: fontBold, color: black });

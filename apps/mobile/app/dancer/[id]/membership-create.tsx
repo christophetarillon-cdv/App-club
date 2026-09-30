@@ -6,7 +6,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   collection, query, where, getDocs, doc, getDoc, addDoc, setDoc, writeBatch,
-  serverTimestamp, updateDoc,
+  serverTimestamp, updateDoc, increment, arrayUnion, Timestamp,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -234,6 +234,13 @@ export default function MembershipCreateScreen() {
   const [codeChecking, setCodeChecking] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [codeApplied, setCodeApplied] = useState<{ code: string } | null>(null);
+
+  // ── Code de réduction (montant fixe, réutilisable, danseur(s) optionnel) ───
+  const [showDiscountInput, setShowDiscountInput] = useState(false);
+  const [discountCodeInput, setDiscountCodeInput] = useState('');
+  const [discountChecking, setDiscountChecking] = useState(false);
+  const [discountError, setDiscountError] = useState<string | null>(null);
+  const [discountApplied, setDiscountApplied] = useState<{ code: string; amount: number } | null>(null);
 
   // ── Step 3 : installments
   const [creationResult, setCreationResult] = useState<CreationResult | null>(null);
@@ -638,6 +645,32 @@ export default function MembershipCreateScreen() {
     }
   };
 
+  const checkDiscountCode = async () => {
+    const code = discountCodeInput.trim().toUpperCase();
+    if (!code || !season || allSelected.length !== 1) return;
+    setDiscountChecking(true);
+    setDiscountError(null);
+    try {
+      const snap = await getDoc(doc(db, 'discountCodes', code));
+      if (!snap.exists()) { setDiscountError('Code invalide.'); return; }
+      const data = snap.data();
+      if (data.active === false) { setDiscountError('Ce code a été désactivé.'); return; }
+      if (data.seasonId !== season.id) { setDiscountError('Ce code n\'est pas valable pour cette saison.'); return; }
+      if ((data.usesCount ?? 0) >= (data.maxUses ?? 0)) { setDiscountError('Ce code a atteint son nombre maximal d\'utilisations.'); return; }
+      const allowed: string[] = data.allowedDancerIds ?? [];
+      const dancer = allSelected[0]!;
+      if (allowed.length > 0 && !allowed.includes(dancer.id)) {
+        setDiscountError('Ce code n\'est pas valable pour ce danseur.');
+        return;
+      }
+      setDiscountApplied({ code, amount: data.discountAmount ?? 0 });
+    } catch {
+      setDiscountError('Erreur de vérification, réessayez.');
+    } finally {
+      setDiscountChecking(false);
+    }
+  };
+
   const handleCreateFree = async () => {
     if (!user || !season || !codeApplied || allSelected.length !== 1) return;
     setSubmitting(true);
@@ -702,13 +735,15 @@ export default function MembershipCreateScreen() {
         const dancer = allSelected[0]!;
         const plan = plans.find(p => p.id === planIds[dancer.id])!;
         const visibleUserIds = [...new Set([user.uid, dancer.accountId])];
+        const discountAmount = discountApplied?.amount ?? 0;
+        const totalDue = Math.max(0, plan.amount - discountAmount);
         const ref = await addDoc(collection(db, 'memberships'), {
           userId: user.uid,
           visibleUserIds,
           dancerId: dancer.id,
           seasonId: season.id,
           pricingPlanId: plan.id,
-          totalDue: plan.amount,
+          totalDue,
           totalPaid: 0,
           paymentMethod: method,
           paymentPlanStatus: 'pending',
@@ -721,8 +756,19 @@ export default function MembershipCreateScreen() {
           dancerName: `${dancer.firstName} ${dancer.lastName}`,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
+          ...(discountApplied ? { discountCode: discountApplied.code, discountAmount } : {}),
         });
-        result = { kind: 'solo', membershipId: ref.id, totalDue: plan.amount, method, visibleUserIds };
+        // Consomme le code APRES coup (voir le commentaire equivalent cote
+        // web) : un echec ici (code epuise entre-temps) ne doit pas faire
+        // perdre la cotisation deja creee avec la reduction.
+        if (discountApplied) {
+          updateDoc(doc(db, 'discountCodes', discountApplied.code), {
+            usesCount: increment(1),
+            redemptions: arrayUnion({ dancerId: dancer.id, membershipId: ref.id, redeemedAt: Timestamp.now() }),
+            updatedAt: serverTimestamp(),
+          }).catch(() => {});
+        }
+        result = { kind: 'solo', membershipId: ref.id, totalDue, method, visibleUserIds };
       } else {
         // Cotisations groupées
         const batch = writeBatch(db);
@@ -1391,6 +1437,48 @@ export default function MembershipCreateScreen() {
           </View>
         )}
 
+        {/* Code de réduction (montant fixe, réutilisable) — cotisation solo uniquement */}
+        {allSelected.length === 1 && !codeApplied && (
+          <View style={styles.codeSection}>
+            {discountApplied ? (
+              <View style={styles.codeAppliedRow}>
+                <Text style={styles.codeAppliedText}>
+                  ✓ Code {discountApplied.code} appliqué — {fmtCents(discountApplied.amount)} de réduction
+                </Text>
+                <TouchableOpacity onPress={() => { setDiscountApplied(null); setDiscountCodeInput(''); }}>
+                  <Text style={styles.codeRemoveText}>Retirer</Text>
+                </TouchableOpacity>
+              </View>
+            ) : showDiscountInput ? (
+              <View>
+                <Text style={styles.fieldLabel}>Code de réduction</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TextInput
+                    style={[styles.fieldInput, { flex: 1 }]}
+                    value={discountCodeInput}
+                    onChangeText={v => { setDiscountCodeInput(v.toUpperCase()); setDiscountError(null); }}
+                    placeholder="Ex : AB23CD45"
+                    placeholderTextColor={Colors.textLight}
+                    autoCapitalize="characters"
+                  />
+                  <TouchableOpacity
+                    style={[styles.codeCheckBtn, (!discountCodeInput.trim() || discountChecking) && styles.btnDisabled]}
+                    onPress={checkDiscountCode}
+                    disabled={!discountCodeInput.trim() || discountChecking}
+                  >
+                    {discountChecking ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.codeCheckBtnText}>Valider</Text>}
+                  </TouchableOpacity>
+                </View>
+                {discountError && <Text style={styles.errorText}>{discountError}</Text>}
+              </View>
+            ) : (
+              <TouchableOpacity onPress={() => setShowDiscountInput(true)}>
+                <Text style={styles.codeLinkText}>J'ai un code de réduction</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {/* Mode de paiement */}
         {!codeApplied && (
           <>
@@ -1413,7 +1501,9 @@ export default function MembershipCreateScreen() {
         {canCreate && (
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalAmount}>{codeApplied ? fmtCents(0) : fmtCents(totalDue)}</Text>
+            <Text style={styles.totalAmount}>
+              {codeApplied ? fmtCents(0) : fmtCents(Math.max(0, totalDue - (discountApplied?.amount ?? 0)))}
+            </Text>
           </View>
         )}
 
