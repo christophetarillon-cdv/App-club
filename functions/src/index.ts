@@ -1146,11 +1146,28 @@ export const webhookHelloAsso = onRequest(
           totalPaid: admin.firestore.FieldValue.increment(totalAmount),
           installmentIds: admin.firestore.FieldValue.arrayUnion(installRef.id),
         };
-        if ((d.totalDue ?? 0) > 0 && newTotalPaid >= (d.totalDue ?? 0)) {
+        const nowApproved = (d.totalDue ?? 0) > 0 && newTotalPaid >= (d.totalDue ?? 0);
+        if (nowApproved) {
           updates.paymentPlanStatus = 'approved';
           updates.status = 'active';
         }
         tx.update(groupRef, updates);
+
+        // Propage l'approbation à chaque membership individuelle du groupe —
+        // sans ça, onMembershipApproved ne se déclenche jamais pour ces
+        // danseurs (pas d'attestation, pas de validatedSeasonIds, pas de
+        // passage essai -> membre) puisque seul le doc paymentGroups était mis
+        // à jour. Même limite déjà corrigée côté annulation (voir
+        // handleCancelMembership côté web), jamais reportée ici.
+        if (nowApproved) {
+          const membershipIds: string[] = d.membershipIds ?? [];
+          for (const mid of membershipIds) {
+            tx.update(db.doc(`memberships/${mid}`), {
+              paymentPlanStatus: 'approved',
+              status: 'active',
+            });
+          }
+        }
       }
 
       console.log(`[webhookHelloAsso] OK paymentSnap=${snapRef.id} amount=${totalAmount}`);
@@ -2739,9 +2756,23 @@ async function generateMembershipAttestation(
     }
 
     // Ajoute la saison aux validatedSeasonIds du danseur (pour le trombinoscope)
+    // et promeut essai -> membre. Ce trigger tourne pour TOUTE approbation
+    // (webhook HelloAsso inclus), contrairement à l'ancien code qui ne faisait
+    // la promotion que dans le clic "Approuver" de l'admin (payment-plans/page.tsx)
+    // — jamais atteint quand un plan s'auto-approuve une fois intégralement payé.
     if (dancerId && seasonId) {
+      const dancerRoles: string[] = (dancerData.roles as string[] | undefined) ?? [];
+      const isTrial = dancerRoles.includes('trial');
       await db.doc(`dancers/${dancerId}`).update({
         validatedSeasonIds: admin.firestore.FieldValue.arrayUnion(seasonId),
+        ...(isTrial ? {
+          roles: ['member'],
+          trialStartDate: admin.firestore.FieldValue.delete(),
+          trialExpiresAt: admin.firestore.FieldValue.delete(),
+          trialSessionsUsed: admin.firestore.FieldValue.delete(),
+          trialMode: admin.firestore.FieldValue.delete(),
+          trialMaxSessions: admin.firestore.FieldValue.delete(),
+        } : {}),
       });
     }
 
