@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy, query,
+  collection, getDocs, setDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy, query,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -83,7 +83,10 @@ export default function DiscountCodesPage() {
       if (!maxUses || maxUses <= 0) { setError("Le nombre d'utilisations doit être > 0."); return; }
 
       const code = generateCode();
-      await addDoc(collection(db, 'discountCodes'), {
+      // setDoc avec le code comme id du document (pas addDoc) : la vérification
+      // côté danseur fait un getDoc direct sur cet id exact, comme pour les
+      // codes gagnants du tirage au sort.
+      await setDoc(doc(db, 'discountCodes', code), {
         code,
         seasonId: form.seasonId,
         discountAmount: amountCents,
