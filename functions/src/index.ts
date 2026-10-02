@@ -111,6 +111,22 @@ export const createWebSessionToken = onCall({ region: 'europe-west3' }, async (r
   return { token };
 });
 
+// Dupliqué volontairement depuis packages/types/src/validation.ts (formatLastName/
+// formatFirstName) : les functions n'ont jamais dépendu de @cdv/types, et câbler
+// une nouvelle dépendance de workspace dans le bundle esbuild pour 10 lignes de
+// logique pure est plus risqué que la petite duplication. Garder les deux en
+// phase si la règle de casse change.
+function formatLastName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('fr-FR');
+}
+function formatFirstName(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('fr-FR')
+    .replace(/(^|[\s-])([a-zà-ÿ])/g, (_m, sep: string, letter: string) => sep + letter.toLocaleUpperCase('fr-FR'));
+}
+
 // ── onDancerCreated — normalise noms + assigne memberNumber ───────────────────
 export const onDancerCreated = onDocumentCreated(
   { document: 'dancers/{dancerId}', region: 'europe-west3' },
@@ -120,13 +136,22 @@ export const onDancerCreated = onDocumentCreated(
 
     const db = getDb();
 
-    // 1. Normalise firstNameLower / lastNameLower
+    // 1. Normalise la casse du nom/prénom (filet de sécurité : couvre aussi
+    // les écritures directes hors appli, ex. corrections manuelles en base).
     const updates: Record<string, unknown> = {};
-    if (!data.firstNameLower && data.firstName) {
-      updates.firstNameLower = (data.firstName as string).toLowerCase();
+    if (data.firstName) {
+      const formatted = formatFirstName(data.firstName as string);
+      if (formatted !== data.firstName) updates.firstName = formatted;
+      if (!data.firstNameLower || formatted.toLowerCase() !== data.firstNameLower) {
+        updates.firstNameLower = formatted.toLowerCase();
+      }
     }
-    if (!data.lastNameLower && data.lastName) {
-      updates.lastNameLower = (data.lastName as string).toLowerCase();
+    if (data.lastName) {
+      const formatted = formatLastName(data.lastName as string);
+      if (formatted !== data.lastName) updates.lastName = formatted;
+      if (!data.lastNameLower || formatted.toLowerCase() !== data.lastNameLower) {
+        updates.lastNameLower = formatted.toLowerCase();
+      }
     }
     if (Object.keys(updates).length > 0) {
       await event.data!.ref.update(updates);
@@ -3387,13 +3412,14 @@ export const adminCreateAccount = onCall(
     const db = getDb();
     const wasGenerated = !password;
     const finalPassword = password || `${email}${dancers[0]!.lastName.trim()}`;
+    const formattedDancers = dancers.map(d => ({ ...d, firstName: formatFirstName(d.firstName), lastName: formatLastName(d.lastName) }));
 
     let uid: string;
     try {
       const userRecord = await admin.auth().createUser({
         email,
         password: finalPassword,
-        displayName: `${dancers[0]!.firstName.trim()} ${dancers[0]!.lastName.trim()}`.trim(),
+        displayName: `${formattedDancers[0]!.firstName} ${formattedDancers[0]!.lastName}`.trim(),
       });
       uid = userRecord.uid;
     } catch (err: unknown) {
@@ -3410,7 +3436,7 @@ export const adminCreateAccount = onCall(
     batch.set(db.doc(`accounts/${uid}`), {
       uid,
       email,
-      displayName: `${dancers[0]!.firstName.trim()} ${dancers[0]!.lastName.trim()}`.trim(),
+      displayName: `${formattedDancers[0]!.firstName} ${formattedDancers[0]!.lastName}`.trim(),
       isDancerToo: true,
       dancerIds: dancerRefs.map(r => r.id),
       roles: [],
@@ -3421,13 +3447,13 @@ export const adminCreateAccount = onCall(
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    dancers.forEach((d, i) => {
+    formattedDancers.forEach((d, i) => {
       batch.set(dancerRefs[i]!, {
         accountId: uid,
-        firstName: d.firstName.trim(),
-        lastName: d.lastName.trim(),
-        firstNameLower: d.firstName.trim().toLowerCase(),
-        lastNameLower: d.lastName.trim().toLowerCase(),
+        firstName: d.firstName,
+        lastName: d.lastName,
+        firstNameLower: d.firstName.toLowerCase(),
+        lastNameLower: d.lastName.toLowerCase(),
         isMinor: false,
         roles: [d.role],
         isActive: true,

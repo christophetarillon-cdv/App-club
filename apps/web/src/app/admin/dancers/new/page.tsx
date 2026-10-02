@@ -9,7 +9,7 @@ import { db, functions } from '@/lib/firebase';
 import { GENDER_OPTIONS } from '@/lib/gender-constants';
 import Link from 'next/link';
 import { BirthDateSelect } from '@/components/BirthDateSelect';
-import { validateContactFields } from '@cdv/types';
+import { validateContactFields, formatFirstName, formatLastName } from '@cdv/types';
 
 interface RoleOption { key: string; label: string; }
 
@@ -186,12 +186,14 @@ export default function AdminNewAccountPage() {
     setAddingDancer(true);
     try {
       const d = addDancerForm;
+      const firstName = formatFirstName(d.firstName);
+      const lastName = formatLastName(d.lastName);
       const dancerRef = await addDoc(collection(db, 'dancers'), {
         accountId: selectedAccountId,
-        firstName: d.firstName.trim(),
-        lastName: d.lastName.trim(),
-        firstNameLower: d.firstName.trim().toLowerCase(),
-        lastNameLower: d.lastName.trim().toLowerCase(),
+        firstName,
+        lastName,
+        firstNameLower: firstName.toLowerCase(),
+        lastNameLower: lastName.toLowerCase(),
         isMinor: false,
         roles: [d.role],
         isActive: true,

@@ -54,3 +54,21 @@ export function validateContactFields(values: {
   }
   return errors;
 }
+
+/** Nom de famille : toujours en majuscules (convention du club). */
+export function formatLastName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('fr-FR');
+}
+
+/**
+ * Prénom : première lettre en majuscule, reste en minuscule, sur chaque
+ * partie d'un prénom composé (séparée par un espace ou un tiret) — ex.
+ * "jean-pierre" -> "Jean-Pierre", "marie anne" -> "Marie Anne".
+ */
+export function formatFirstName(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('fr-FR')
+    .replace(/(^|[\s-])([a-zà-ÿ])/g, (_m, sep: string, letter: string) => sep + letter.toLocaleUpperCase('fr-FR'));
+}

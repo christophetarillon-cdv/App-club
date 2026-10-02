@@ -17,6 +17,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+import { formatFirstName, formatLastName } from '@cdv/types';
 
 // ── Connexion ─────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,8 @@ export const signUpWithEmail = async (
   password: string,
   options?: SignUpOptions,
 ) => {
+  firstName = formatFirstName(firstName);
+  lastName = formatLastName(lastName);
   const { user } = await createUserWithEmailAndPassword(auth, email, password);
   const dancerRef = doc(collection(db, 'dancers'));
 
@@ -109,6 +112,8 @@ export const signUpTrial = async (
   trialConfig: { mode: 'sessions' | 'days' | 'fixed'; maxSessions?: number; maxDays?: number; endDate?: string },
   options?: SignUpOptions,
 ) => {
+  firstName = formatFirstName(firstName);
+  lastName = formatLastName(lastName);
   const { user } = await createUserWithEmailAndPassword(auth, email, password);
 
   const dancerRef = doc(collection(db, 'dancers'));
@@ -165,13 +170,15 @@ export interface CreateDancerInput {
 }
 
 export const createDancer = async (accountId: string, input: CreateDancerInput) => {
+  const firstName = formatFirstName(input.firstName);
+  const lastName = formatLastName(input.lastName);
   const dancerRef = doc(collection(db, 'dancers'));
   await setDoc(dancerRef, {
     accountId,
-    firstName: input.firstName,
-    lastName: input.lastName,
-    firstNameLower: input.firstName.toLowerCase(),
-    lastNameLower: input.lastName.toLowerCase(),
+    firstName,
+    lastName,
+    firstNameLower: firstName.toLowerCase(),
+    lastNameLower: lastName.toLowerCase(),
     isMinor: input.isMinor ?? false,
     ...(input.birthDate ? { birthDate: input.birthDate } : {}),
     // Un danseur nouvellement ajouté au compte démarre en essai, pas membre
@@ -216,12 +223,14 @@ export interface UpdateDancerInput {
 export const updateDancer = async (dancerId: string, input: UpdateDancerInput) => {
   const updates: Record<string, unknown> = { updatedAt: serverTimestamp() };
   if (input.firstName !== undefined) {
-    updates.firstName = input.firstName;
-    updates.firstNameLower = input.firstName.toLowerCase();
+    const firstName = formatFirstName(input.firstName);
+    updates.firstName = firstName;
+    updates.firstNameLower = firstName.toLowerCase();
   }
   if (input.lastName !== undefined) {
-    updates.lastName = input.lastName;
-    updates.lastNameLower = input.lastName.toLowerCase();
+    const lastName = formatLastName(input.lastName);
+    updates.lastName = lastName;
+    updates.lastNameLower = lastName.toLowerCase();
   }
   if (input.birthDate !== undefined) updates.birthDate = input.birthDate;
   if (input.isMinor !== undefined) updates.isMinor = input.isMinor;
@@ -262,10 +271,11 @@ export const signUpWithDancers = async (
   type: 'member' | 'trial',
   config: { trialMode?: 'sessions' | 'days' | 'fixed'; trialMaxSessions?: number; trialMaxDays?: number; trialEndDate?: string; options?: SignUpOptions } = {},
 ) => {
+  dancers = dancers.map(d => ({ firstName: formatFirstName(d.firstName), lastName: formatLastName(d.lastName) }));
   const { user } = await createUserWithEmailAndPassword(auth, email, password);
 
   const first = dancers[0]!;
-  const displayName = `${first.firstName.trim()} ${first.lastName.trim()}`.trim();
+  const displayName = `${first.firstName} ${first.lastName}`.trim();
   const dancerRefs = dancers.map(() => doc(collection(db, 'dancers')));
   const trialExpiresAt = type === 'trial'
     ? config.trialMode === 'days' && config.trialMaxDays
@@ -293,10 +303,10 @@ export const signUpWithDancers = async (
     ...dancers.map((dancer, i) =>
       setDoc(dancerRefs[i]!, {
         accountId: user.uid,
-        firstName: dancer.firstName.trim(),
-        lastName: dancer.lastName.trim(),
-        firstNameLower: dancer.firstName.trim().toLowerCase(),
-        lastNameLower: dancer.lastName.trim().toLowerCase(),
+        firstName: dancer.firstName,
+        lastName: dancer.lastName,
+        firstNameLower: dancer.firstName.toLowerCase(),
+        lastNameLower: dancer.lastName.toLowerCase(),
         isMinor: false,
         roles: [type === 'trial' ? 'trial' : 'member'],
         isActive: true,

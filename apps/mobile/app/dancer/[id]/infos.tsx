@@ -24,7 +24,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import BottomTabBar from '@/components/BottomTabBar';
 import DateField from '@/components/DateField';
 import type { ProfileFieldsConfig, ProfileFieldKey, CustomField, Dancer } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS, validateContactFields } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, validateContactFields, formatFirstName, formatLastName } from '@cdv/types';
 
 // ── Types locaux ──────────────────────────────────────────────────────────────
 
@@ -724,12 +724,14 @@ export default function InfosScreen() {
     setSaving(true);
     setSaved(false);
     try {
+      const formattedFirstName = formatFirstName(firstName);
+      const formattedLastName = formatLastName(lastName);
       // Champs dancer standard
       const dancerUpdates: Record<string, unknown> = {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        firstNameLower: firstName.trim().toLowerCase(),
-        lastNameLower: lastName.trim().toLowerCase(),
+        firstName: formattedFirstName,
+        lastName: formattedLastName,
+        firstNameLower: formattedFirstName.toLowerCase(),
+        lastNameLower: formattedLastName.toLowerCase(),
         updatedAt: serverTimestamp(),
       };
       if (fieldConfig.birthDate.enabled) {
@@ -804,12 +806,14 @@ export default function InfosScreen() {
     if (!user || !newFirstName.trim() || !newLastName.trim()) return;
     setAddingDancer(true);
     try {
+      const formattedFirstName = formatFirstName(newFirstName);
+      const formattedLastName = formatLastName(newLastName);
       const dancerRef = await addDoc(collection(db, 'dancers'), {
         accountId: user.uid,
-        firstName: newFirstName.trim(),
-        lastName: newLastName.trim(),
-        firstNameLower: newFirstName.trim().toLowerCase(),
-        lastNameLower: newLastName.trim().toLowerCase(),
+        firstName: formattedFirstName,
+        lastName: formattedLastName,
+        firstNameLower: formattedFirstName.toLowerCase(),
+        lastNameLower: formattedLastName.toLowerCase(),
         isMinor: false,
         // Un danseur nouvellement ajouté au compte démarre en essai, pas
         // membre direct — plus logique, l'adhésion se confirme séparément.

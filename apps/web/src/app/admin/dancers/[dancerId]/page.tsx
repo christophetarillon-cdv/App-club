@@ -14,7 +14,7 @@ import { GENDER_OPTIONS, genderLabel } from '@/lib/gender-constants';
 import { useAuth, useIsAdmin, useIsBureau } from '@/contexts/AuthContext';
 import { useParams, useRouter } from 'next/navigation';
 import type { ProfileFieldsConfig, CustomField, RoleConfig, PersonalDocument } from '@cdv/types';
-import { DEFAULT_PROFILE_FIELDS, validateContactFields } from '@cdv/types';
+import { DEFAULT_PROFILE_FIELDS, validateContactFields, formatFirstName, formatLastName } from '@cdv/types';
 import { BirthDateSelect } from '@/components/BirthDateSelect';
 import DancerAttendanceHistory from './DancerAttendanceHistory';
 import DancerPrivateMessages from './DancerPrivateMessages';
@@ -177,6 +177,8 @@ function EditField({ label, children }: { label: string; children: React.ReactNo
 }
 
 interface PendingInfo {
+  firstName: string;
+  lastName: string;
   phone: string;
   birthDate: string; // yyyy-mm-dd
   gender: string;
@@ -203,6 +205,8 @@ function dancerToPendingInfo(d: Dancer): PendingInfo {
     } catch { /* ignore */ }
   }
   return {
+    firstName: d.firstName ?? '',
+    lastName: d.lastName ?? '',
     phone: d.phone ?? '',
     birthDate,
     gender: d.gender ?? '',
@@ -305,6 +309,12 @@ export default function DancerDetailPage() {
 
   const handleSaveInfo = async () => {
     if (!dancerId || !pendingInfo) return;
+    const firstName = formatFirstName(pendingInfo.firstName);
+    const lastName = formatLastName(pendingInfo.lastName);
+    if (!firstName || !lastName) {
+      setInfoError('Le nom et le prénom sont obligatoires.');
+      return;
+    }
     // Même règle que l'app mobile (packages/types) : une saisie refusée d'un
     // côté ne doit pas passer de l'autre.
     const formatErrors = validateContactFields({
@@ -321,6 +331,10 @@ export default function DancerDetailPage() {
     try {
       console.log('Saving with licenseFfdanse:', pendingInfo.licenseFfdanse);
       await updateDoc(doc(db, 'dancers', dancerId), {
+        firstName,
+        lastName,
+        firstNameLower: firstName.toLowerCase(),
+        lastNameLower: lastName.toLowerCase(),
         phone: pendingInfo.phone || null,
         birthDate: pendingInfo.birthDate ? new Date(pendingInfo.birthDate + 'T00:00:00') : null,
         gender: pendingInfo.gender || null,
@@ -340,6 +354,8 @@ export default function DancerDetailPage() {
       });
       setDancer(prev => prev ? {
         ...prev,
+        firstName,
+        lastName,
         phone: pendingInfo.phone || undefined,
         birthDate: pendingInfo.birthDate ? new Date(pendingInfo.birthDate + 'T00:00:00') : undefined,
         gender: pendingInfo.gender || undefined,
@@ -1166,6 +1182,8 @@ export default function DancerDetailPage() {
 
         {!editingInfo ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <InfoRow label="Prénom" value={dancer.firstName} />
+          <InfoRow label="Nom" value={dancer.lastName} />
           <InfoRow label="Email" value={account?.email} />
           <InfoRow label="N° adhérent" value={dancer.memberNumber} />
           <InfoRow label="Téléphone" value={phone} disabled={!fieldConfig.phone.enabled && !!phone} />
@@ -1179,6 +1197,14 @@ export default function DancerDetailPage() {
         </div>
         ) : pendingInfo && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <EditField label="Prénom">
+            <input type="text" className={INPUT} value={pendingInfo.firstName}
+              onChange={e => setPendingInfo(p => p && { ...p, firstName: e.target.value })} />
+          </EditField>
+          <EditField label="Nom">
+            <input type="text" className={INPUT} value={pendingInfo.lastName}
+              onChange={e => setPendingInfo(p => p && { ...p, lastName: e.target.value })} />
+          </EditField>
           <EditField label="N° adhérent">
             <input type="text" className={INPUT} value={pendingInfo.memberNumber}
               onChange={e => setPendingInfo(p => p && { ...p, memberNumber: e.target.value })} />
