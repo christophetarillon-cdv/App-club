@@ -12,8 +12,7 @@ import {
 } from '@/lib/payment-constants';
 import { GENDER_OPTIONS, genderLabel } from '@/lib/gender-constants';
 import { useAuth, useIsAdmin, useIsBureau } from '@/contexts/AuthContext';
-import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import type { ProfileFieldsConfig, CustomField, RoleConfig, PersonalDocument } from '@cdv/types';
 import { DEFAULT_PROFILE_FIELDS, validateContactFields } from '@cdv/types';
 import { BirthDateSelect } from '@/components/BirthDateSelect';
@@ -224,6 +223,7 @@ function dancerToPendingInfo(d: Dancer): PendingInfo {
 
 export default function DancerDetailPage() {
   const { dancerId } = useParams<{ dancerId: string }>();
+  const router = useRouter();
   const { user } = useAuth();
   const isAdmin = useIsAdmin();
   const isBureau = useIsBureau();
@@ -1097,7 +1097,13 @@ export default function DancerDetailPage() {
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
-        <Link href="/admin/dancers" className="text-sm text-gray-400 hover:text-gray-700">← Danseurs</Link>
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="text-sm text-gray-400 hover:text-gray-700"
+        >
+          ← Danseurs
+        </button>
         <h1 className="text-2xl font-bold text-gray-900">{dancer.firstName} {dancer.lastName}</h1>
       </div>
 

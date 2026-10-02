@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import * as XLSX from 'xlsx';
 
 interface RemovalRequest {
@@ -66,6 +67,13 @@ const METHOD_LABEL: Record<string, string> = {
 const PAGE_SIZE = 25;
 
 export default function AdminDancersPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // Lecture une seule fois au montage : les filtres restent la source de
+  // vérité ensuite, synchronisés VERS l'url (pas l'inverse), pour que
+  // "← Danseurs" depuis une fiche détail restaure la liste filtrée via le
+  // bouton précédent du navigateur.
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState('');
   const [showDeleted, setShowDeleted] = useState(false);
@@ -76,11 +84,11 @@ export default function AdminDancersPage() {
   const [requestError, setRequestError] = useState('');
   const [rows, setRows] = useState<DancerRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
-  const [selectedRole, setSelectedRole] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('');
-  const [selectedLicense, setSelectedLicense] = useState('');
+  const [selectedRole, setSelectedRole] = useState(() => searchParams.get('role') ?? '');
+  const [selectedStatus, setSelectedStatus] = useState(() => searchParams.get('status') ?? '');
+  const [selectedLicense, setSelectedLicense] = useState(() => searchParams.get('license') ?? '');
   const [page, setPage] = useState(0);
 
   useEffect(() => {
@@ -93,8 +101,9 @@ export default function AdminDancersPage() {
       }));
       s.sort((a, b) => String(b.startDate ?? '').localeCompare(String(a.startDate ?? '')));
       setSeasons(s);
+      const fromUrl = searchParams.get('season');
       const active = s.find(s => s.isActive);
-      setSelectedSeasonId(active ? active.id : (s[0]?.id ?? ''));
+      setSelectedSeasonId(fromUrl && s.some(s2 => s2.id === fromUrl) ? fromUrl : (active ? active.id : (s[0]?.id ?? '')));
     });
     getDocs(query(collection(db, 'roles'), orderBy('displayOrder'))).then(snap => {
       setRoleOptions(snap.docs.map(d => ({ key: d.data().key ?? d.id, label: d.data().label ?? d.id })));
@@ -205,6 +214,20 @@ export default function AdminDancersPage() {
   useEffect(() => {
     setPage(0);
   }, [search, selectedRole, selectedStatus, selectedLicense, showDeleted, selectedSeasonId]);
+
+  // Reporte les filtres dans l'url (remplace, pas d'entrée d'historique par
+  // filtre) pour que le bouton précédent du navigateur retrouve la liste
+  // telle qu'elle était avant d'ouvrir une fiche détail.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (selectedRole) params.set('role', selectedRole);
+    if (selectedStatus) params.set('status', selectedStatus);
+    if (selectedLicense) params.set('license', selectedLicense);
+    if (selectedSeasonId) params.set('season', selectedSeasonId);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [search, selectedRole, selectedStatus, selectedLicense, selectedSeasonId, pathname, router]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages - 1);
