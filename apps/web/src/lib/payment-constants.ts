@@ -70,10 +70,14 @@ export interface Installment {
   chequeNumber?: string;
   draweeBank?: string;
   draweeCity?: string;
+  // Nom du payeur sur CE chèque précis, si différent du danseur — un plan à
+  // plusieurs versements peut être payé par des personnes différentes d'un
+  // mois sur l'autre (ex: le père un mois, la mère le suivant).
+  chequePayerName?: string;
 }
 
 export const emptyInstallment = (): Installment => ({
-  expectedDate: '', amount: '', chequeNumber: '', draweeBank: '', draweeCity: '',
+  expectedDate: '', amount: '', chequeNumber: '', draweeBank: '', draweeCity: '', chequePayerName: '',
 });
 
 // Nombre de versements par mode (le mode absent d'une ligne compte comme
@@ -123,5 +127,6 @@ export function chequeFields(method: PaymentMethod, inst: Installment) {
     ...(inst.chequeNumber ? { chequeNumber: inst.chequeNumber } : {}),
     ...(inst.draweeBank ? { draweeBank: inst.draweeBank } : {}),
     ...(inst.draweeCity ? { draweeCity: inst.draweeCity } : {}),
+    ...(inst.chequePayerName ? { chequePayerName: inst.chequePayerName } : {}),
   };
 }

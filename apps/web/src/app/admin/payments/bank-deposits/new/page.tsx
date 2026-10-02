@@ -20,6 +20,7 @@ interface InstallmentRow {
   chequeNumber?: string;
   draweeBank?: string;
   draweeCity?: string;
+  chequePayerName?: string;
   // transfer
   transferRef?: string;
   transferDate?: string;
@@ -137,6 +138,7 @@ export default function NewBankDepositPage() {
           chequeNumber: data.chequeNumber ?? undefined,
           draweeBank: data.draweeBank ?? undefined,
           draweeCity: data.draweeCity ?? undefined,
+          chequePayerName: data.chequePayerName ?? undefined,
           transferRef: data.transferRef ?? undefined,
           transferDate: data.transferDate ?? undefined,
           cashReceiptRef: data.cashReceiptRef ?? undefined,
@@ -262,7 +264,13 @@ export default function NewBankDepositPage() {
         }
 
         page.drawText(`${(row.amount / 100).toFixed(2)} €`, { x: 460, y, size: 10, font });
-        y -= 18;
+
+        if (paymentMethod === 'cheque' && row.chequePayerName) {
+          page.drawText(`Chèque au nom de ${row.chequePayerName}`, { x: 50, y: y - 11, size: 8, font, color: rgb(0.5, 0.5, 0.5) });
+          y -= 28;
+        } else {
+          y -= 18;
+        }
       }
 
       // Total
@@ -442,6 +450,10 @@ export default function NewBankDepositPage() {
                               onBlur={e => updateRowMeta(row.id, 'chequeNumber', e.target.value)}
                               className="border border-gray-200 rounded px-2 py-1 text-xs font-mono text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400" />
                           </div>
+                        )}
+
+                        {paymentMethod === 'cheque' && row.chequePayerName && (
+                          <p className="text-xs text-gray-400 mt-1">Chèque au nom de {row.chequePayerName}</p>
                         )}
 
                         {paymentMethod === 'transfer' && (row.transferRef || row.transferDate) && (

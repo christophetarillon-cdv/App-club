@@ -510,24 +510,32 @@ export default function AdminCreatePaymentPlanPage() {
                     ))}
                   </div>
                   {(inst.method ?? selectedMethod) === 'cheque' && (
-                    <div className="ml-8 grid grid-cols-3 gap-2">
+                    <div className="ml-8 space-y-2">
+                      <div className="grid grid-cols-3 gap-2">
+                        <input
+                          type="text" placeholder="N° chèque"
+                          value={inst.chequeNumber ?? ''}
+                          onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, chequeNumber: e.target.value } : x))}
+                          className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        />
+                        <input
+                          type="text" placeholder="Banque"
+                          value={inst.draweeBank ?? ''}
+                          onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, draweeBank: e.target.value } : x))}
+                          className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        />
+                        <input
+                          type="text" placeholder="Ville"
+                          value={inst.draweeCity ?? ''}
+                          onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, draweeCity: e.target.value } : x))}
+                          className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        />
+                      </div>
                       <input
-                        type="text" placeholder="N° chèque"
-                        value={inst.chequeNumber ?? ''}
-                        onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, chequeNumber: e.target.value } : x))}
-                        className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                      />
-                      <input
-                        type="text" placeholder="Banque"
-                        value={inst.draweeBank ?? ''}
-                        onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, draweeBank: e.target.value } : x))}
-                        className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                      />
-                      <input
-                        type="text" placeholder="Ville"
-                        value={inst.draweeCity ?? ''}
-                        onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, draweeCity: e.target.value } : x))}
-                        className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        type="text" placeholder="Nom sur le chèque (si différent du danseur)"
+                        value={inst.chequePayerName ?? ''}
+                        onChange={e => setInstallments(prev => prev.map((x, i) => i === idx ? { ...x, chequePayerName: e.target.value } : x))}
+                        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                       />
                     </div>
                   )}

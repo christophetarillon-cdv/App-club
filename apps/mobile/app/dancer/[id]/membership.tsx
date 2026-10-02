@@ -26,6 +26,7 @@ type InstallmentX = PaymentInstallment & {
   chequeNumber?: string;
   draweeBank?: string;
   draweeCity?: string;
+  chequePayerName?: string;
 };
 
 interface PaymentGroup {
@@ -170,6 +171,9 @@ function InstallmentsList({ installments }: { installments: InstallmentX[] }) {
                   {inst.draweeBank ? ` · ${inst.draweeBank}` : ''}
                   {inst.draweeCity ? ` · ${inst.draweeCity}` : ''}
                 </Text>
+              )}
+              {inst.chequePayerName && (
+                <Text style={styles.instCheque}>Chèque au nom de {inst.chequePayerName}</Text>
               )}
             </View>
           </View>

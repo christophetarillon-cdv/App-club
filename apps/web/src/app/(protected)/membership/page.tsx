@@ -42,6 +42,7 @@ interface InstallmentDetail {
   chequeNumber?: string;
   draweeBank?: string;
   draweeCity?: string;
+  chequePayerName?: string;
 }
 
 interface MembershipEntry {
@@ -170,6 +171,7 @@ async function loadSeasonMemberships(
           chequeNumber: dd.chequeNumber ?? undefined,
           draweeBank: dd.draweeBank ?? undefined,
           draweeCity: dd.draweeCity ?? undefined,
+          chequePayerName: dd.chequePayerName ?? undefined,
         });
       }
     });
@@ -1807,6 +1809,9 @@ function InstallmentsTable({ installments }: { installments: InstallmentDetail[]
                     inst.draweeCity,
                   ].filter(Boolean).join(' · ')}
                 </p>
+              )}
+              {inst.method === 'cheque' && inst.chequePayerName && (
+                <p className="text-gray-400 mt-0.5">Chèque au nom de {inst.chequePayerName}</p>
               )}
             </div>
           </div>

@@ -31,6 +31,7 @@ interface Installment {
   chequeNumber?: string;
   draweeBank?: string;
   draweeCity?: string;
+  chequePayerName?: string;
 }
 
 interface Row extends Membership {
@@ -74,7 +75,7 @@ function InstallmentRow({
   inst: Installment;
   idx: number;
   editing: boolean;
-  editForm: { expectedDate: string; chequeNumber: string; draweeBank: string; draweeCity: string };
+  editForm: { expectedDate: string; chequeNumber: string; draweeBank: string; draweeCity: string; chequePayerName: string };
   saving: boolean;
   onStartEdit: () => void;
   onCancelEdit: () => void;
@@ -92,13 +93,17 @@ function InstallmentRow({
           <span className="font-medium text-gray-800 ml-auto">{(inst.amount / 100).toFixed(2)} €</span>
         </div>
         {inst.method === 'cheque' && (
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <input type="text" placeholder="N° chèque" value={editForm.chequeNumber}
-              onChange={e => onFormChange({ chequeNumber: e.target.value })} className={`${INPUT} w-28`} />
-            <input type="text" placeholder="Banque" value={editForm.draweeBank}
-              onChange={e => onFormChange({ draweeBank: e.target.value })} className={`${INPUT} w-32`} />
-            <input type="text" placeholder="Ville" value={editForm.draweeCity}
-              onChange={e => onFormChange({ draweeCity: e.target.value })} className={`${INPUT} w-28`} />
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <input type="text" placeholder="N° chèque" value={editForm.chequeNumber}
+                onChange={e => onFormChange({ chequeNumber: e.target.value })} className={`${INPUT} w-28`} />
+              <input type="text" placeholder="Banque" value={editForm.draweeBank}
+                onChange={e => onFormChange({ draweeBank: e.target.value })} className={`${INPUT} w-32`} />
+              <input type="text" placeholder="Ville" value={editForm.draweeCity}
+                onChange={e => onFormChange({ draweeCity: e.target.value })} className={`${INPUT} w-28`} />
+            </div>
+            <input type="text" placeholder="Nom sur le chèque (si différent du danseur)" value={editForm.chequePayerName}
+              onChange={e => onFormChange({ chequePayerName: e.target.value })} className={`${INPUT} w-full`} />
           </div>
         )}
         <div className="flex items-center gap-3">
@@ -112,24 +117,29 @@ function InstallmentRow({
   }
 
   return (
-    <div className="flex items-center justify-between text-sm gap-3">
-      <span className="text-gray-600">
-        Versement {idx + 1} — {inst.expectedDate}
-        {inst.method === 'cheque' && (
-          <span className="text-gray-400">
-            {' · N°'}{inst.chequeNumber || '—'}
-            {' · '}{inst.draweeBank || '—'}
-            {' · '}{inst.draweeCity || '—'}
-          </span>
-        )}
-      </span>
-      <div className="flex items-center gap-2 shrink-0">
-        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${inst.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-          {inst.status === 'paid' ? 'Encaissé' : 'En attente'}
+    <div className="text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-gray-600">
+          Versement {idx + 1} — {inst.expectedDate}
+          {inst.method === 'cheque' && (
+            <span className="text-gray-400">
+              {' · N°'}{inst.chequeNumber || '—'}
+              {' · '}{inst.draweeBank || '—'}
+              {' · '}{inst.draweeCity || '—'}
+            </span>
+          )}
         </span>
-        <span className="font-medium text-gray-800 w-16 text-right">{(inst.amount / 100).toFixed(2)} €</span>
-        <button onClick={onStartEdit} className="text-xs text-blue-500 hover:text-blue-700 hover:underline">Modifier</button>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${inst.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+            {inst.status === 'paid' ? 'Encaissé' : 'En attente'}
+          </span>
+          <span className="font-medium text-gray-800 w-16 text-right">{(inst.amount / 100).toFixed(2)} €</span>
+          <button onClick={onStartEdit} className="text-xs text-blue-500 hover:text-blue-700 hover:underline">Modifier</button>
+        </div>
       </div>
+      {inst.method === 'cheque' && inst.chequePayerName && (
+        <p className="text-gray-400 text-xs mt-0.5">Chèque au nom de {inst.chequePayerName}</p>
+      )}
     </div>
   );
 }
@@ -142,7 +152,7 @@ export default function AdminPaymentPlansPage() {
   const [actionId, setActionId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editingInstId, setEditingInstId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ expectedDate: '', chequeNumber: '', draweeBank: '', draweeCity: '' });
+  const [editForm, setEditForm] = useState({ expectedDate: '', chequeNumber: '', draweeBank: '', draweeCity: '', chequePayerName: '' });
   const [savingInst, setSavingInst] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
   const [seasons, setSeasons] = useState<{ id: string; label: string }[]>([]);
@@ -192,6 +202,7 @@ export default function AdminPaymentPlansPage() {
             ? {
                 id, expectedDate: d!.expectedDate, amount: d!.amount, status: d!.status,
                 method: d!.method, chequeNumber: d!.chequeNumber, draweeBank: d!.draweeBank, draweeCity: d!.draweeCity,
+                chequePayerName: d!.chequePayerName,
               }
             : { id, expectedDate: '', amount: 0, status: 'unknown' };
         })
@@ -254,6 +265,7 @@ export default function AdminPaymentPlansPage() {
             ? {
                 id, expectedDate: d!.expectedDate, amount: d!.amount, status: d!.status,
                 method: d!.method, chequeNumber: d!.chequeNumber, draweeBank: d!.draweeBank, draweeCity: d!.draweeCity,
+                chequePayerName: d!.chequePayerName,
               }
             : { id, expectedDate: '', amount: 0, status: 'unknown' };
         })
@@ -422,6 +434,7 @@ export default function AdminPaymentPlansPage() {
       chequeNumber: inst.chequeNumber ?? '',
       draweeBank: inst.draweeBank ?? '',
       draweeCity: inst.draweeCity ?? '',
+      chequePayerName: inst.chequePayerName ?? '',
     });
   };
 
@@ -437,9 +450,16 @@ export default function AdminPaymentPlansPage() {
         chequeNumber: editForm.chequeNumber.trim() || null,
         draweeBank: editForm.draweeBank.trim() || null,
         draweeCity: editForm.draweeCity.trim() || null,
+        chequePayerName: editForm.chequePayerName.trim() || null,
       };
       await updateDoc(doc(db, 'paymentInstallments', instId), updates);
-      const patch = (inst: Installment) => inst.id === instId ? { ...inst, ...updates, chequeNumber: updates.chequeNumber ?? undefined, draweeBank: updates.draweeBank ?? undefined, draweeCity: updates.draweeCity ?? undefined } : inst;
+      const patch = (inst: Installment) => inst.id === instId ? {
+        ...inst, ...updates,
+        chequeNumber: updates.chequeNumber ?? undefined,
+        draweeBank: updates.draweeBank ?? undefined,
+        draweeCity: updates.draweeCity ?? undefined,
+        chequePayerName: updates.chequePayerName ?? undefined,
+      } : inst;
       setRows(prev => prev.map(r => ({ ...r, installments: r.installments.map(patch) })));
       setGroupRows(prev => prev.map(g => ({ ...g, installments: g.installments.map(patch) })));
       setEditingInstId(null);

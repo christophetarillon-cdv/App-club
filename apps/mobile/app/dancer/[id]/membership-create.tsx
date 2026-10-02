@@ -82,6 +82,10 @@ interface InstallmentForm {
   chequeNumber: string;
   draweeBank: string;
   draweeCity: string;
+  // Nom du payeur sur CE chèque, si différent du danseur (ex: le père un
+  // mois, la mère le suivant) — volontairement pas repris d'un versement à
+  // l'autre dans nextInstallment, contrairement à banque/ville.
+  chequePayerName: string;
 }
 
 interface BankAccount {
@@ -126,7 +130,7 @@ function fmtCents(cents: number) {
 
 function newInstallment(iso?: string): InstallmentForm {
   const date = iso ?? todayIso();
-  return { id: String(Date.now() + Math.random()), date, dateDisplay: isoToDisplay(date), amount: '', chequeNumber: '', draweeBank: '', draweeCity: '' };
+  return { id: String(Date.now() + Math.random()), date, dateDisplay: isoToDisplay(date), amount: '', chequeNumber: '', draweeBank: '', draweeCity: '', chequePayerName: '' };
 }
 
 // Reprend banque/ville (et le mode, pour les plans mixtes) du dernier
@@ -905,9 +909,10 @@ export default function MembershipCreateScreen() {
         const instMethod = inst.method ?? creationResult.method;
         const ref = doc(collection(db, 'paymentInstallments'));
         const chequeData = instMethod === 'cheque' ? {
-          ...(inst.chequeNumber ? { chequeNumber: inst.chequeNumber } : {}),
-          ...(inst.draweeBank   ? { draweeBank: inst.draweeBank }     : {}),
-          ...(inst.draweeCity   ? { draweeCity: inst.draweeCity }     : {}),
+          ...(inst.chequeNumber    ? { chequeNumber: inst.chequeNumber }       : {}),
+          ...(inst.draweeBank      ? { draweeBank: inst.draweeBank }           : {}),
+          ...(inst.draweeCity      ? { draweeCity: inst.draweeCity }           : {}),
+          ...(inst.chequePayerName ? { chequePayerName: inst.chequePayerName } : {}),
         } : {};
         batch.set(ref, {
           ...(creationResult.kind === 'solo'
@@ -1628,6 +1633,11 @@ export default function MembershipCreateScreen() {
                 <View style={[styles.instField, { flexBasis: '100%' }]}>
                   <Text style={styles.fieldLabel}>Ville</Text>
                   <TextInput style={styles.fieldInput} value={inst.draweeCity} onChangeText={v => updateInst(inst.id, 'draweeCity', v)}
+                    placeholder="Optionnel" placeholderTextColor={Colors.textLight} />
+                </View>
+                <View style={[styles.instField, { flexBasis: '100%' }]}>
+                  <Text style={styles.fieldLabel}>Nom sur le chèque (si différent du danseur)</Text>
+                  <TextInput style={styles.fieldInput} value={inst.chequePayerName} onChangeText={v => updateInst(inst.id, 'chequePayerName', v)}
                     placeholder="Optionnel" placeholderTextColor={Colors.textLight} />
                 </View>
               </View>
