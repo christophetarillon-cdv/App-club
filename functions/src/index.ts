@@ -1138,10 +1138,13 @@ export const webhookHelloAsso = onRequest(
         // un plan créé avec une intention (ex: chèque) puis finalement payé en
         // ligne garde pour toujours l'étiquette de départ, jamais corrigée par
         // ce webhook qui ne touchait avant que totalPaid/installmentIds/statut.
-        if (d.paymentMethod && d.paymentMethod !== 'helloasso' && d.paymentMethod !== 'mixed') {
-          updates.paymentMethod = 'mixed';
-        } else if (!d.paymentMethod) {
+        // On se base sur ce qui a été réellement encaissé AVANT ce versement
+        // (totalPaid), pas sur la méthode déclarée à la création du plan : si
+        // rien n'était encore payé, ce premier versement HelloAsso fait foi.
+        if ((d.totalPaid ?? 0) === 0) {
           updates.paymentMethod = 'helloasso';
+        } else if (d.paymentMethod && d.paymentMethod !== 'helloasso' && d.paymentMethod !== 'mixed') {
+          updates.paymentMethod = 'mixed';
         }
         if ((d.totalDue ?? 0) > 0 && newTotalPaid >= (d.totalDue ?? 0)) {
           updates.paymentPlanStatus = 'approved';
@@ -1155,10 +1158,10 @@ export const webhookHelloAsso = onRequest(
           totalPaid: admin.firestore.FieldValue.increment(totalAmount),
           installmentIds: admin.firestore.FieldValue.arrayUnion(installRef.id),
         };
-        if (d.paymentMethod && d.paymentMethod !== 'helloasso' && d.paymentMethod !== 'mixed') {
-          updates.paymentMethod = 'mixed';
-        } else if (!d.paymentMethod) {
+        if ((d.totalPaid ?? 0) === 0) {
           updates.paymentMethod = 'helloasso';
+        } else if (d.paymentMethod && d.paymentMethod !== 'helloasso' && d.paymentMethod !== 'mixed') {
+          updates.paymentMethod = 'mixed';
         }
         const nowApproved = (d.totalDue ?? 0) > 0 && newTotalPaid >= (d.totalDue ?? 0);
         if (nowApproved) {
