@@ -80,6 +80,7 @@ export default function AdminDancersPage() {
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedLicense, setSelectedLicense] = useState('');
   const [page, setPage] = useState(0);
 
   useEffect(() => {
@@ -197,12 +198,13 @@ export default function AdminDancersPage() {
       return r.firstName.toLowerCase().includes(q) || r.lastName.toLowerCase().includes(q);
     })
     .filter(r => !selectedRole || r.roles.includes(selectedRole))
-    .filter(r => !selectedStatus || (selectedStatus === 'none' ? !r.info : r.info?.status === selectedStatus));
+    .filter(r => !selectedStatus || (selectedStatus === 'none' ? !r.info : r.info?.status === selectedStatus))
+    .filter(r => !selectedLicense || (selectedLicense === 'yes' ? r.licenseFfdanse : !r.licenseFfdanse));
 
   // Revient à la première page à chaque changement de filtre
   useEffect(() => {
     setPage(0);
-  }, [search, selectedRole, selectedStatus, showDeleted, selectedSeasonId]);
+  }, [search, selectedRole, selectedStatus, selectedLicense, showDeleted, selectedSeasonId]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages - 1);
@@ -405,6 +407,15 @@ export default function AdminDancersPage() {
           ))}
           <option value="none">Sans cotisation</option>
         </select>
+        <select
+          value={selectedLicense}
+          onChange={e => setSelectedLicense(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+        >
+          <option value="">Toutes licences</option>
+          <option value="yes">Licence : Oui</option>
+          <option value="no">Licence : Non</option>
+        </select>
       </div>
 
       {removalHistory.length > 0 && (
@@ -467,6 +478,7 @@ export default function AdminDancersPage() {
                 <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Méthode</th>
                 <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Montant</th>
                 <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Statut</th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Licence</th>
                 <th className="px-3 py-3"></th>
               </tr>
             </thead>
@@ -526,6 +538,11 @@ export default function AdminDancersPage() {
                       <span className="text-xs text-gray-300">Pas de cotisation</span>
                     )}
                   </td>
+                  <td className="px-3 py-3 hidden sm:table-cell whitespace-nowrap">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${row.licenseFfdanse ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {row.licenseFfdanse ? 'Oui' : 'Non'}
+                    </span>
+                  </td>
                   <td className="px-3 py-3 text-right whitespace-nowrap">
                     <Link href={`/admin/dancers/${row.id}`}
                       className="text-xs font-medium text-blue-600 hover:text-blue-800">
@@ -536,7 +553,7 @@ export default function AdminDancersPage() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-400">
+                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">
                     Aucun danseur trouvé.
                   </td>
                 </tr>
