@@ -5,9 +5,9 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
-  collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, getDocs, updateDoc, Timestamp,
+  collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, getDoc, getDocs, updateDoc, deleteDoc, Timestamp,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
@@ -91,6 +91,7 @@ export default function ChatChannelScreen() {
   const [uploading, setUploading] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [activeVideo, setActiveVideo] = useState<ChatMessage | null>(null);
+  const [activeImage, setActiveImage] = useState<string | null>(null);
   const [seasonFloorMs, setSeasonFloorMs] = useState<number | null>(null);
   const bottomRef = useRef<FlatList>(null);
   // Miroir synchrone de `text` : sur Android, taper le dernier mot puis
@@ -271,6 +272,24 @@ export default function ChatChannelScreen() {
     }
   };
 
+  const confirmDelete = (m: ChatMessage) => {
+    Alert.alert('Supprimer ce message ?', 'Il sera supprimé pour tous les membres.', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer', style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, 'chatMessages', m.id));
+            // Nettoyage du fichier : best-effort, le message est déjà supprimé.
+            if (m.mediaUrl) await deleteObject(ref(storage, m.mediaUrl)).catch(() => {});
+          } catch {
+            Alert.alert('Erreur', 'Suppression impossible.');
+          }
+        },
+      },
+    ]);
+  };
+
   const renderMessage = ({ item: m }: { item: ChatMessage }) => {
     const mine = m.authorId === selectedDancer?.id;
     const initials = m.authorName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -281,12 +300,21 @@ export default function ChatChannelScreen() {
           {m.authorPhotoUrl ? <Image source={{ uri: m.authorPhotoUrl }} style={styles.avatarImg} /> : <Text style={styles.avatarText}>{initials}</Text>}
         </View>
         <View style={{ maxWidth: '72%' }}>
-          <Text style={[styles.msgMeta, mine && { textAlign: 'right' }]}>{mine ? 'Moi' : m.authorName.split(' ')[0]} · {timeAgo(m.sentAt)}</Text>
+          <View style={[styles.metaRow, mine && { flexDirection: 'row-reverse' }]}>
+            <Text style={styles.msgMeta}>{mine ? 'Moi' : m.authorName.split(' ')[0]} · {timeAgo(m.sentAt)}</Text>
+            {isAdmin && (
+              <TouchableOpacity onPress={() => confirmDelete(m)} hitSlop={8} activeOpacity={0.6}>
+                <Text style={styles.deleteText}>Supprimer</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
             {m.text ? <Text style={[styles.msgText, mine && { color: '#fff' }]}>{m.text}</Text> : null}
             {m.mediaType === 'image' && m.mediaUrl && (
               <View>
-                <Image source={{ uri: m.mediaUrl }} style={styles.msgImage} resizeMode="cover" />
+                <TouchableOpacity activeOpacity={0.9} onPress={() => setActiveImage(m.mediaUrl!)}>
+                  <Image source={{ uri: m.mediaUrl }} style={styles.msgImage} resizeMode="cover" />
+                </TouchableOpacity>
                 <DownloadButton mine={mine} onPress={() => downloadMedia(m)} />
               </View>
             )}
@@ -412,6 +440,16 @@ export default function ChatChannelScreen() {
         </Pressable>
       )}
 
+      {/* Image en plein écran */}
+      {activeImage && (
+        <Pressable style={styles.imageOverlay} onPress={() => setActiveImage(null)}>
+          <Image source={{ uri: activeImage }} style={styles.imageFull} resizeMode="contain" />
+          <TouchableOpacity style={[styles.imageClose, { top: insets.top + 12 }]} onPress={() => setActiveImage(null)} hitSlop={10}>
+            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none"><Path d="M6 6l12 12M18 6L6 18" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" /></Svg>
+          </TouchableOpacity>
+        </Pressable>
+      )}
+
       {/* Lecteur vidéo plein écran (même composant que la page Vidéos) */}
       {activeVideo?.mediaUrl && (
         <VideoPlayerSheet
@@ -448,7 +486,9 @@ const styles = StyleSheet.create({
   avatar: { width: 30, height: 30, borderRadius: 15, marginHorizontal: 8, alignItems: 'center', justifyContent: 'center' },
   avatarImg: { width: 30, height: 30, borderRadius: 15 },
   avatarText: { color: '#fff', fontSize: 11, fontWeight: '600' },
-  msgMeta: { fontSize: 11, color: Colors.textSecondary, marginBottom: 3 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
+  msgMeta: { fontSize: 11, color: Colors.textSecondary },
+  deleteText: { fontSize: 11, color: '#DC2626' },
   bubble: { borderRadius: 14, paddingHorizontal: 16, paddingVertical: 8 },
   bubbleMine: { backgroundColor: '#2F86C0', borderTopRightRadius: 4 },
   bubbleOther: { backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', borderTopLeftRadius: 4 },
@@ -477,6 +517,10 @@ const styles = StyleSheet.create({
 
   readonly: { paddingTop: 12, paddingHorizontal: 16, backgroundColor: '#F1EFE8', alignItems: 'center' },
   readonlyText: { fontSize: 13, color: Colors.textSecondary },
+
+  imageOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', zIndex: 110 },
+  imageFull: { width: '100%', height: '100%' },
+  imageClose: { position: 'absolute', right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
 
   sheetOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end', zIndex: 100 },
   sheet: { backgroundColor: '#fff', borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingTop: 8, paddingHorizontal: 8 },

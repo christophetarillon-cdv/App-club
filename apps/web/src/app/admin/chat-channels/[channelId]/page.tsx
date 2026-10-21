@@ -74,7 +74,11 @@ export default function AdminChatChannelMessagesPage() {
                     {m.text && <p className="text-sm text-gray-700 whitespace-pre-line">{m.text}</p>}
                     {m.mediaUrl && (
                       <div className="mt-2">
-                        {m.mediaType === 'image' && <img src={m.mediaUrl} className="max-h-48 rounded-xl object-cover" />}
+                        {m.mediaType === 'image' && (
+                          <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer">
+                            <img src={m.mediaUrl} className="max-h-48 rounded-xl object-cover cursor-zoom-in" />
+                          </a>
+                        )}
                         {m.mediaType === 'audio' && <audio controls src={m.mediaUrl} className="w-full" />}
                         {m.mediaType === 'video' && <video controls src={m.mediaUrl} className="max-h-48 w-full rounded-xl" />}
                         {m.fileName && <p className="text-xs text-gray-400 mt-1">{m.fileName}</p>}

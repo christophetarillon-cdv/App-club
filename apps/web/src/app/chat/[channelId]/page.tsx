@@ -3,9 +3,9 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   collection, query, where, orderBy, onSnapshot,
-  addDoc, serverTimestamp, getDoc, getDocs, doc, updateDoc, Timestamp,
+  addDoc, serverTimestamp, getDoc, getDocs, doc, updateDoc, deleteDoc, Timestamp,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDancer } from '@/contexts/DancerContext';
@@ -37,6 +37,8 @@ export default function ChatChannelPage() {
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [seasonFloorMs, setSeasonFloorMs] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -184,6 +186,21 @@ export default function ChatChannelPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleDelete = async (m: ChatMessage) => {
+    if (!confirm('Supprimer ce message ?')) return;
+    setDeletingId(m.id);
+    try {
+      await deleteDoc(doc(db, 'chatMessages', m.id));
+      // Nettoyage du fichier : best-effort, le message est déjà supprimé.
+      if (m.mediaUrl) await deleteObject(ref(storage, m.mediaUrl)).catch(() => {});
+    } catch (err) {
+      console.error('handleDelete failed:', err);
+      alert('La suppression a échoué. Réessayez.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   // Safari iOS ignore l'attribut download sur les liens cross-origine (Firebase
   // Storage) et ouvre le fichier dans l'onglet au lieu de le telecharger.
   // Contournement : recuperer le fichier en blob (meme origine une fois en
@@ -239,12 +256,21 @@ export default function ChatChannelPage() {
                   <div className={`flex items-center gap-2 mb-0.5 ${isMe ? 'flex-row-reverse' : ''}`}>
                     <span className="text-xs font-medium text-gray-600">{m.authorName}</span>
                     <span className="text-[10px] text-gray-400">{timeAgo(m.sentAt)}</span>
+                    {isAdmin && (
+                      <button onClick={() => handleDelete(m)} disabled={deletingId === m.id}
+                        className="text-[10px] text-red-400 hover:text-red-600 disabled:opacity-50">
+                        {deletingId === m.id ? 'Suppression…' : 'Supprimer'}
+                      </button>
+                    )}
                   </div>
                   <div className={`rounded-2xl px-4 py-2.5 ${isMe ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white border border-gray-200 shadow-sm text-gray-800 rounded-tl-sm'}`}>
                     {m.text && <p className="text-sm whitespace-pre-line">{m.text}</p>}
                     {m.mediaUrl && (
                       <div className="mt-1">
-                        {m.mediaType === 'image' && <img src={m.mediaUrl} className="max-h-48 rounded-xl object-cover" />}
+                        {m.mediaType === 'image' && (
+                          <img src={m.mediaUrl} onClick={() => setLightboxUrl(m.mediaUrl!)}
+                            className="max-h-48 rounded-xl object-cover cursor-zoom-in" />
+                        )}
                         {m.mediaType === 'audio' && <audio controls src={m.mediaUrl} className="w-48" />}
                         {m.mediaType === 'video' && <video controls src={m.mediaUrl} className="max-h-48 rounded-xl" />}
                         {m.fileName && (
@@ -302,6 +328,19 @@ export default function ChatChannelPage() {
       ) : (
         <div className="bg-gray-100 border-t border-gray-200 px-4 py-3 text-center">
           <p className="text-sm text-gray-400">Vous êtes en lecture seule sur ce canal.</p>
+        </div>
+      )}
+
+      {/* Image en grand */}
+      {lightboxUrl && (
+        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setLightboxUrl(null)}>
+          <button type="button" onClick={() => setLightboxUrl(null)} aria-label="Fermer"
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/15 text-white text-2xl leading-none hover:bg-white/25">
+            ×
+          </button>
+          <img src={lightboxUrl} onClick={e => e.stopPropagation()}
+            className="max-w-full max-h-full object-contain rounded-lg cursor-default" />
         </div>
       )}
     </div>
