@@ -7,7 +7,7 @@ import {
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import { type PaymentMethod, METHOD_LABEL_PLURAL as METHOD_LABEL, METHOD_COLOR, ITEM_LABEL } from '@/lib/payment-constants';
-import { buildBordereauPdf } from '@/lib/bank-deposit-pdf';
+import { buildDepositBordereauPdf } from '@/lib/bank-deposit-pdf';
 
 interface Season {
   id: string;
@@ -23,6 +23,7 @@ interface DepositRow {
   expectedDate: string;
   cmc7?: string;
   chequeNumber?: string;
+  chequePayerName?: string;
   draweeBank?: string;
   draweeCity?: string;
   transferRef?: string;
@@ -36,6 +37,10 @@ interface Deposit {
   paymentMethod: PaymentMethod;
   bankAccount: string;
   bankAccountName?: string;
+  bankAccountHolder?: string;
+  bankAccountBank?: string;
+  bankAccountNumber?: string;
+  label?: string;
   totalAmount: number;
   itemCount: number;
   createdAt: { toDate: () => Date } | null;
@@ -83,6 +88,10 @@ export default function BankDepositsPage() {
       paymentMethod: (d.data().paymentMethod ?? 'cheque') as PaymentMethod,
       bankAccount: d.data().bankAccount ?? '',
       bankAccountName: d.data().bankAccountName ?? d.data().bankAccount ?? '',
+      bankAccountHolder: d.data().bankAccountHolder,
+      bankAccountBank: d.data().bankAccountBank,
+      bankAccountNumber: d.data().bankAccountNumber,
+      label: d.data().label,
       totalAmount: d.data().totalAmount,
       itemCount: d.data().itemCount ?? d.data().chequeCount ?? 0,
       createdAt: d.data().createdAt ?? null,
@@ -130,29 +139,35 @@ export default function BankDepositsPage() {
             const imgSnap = await getDoc(doc(db, 'chequeImages', data.chequeImageId));
             if (imgSnap.exists()) cmc7 = imgSnap.data().cmc7;
           }
-          return { memberName, amount: data.amount as number, expectedDate: data.expectedDate as string, cmc7 };
+          return {
+            memberName,
+            amount: data.amount as number,
+            expectedDate: data.expectedDate as string,
+            cmc7,
+            chequeNumber: data.chequeNumber ?? undefined,
+            chequePayerName: data.chequePayerName ?? undefined,
+            draweeBank: data.draweeBank ?? undefined,
+            draweeCity: data.draweeCity ?? undefined,
+            transferRef: data.transferRef ?? undefined,
+            transferDate: data.transferDate ?? undefined,
+            cashReceiptRef: data.cashReceiptRef ?? undefined,
+          };
         })).then(res => res.filter(Boolean) as DepositRow[]);
       }
       if (!rows || rows.length === 0) return;
 
-      const pdfBytes = await buildBordereauPdf({
-        title: 'Bordereau de remise de chèques',
-        info: [
-          { text: `Date de remise : ${deposit.depositDate}`, size: 11, gap: 15 },
-          { text: `Compte bancaire : ${deposit.bankAccount}`, size: 11, gap: 20 },
-        ],
-        columns: [
-          { label: 'Prénom Nom', x: 50, width: 250 },
-          { label: 'Montant', x: 310, width: 100 },
-          { label: 'CMC7', x: 420, width: 125, size: 8 },
-        ],
-        rows: rows.map(row => ({
-          cells: [row.memberName, `${(row.amount / 100).toFixed(2)} €`, row.cmc7 ?? ''],
-        })),
-        totals: {
-          left: `${deposit.itemCount} règlement${deposit.itemCount > 1 ? 's' : ''}`,
-          right: `Total : ${(deposit.totalAmount / 100).toFixed(2)} €`,
+      const pdfBytes = await buildDepositBordereauPdf({
+        method: deposit.paymentMethod,
+        depositDate: deposit.depositDate,
+        depositLabel: deposit.label,
+        account: {
+          holder: deposit.bankAccountHolder,
+          name: deposit.bankAccountName,
+          bank: deposit.bankAccountBank,
+          accountNumber: deposit.bankAccountNumber,
         },
+        lines: rows,
+        totalCents: deposit.totalAmount,
       });
       const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);

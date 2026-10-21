@@ -6,13 +6,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
-import { type PaymentMethod, METHOD_TABS, PDF_TITLE } from '@/lib/payment-constants';
-import {
-  buildBordereauPdf,
-  type BordereauColumn,
-  type BordereauInfoLine,
-  type BordereauRow,
-} from '@/lib/bank-deposit-pdf';
+import { type PaymentMethod, METHOD_TABS } from '@/lib/payment-constants';
+import { buildDepositBordereauPdf } from '@/lib/bank-deposit-pdf';
 import Link from 'next/link';
 
 interface InstallmentRow {
@@ -189,75 +184,14 @@ export default function NewBankDepositPage() {
     setGenerateError(null);
 
     try {
-      setGenerateStep('Création du PDF…');
-      const dateFr = new Date(depositDate + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-      const columns: BordereauColumn[] = paymentMethod === 'cheque'
-        ? [
-            { label: 'Nom Prénom', x: 50, width: 175 },
-            { label: 'Banque / Ville', x: 232, width: 125 },
-            { label: 'N° chèque', x: 362, width: 90, bold: true },
-            { label: 'Montant', x: 460, width: 85 },
-          ]
-        : paymentMethod === 'transfer'
-          ? [
-              { label: 'Nom Prénom', x: 50, width: 200 },
-              { label: 'Référence', x: 260, width: 120 },
-              { label: 'Date', x: 390, width: 60 },
-              { label: 'Montant', x: 460, width: 85 },
-            ]
-          : [
-              { label: 'Nom Prénom', x: 50, width: 250 },
-              { label: paymentMethod === 'helloasso' ? 'Date paiement' : 'N° reçu', x: 310, width: 140 },
-              { label: 'Montant', x: 460, width: 85 },
-            ];
-
-      const rows: BordereauRow[] = selectedRows.map(row => {
-        const name = row.memberName ?? row.userId;
-        const amount = `${(row.amount / 100).toFixed(2)} €`;
-        if (paymentMethod === 'cheque') {
-          return {
-            cells: [name, [row.draweeBank, row.draweeCity].filter(Boolean).join(' / '), row.chequeNumber ?? '', amount],
-            note: row.chequePayerName ? `Chèque au nom de ${row.chequePayerName}` : undefined,
-          };
-        }
-        if (paymentMethod === 'transfer') {
-          return {
-            cells: [
-              name,
-              row.transferRef ?? '',
-              row.transferDate ? new Date(row.transferDate + 'T12:00:00').toLocaleDateString('fr-FR') : '',
-              amount,
-            ],
-          };
-        }
-        if (paymentMethod === 'helloasso') {
-          return {
-            cells: [name, row.expectedDate ? new Date(row.expectedDate + 'T12:00:00').toLocaleDateString('fr-FR') : '—', amount],
-          };
-        }
-        return { cells: [name, row.cashReceiptRef ?? '', amount] };
-      });
-
-      const countLabel = paymentMethod === 'cheque'
-        ? `${selectedRows.length} chèque${selectedRows.length > 1 ? 's' : ''}`
-        : `${selectedRows.length} règlement${selectedRows.length > 1 ? 's' : ''}`;
-
-      const info: BordereauInfoLine[] = [
-        { text: 'Compte bénéficiaire', size: 9, bold: true, muted: true, gap: 14 },
-        { text: selectedBankAccount.holder, size: 11, bold: true, gap: 14 },
-        { text: `${selectedBankAccount.name} — ${selectedBankAccount.bank}`, gap: 14 },
-        { text: `N° compte : ${selectedBankAccount.accountNumber}`, gap: selectedBankAccount.label ? 12 : 20 },
-        ...(selectedBankAccount.label ? [{ text: selectedBankAccount.label, size: 9, muted: true, gap: 20 }] : []),
-        { text: `Date : ${dateFr}`, size: 11, right: depositLabel || undefined, gap: 25 },
-      ];
-
       setGenerateStep('Finalisation du PDF…');
-      const pdfBytes = await buildBordereauPdf({
-        title: PDF_TITLE[paymentMethod],
-        info,
-        columns,
-        rows,
-        totals: { left: countLabel, right: `Total : ${(totalCents / 100).toFixed(2)} €` },
+      const pdfBytes = await buildDepositBordereauPdf({
+        method: paymentMethod,
+        depositDate,
+        depositLabel: depositLabel || undefined,
+        account: selectedBankAccount,
+        lines: selectedRows.map(r => ({ ...r, memberName: r.memberName ?? r.userId })),
+        totalCents,
       });
 
       const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
@@ -307,6 +241,7 @@ export default function NewBankDepositPage() {
           amount: r.amount,
           expectedDate: r.expectedDate,
           ...(r.chequeNumber ? { chequeNumber: r.chequeNumber } : {}),
+          ...(r.chequePayerName ? { chequePayerName: r.chequePayerName } : {}),
           ...(r.draweeBank ? { draweeBank: r.draweeBank } : {}),
           ...(r.draweeCity ? { draweeCity: r.draweeCity } : {}),
           ...(r.transferRef ? { transferRef: r.transferRef } : {}),

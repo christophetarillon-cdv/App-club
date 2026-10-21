@@ -1,4 +1,5 @@
 import type { PDFFont } from 'pdf-lib';
+import { PDF_TITLE, type PaymentMethod } from './payment-constants';
 
 const PAGE_W = 595;
 const PAGE_H = 842;
@@ -132,4 +133,100 @@ export async function buildBordereauPdf(spec: BordereauSpec): Promise<Uint8Array
   });
 
   return pdf.save();
+}
+
+export interface DepositLine {
+  memberName: string;
+  amount: number;
+  expectedDate?: string;
+  chequeNumber?: string;
+  draweeBank?: string;
+  draweeCity?: string;
+  chequePayerName?: string;
+  transferRef?: string;
+  transferDate?: string;
+  cashReceiptRef?: string;
+  cmc7?: string;
+}
+
+export interface DepositAccount {
+  holder?: string;
+  name?: string;
+  bank?: string;
+  accountNumber?: string;
+  label?: string;
+}
+
+const fr = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR');
+
+export function buildDepositBordereauPdf(p: {
+  method: PaymentMethod;
+  depositDate: string;
+  depositLabel?: string;
+  account: DepositAccount;
+  lines: DepositLine[];
+  totalCents: number;
+}): Promise<Uint8Array> {
+  const { method, lines } = p;
+  const columns: BordereauColumn[] = method === 'cheque'
+    ? [
+        { label: 'Nom Prénom', x: 50, width: 175 },
+        { label: 'Banque / Ville', x: 232, width: 125 },
+        { label: 'N° chèque', x: 362, width: 90, bold: true },
+        { label: 'Montant', x: 460, width: 85 },
+      ]
+    : method === 'transfer'
+      ? [
+          { label: 'Nom Prénom', x: 50, width: 200 },
+          { label: 'Référence', x: 260, width: 120 },
+          { label: 'Date', x: 390, width: 60 },
+          { label: 'Montant', x: 460, width: 85 },
+        ]
+      : [
+          { label: 'Nom Prénom', x: 50, width: 250 },
+          { label: method === 'helloasso' ? 'Date paiement' : 'N° reçu', x: 310, width: 140 },
+          { label: 'Montant', x: 460, width: 85 },
+        ];
+
+  const rows: BordereauRow[] = lines.map(line => {
+    const amount = `${(line.amount / 100).toFixed(2)} €`;
+    if (method === 'cheque') {
+      return {
+        cells: [line.memberName, [line.draweeBank, line.draweeCity].filter(Boolean).join(' / '), line.chequeNumber ?? '', amount],
+        note: line.chequePayerName ? `Chèque au nom de ${line.chequePayerName}` : undefined,
+      };
+    }
+    if (method === 'transfer') {
+      return { cells: [line.memberName, line.transferRef ?? '', line.transferDate ? fr(line.transferDate) : '', amount] };
+    }
+    if (method === 'helloasso') {
+      return { cells: [line.memberName, line.expectedDate ? fr(line.expectedDate) : '—', amount] };
+    }
+    return { cells: [line.memberName, line.cashReceiptRef ?? '', amount] };
+  });
+
+  const countLabel = method === 'cheque'
+    ? `${lines.length} chèque${lines.length > 1 ? 's' : ''}`
+    : `${lines.length} règlement${lines.length > 1 ? 's' : ''}`;
+
+  const dateFr = new Date(p.depositDate + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const a = p.account;
+  const info: BordereauInfoLine[] = [];
+  if (a.holder) {
+    info.push({ text: 'Compte bénéficiaire', size: 9, bold: true, muted: true, gap: 14 });
+    info.push({ text: a.holder, size: 11, bold: true, gap: 14 });
+  }
+  const bankLine = [a.name, a.bank].filter(Boolean).join(' — ');
+  if (bankLine) info.push({ text: bankLine, gap: 14 });
+  if (a.accountNumber) info.push({ text: `N° compte : ${a.accountNumber}`, gap: a.label ? 12 : 20 });
+  if (a.label) info.push({ text: a.label, size: 9, muted: true, gap: 20 });
+  info.push({ text: `Date : ${dateFr}`, size: 11, right: p.depositLabel || undefined, gap: 25 });
+
+  return buildBordereauPdf({
+    title: PDF_TITLE[method],
+    info,
+    columns,
+    rows,
+    totals: { left: countLabel, right: `Total : ${(p.totalCents / 100).toFixed(2)} €` },
+  });
 }
