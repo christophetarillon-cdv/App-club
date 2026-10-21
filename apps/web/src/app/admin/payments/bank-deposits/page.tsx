@@ -252,16 +252,15 @@ export default function BankDepositsPage() {
                         </p>
                         <p className="font-bold text-gray-900 text-sm">{(dep.totalAmount / 100).toFixed(2)} €</p>
                       </div>
-                      {dep.pdfUrl ? (
+                      {dep.pdfUrl && (
                         <a href={dep.pdfUrl} target="_blank" rel="noreferrer"
                           className="flex-shrink-0 text-xs text-blue-600 hover:underline">PDF</a>
-                      ) : (
-                        <button onClick={() => regeneratePdf(dep)} disabled={generatingId === dep.id}
-                          title="Régénérer le PDF"
-                          className="flex-shrink-0 text-xs text-blue-600 hover:underline disabled:text-gray-300">
-                          {generatingId === dep.id ? '…' : 'PDF ↺'}
-                        </button>
                       )}
+                      <button onClick={() => regeneratePdf(dep)} disabled={generatingId === dep.id}
+                        title="Régénérer le PDF avec la mise en page actuelle (téléchargement, sans modifier le PDF archivé)"
+                        className="flex-shrink-0 text-xs text-blue-600 hover:underline disabled:text-gray-300">
+                        {generatingId === dep.id ? '…' : dep.pdfUrl ? 'Régénérer ↺' : 'PDF ↺'}
+                      </button>
                     </div>
                   ))}
                 </div>
