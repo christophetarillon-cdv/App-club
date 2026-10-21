@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput, Image,
-  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Pressable, useWindowDimensions, Modal,
+  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Pressable, useWindowDimensions, Modal, Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
@@ -93,6 +93,8 @@ export default function ChatChannelScreen() {
   const [attachOpen, setAttachOpen] = useState(false);
   const [activeVideo, setActiveVideo] = useState<ChatMessage | null>(null);
   const [activeImage, setActiveImage] = useState<string | null>(null);
+  const [imageState, setImageState] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const openImage = (url: string) => { setImageState('loading'); setActiveImage(url); };
   const [seasonFloorMs, setSeasonFloorMs] = useState<number | null>(null);
   const bottomRef = useRef<FlatList>(null);
   // Miroir synchrone de `text` : sur Android, taper le dernier mot puis
@@ -313,7 +315,7 @@ export default function ChatChannelScreen() {
             {m.text ? <Text style={[styles.msgText, mine && { color: '#fff' }]}>{m.text}</Text> : null}
             {m.mediaType === 'image' && m.mediaUrl && (
               <View>
-                <TouchableOpacity activeOpacity={0.9} onPress={() => setActiveImage(m.mediaUrl!)}>
+                <TouchableOpacity activeOpacity={0.9} onPress={() => openImage(m.mediaUrl!)}>
                   <Image source={{ uri: m.mediaUrl }} style={styles.msgImage} resizeMode="cover" />
                 </TouchableOpacity>
                 <DownloadButton mine={mine} onPress={() => downloadMedia(m)} />
@@ -445,9 +447,26 @@ export default function ChatChannelScreen() {
           KeyboardAvoidingView et de l'empilement (zIndex/elevation) d'Android */}
       <Modal visible={!!activeImage} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setActiveImage(null)}>
         <View style={styles.imageOverlay}>
-          <ActivityIndicator color="#fff" style={StyleSheet.absoluteFillObject} />
+          {imageState === 'loading' && <ActivityIndicator color="#fff" style={StyleSheet.absoluteFillObject} />}
+          {imageState === 'error' && activeImage && (
+            <View style={styles.imageError}>
+              <Text style={styles.imageErrorText}>Impossible d'afficher l'image.</Text>
+              <TouchableOpacity onPress={() => Linking.openURL(activeImage)} activeOpacity={0.8}>
+                <Text style={styles.imageErrorLink}>Ouvrir dans le navigateur</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           {activeImage ? (
-            <Image source={{ uri: activeImage }} style={{ width: winW, height: winH * 0.8 }} resizeMode="contain" />
+            // resizeMethod="resize" : sur Android, une photo plein format (12 Mpx+)
+            // décodée à taille réelle ne s'affiche jamais ; on la décode à la taille de la vue.
+            <Image
+              source={{ uri: activeImage }}
+              style={{ width: winW, height: winH * 0.8 }}
+              resizeMode="contain"
+              resizeMethod="resize"
+              onLoad={() => setImageState('loaded')}
+              onError={() => setImageState('error')}
+            />
           ) : null}
           <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setActiveImage(null)} />
           <TouchableOpacity style={[styles.imageClose, { top: insets.top + 12 }]} onPress={() => setActiveImage(null)} hitSlop={10}>
@@ -525,6 +544,9 @@ const styles = StyleSheet.create({
   readonlyText: { fontSize: 13, color: Colors.textSecondary },
 
   imageOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  imageError: { position: 'absolute', alignItems: 'center', gap: 12, paddingHorizontal: 24 },
+  imageErrorText: { color: '#fff', fontSize: 15, textAlign: 'center' },
+  imageErrorLink: { color: '#7DC3F0', fontSize: 15, textDecorationLine: 'underline' },
   imageClose: { position: 'absolute', right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
 
   sheetOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end', zIndex: 100 },
