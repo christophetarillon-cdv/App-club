@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput, Image,
-  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Pressable,
+  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Pressable, useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
@@ -81,6 +81,7 @@ export default function ChatChannelScreen() {
   const { id, channelId } = useLocalSearchParams<{ id: string; channelId: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width: winW, height: winH } = useWindowDimensions();
   const { account, user, markMessagesAsRead } = useAuth();
   const { selectedDancer } = useDancer();
 
@@ -443,7 +444,7 @@ export default function ChatChannelScreen() {
       {/* Image en plein écran */}
       {activeImage && (
         <Pressable style={styles.imageOverlay} onPress={() => setActiveImage(null)}>
-          <Image source={{ uri: activeImage }} style={styles.imageFull} resizeMode="contain" />
+          <Image source={{ uri: activeImage }} style={{ width: winW, height: winH }} resizeMode="contain" />
           <TouchableOpacity style={[styles.imageClose, { top: insets.top + 12 }]} onPress={() => setActiveImage(null)} hitSlop={10}>
             <Svg width={22} height={22} viewBox="0 0 24 24" fill="none"><Path d="M6 6l12 12M18 6L6 18" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" /></Svg>
           </TouchableOpacity>
@@ -518,8 +519,7 @@ const styles = StyleSheet.create({
   readonly: { paddingTop: 12, paddingHorizontal: 16, backgroundColor: '#F1EFE8', alignItems: 'center' },
   readonlyText: { fontSize: 13, color: Colors.textSecondary },
 
-  imageOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', zIndex: 110 },
-  imageFull: { width: '100%', height: '100%' },
+  imageOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', zIndex: 110, elevation: 110 },
   imageClose: { position: 'absolute', right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
 
   sheetOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end', zIndex: 100 },
