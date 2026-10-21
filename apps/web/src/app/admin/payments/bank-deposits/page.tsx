@@ -7,6 +7,7 @@ import {
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import { type PaymentMethod, METHOD_LABEL_PLURAL as METHOD_LABEL, METHOD_COLOR, ITEM_LABEL } from '@/lib/payment-constants';
+import { buildBordereauPdf } from '@/lib/bank-deposit-pdf';
 
 interface Season {
   id: string;
@@ -134,43 +135,25 @@ export default function BankDepositsPage() {
       }
       if (!rows || rows.length === 0) return;
 
-      const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
-      const pdfDoc = await PDFDocument.create();
-      const page = pdfDoc.addPage([595, 842]);
-      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
-      const { height } = page.getSize();
-      let y = height - 50;
-
-      page.drawText('Bordereau de remise de chèques', { x: 50, y, size: 16, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
-      y -= 30;
-      page.drawText(`Date de remise : ${deposit.depositDate}`, { x: 50, y, size: 11, font, color: rgb(0.3, 0.3, 0.3) });
-      y -= 15;
-      page.drawText(`Compte bancaire : ${deposit.bankAccount}`, { x: 50, y, size: 11, font, color: rgb(0.3, 0.3, 0.3) });
-      y -= 30;
-
-      page.drawText('Prénom Nom', { x: 50, y, size: 10, font: fontBold });
-      page.drawText('Montant', { x: 300, y, size: 10, font: fontBold });
-      page.drawText('CMC7', { x: 400, y, size: 10, font: fontBold });
-      y -= 5;
-      page.drawLine({ start: { x: 50, y }, end: { x: 545, y }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
-      y -= 15;
-
-      for (const row of rows) {
-        page.drawText(row.memberName, { x: 50, y, size: 10, font });
-        page.drawText(`${(row.amount / 100).toFixed(2)} €`, { x: 300, y, size: 10, font });
-        if (row.cmc7) page.drawText(row.cmc7.slice(0, 25), { x: 400, y, size: 8, font });
-        y -= 18;
-      }
-
-      y -= 10;
-      page.drawLine({ start: { x: 50, y }, end: { x: 545, y }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
-      y -= 18;
-      page.drawText(`Total : ${(deposit.totalAmount / 100).toFixed(2)} €`, { x: 300, y, size: 11, font: fontBold });
-      page.drawText(`${deposit.itemCount} règlement${deposit.itemCount > 1 ? 's' : ''}`, { x: 50, y, size: 11, font: fontBold });
-
-      const pdfBytes = await pdfDoc.save();
+      const pdfBytes = await buildBordereauPdf({
+        title: 'Bordereau de remise de chèques',
+        info: [
+          { text: `Date de remise : ${deposit.depositDate}`, size: 11, gap: 15 },
+          { text: `Compte bancaire : ${deposit.bankAccount}`, size: 11, gap: 20 },
+        ],
+        columns: [
+          { label: 'Prénom Nom', x: 50, width: 250 },
+          { label: 'Montant', x: 310, width: 100 },
+          { label: 'CMC7', x: 420, width: 125, size: 8 },
+        ],
+        rows: rows.map(row => ({
+          cells: [row.memberName, `${(row.amount / 100).toFixed(2)} €`, row.cmc7 ?? ''],
+        })),
+        totals: {
+          left: `${deposit.itemCount} règlement${deposit.itemCount > 1 ? 's' : ''}`,
+          right: `Total : ${(deposit.totalAmount / 100).toFixed(2)} €`,
+        },
+      });
       const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

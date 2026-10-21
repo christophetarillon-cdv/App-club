@@ -7,6 +7,12 @@ import {
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { type PaymentMethod, METHOD_TABS, PDF_TITLE } from '@/lib/payment-constants';
+import {
+  buildBordereauPdf,
+  type BordereauColumn,
+  type BordereauInfoLine,
+  type BordereauRow,
+} from '@/lib/bank-deposit-pdf';
 import Link from 'next/link';
 
 interface InstallmentRow {
@@ -183,108 +189,76 @@ export default function NewBankDepositPage() {
     setGenerateError(null);
 
     try {
-      const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
       setGenerateStep('Création du PDF…');
-      const pdfDoc = await PDFDocument.create();
-      const page = pdfDoc.addPage([595, 842]);
-      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-      const { height } = page.getSize();
-      let y = height - 50;
-
-      // Titre
-      page.drawText(PDF_TITLE[paymentMethod], {
-        x: 50, y, size: 16, font: fontBold, color: rgb(0.1, 0.1, 0.1),
-      });
-      y -= 35;
-
-      // Coordonnées bancaires
-      page.drawText('Compte bénéficiaire', { x: 50, y, size: 9, font: fontBold, color: rgb(0.5, 0.5, 0.5) });
-      y -= 14;
-      page.drawText(selectedBankAccount.holder, { x: 50, y, size: 11, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
-      y -= 14;
-      page.drawText(`${selectedBankAccount.name} — ${selectedBankAccount.bank}`, { x: 50, y, size: 10, font, color: rgb(0.3, 0.3, 0.3) });
-      y -= 14;
-      page.drawText(`N° compte : ${selectedBankAccount.accountNumber}`, { x: 50, y, size: 10, font, color: rgb(0.3, 0.3, 0.3) });
-      if (selectedBankAccount.label) { y -= 12; page.drawText(selectedBankAccount.label, { x: 50, y, size: 9, font, color: rgb(0.5, 0.5, 0.5) }); }
-      y -= 20;
-
-      // Date
       const dateFr = new Date(depositDate + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-      page.drawText(`Date : ${dateFr}`, { x: 50, y, size: 11, font, color: rgb(0.3, 0.3, 0.3) });
-      if (depositLabel) page.drawText(depositLabel, { x: 545 - font.widthOfTextAtSize(depositLabel, 11), y, size: 11, font, color: rgb(0.3, 0.3, 0.3) });
-      y -= 25;
+      const columns: BordereauColumn[] = paymentMethod === 'cheque'
+        ? [
+            { label: 'Nom Prénom', x: 50, width: 175 },
+            { label: 'Banque / Ville', x: 232, width: 125 },
+            { label: 'N° chèque', x: 362, width: 90, bold: true },
+            { label: 'Montant', x: 460, width: 85 },
+          ]
+        : paymentMethod === 'transfer'
+          ? [
+              { label: 'Nom Prénom', x: 50, width: 200 },
+              { label: 'Référence', x: 260, width: 120 },
+              { label: 'Date', x: 390, width: 60 },
+              { label: 'Montant', x: 460, width: 85 },
+            ]
+          : [
+              { label: 'Nom Prénom', x: 50, width: 250 },
+              { label: paymentMethod === 'helloasso' ? 'Date paiement' : 'N° reçu', x: 310, width: 140 },
+              { label: 'Montant', x: 460, width: 85 },
+            ];
 
-      page.drawLine({ start: { x: 50, y }, end: { x: 545, y }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8) });
-      y -= 18;
-
-      // En-têtes selon méthode
-      if (paymentMethod === 'cheque') {
-        page.drawText('Nom Prénom', { x: 50, y, size: 10, font: fontBold });
-        page.drawText('Banque / Ville', { x: 200, y, size: 10, font: fontBold });
-        page.drawText('N° chèque', { x: 360, y, size: 10, font: fontBold });
-        page.drawText('Montant', { x: 460, y, size: 10, font: fontBold });
-      } else if (paymentMethod === 'transfer') {
-        page.drawText('Nom Prénom', { x: 50, y, size: 10, font: fontBold });
-        page.drawText('Référence', { x: 260, y, size: 10, font: fontBold });
-        page.drawText('Date', { x: 390, y, size: 10, font: fontBold });
-        page.drawText('Montant', { x: 460, y, size: 10, font: fontBold });
-      } else if (paymentMethod === 'helloasso') {
-        page.drawText('Nom Prénom', { x: 50, y, size: 10, font: fontBold });
-        page.drawText('Date paiement', { x: 310, y, size: 10, font: fontBold });
-        page.drawText('Montant', { x: 460, y, size: 10, font: fontBold });
-      } else {
-        page.drawText('Nom Prénom', { x: 50, y, size: 10, font: fontBold });
-        page.drawText('N° reçu', { x: 310, y, size: 10, font: fontBold });
-        page.drawText('Montant', { x: 460, y, size: 10, font: fontBold });
-      }
-      y -= 5;
-      page.drawLine({ start: { x: 50, y }, end: { x: 545, y }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
-      y -= 16;
-
-      // Lignes
-      for (const row of selectedRows) {
-        const name = (row.memberName ?? row.userId).slice(0, 28);
-        page.drawText(name, { x: 50, y, size: 10, font });
-
+      const rows: BordereauRow[] = selectedRows.map(row => {
+        const name = row.memberName ?? row.userId;
+        const amount = `${(row.amount / 100).toFixed(2)} €`;
         if (paymentMethod === 'cheque') {
-          const bankInfo = [row.draweeBank, row.draweeCity].filter(Boolean).join(' / ');
-          if (bankInfo) page.drawText(bankInfo.slice(0, 22), { x: 200, y, size: 9, font });
-          if (row.chequeNumber) page.drawText(row.chequeNumber, { x: 360, y, size: 10, font: fontBold });
-        } else if (paymentMethod === 'transfer') {
-          if (row.transferRef) page.drawText(row.transferRef.slice(0, 18), { x: 260, y, size: 9, font });
-          if (row.transferDate) page.drawText(new Date(row.transferDate + 'T12:00:00').toLocaleDateString('fr-FR'), { x: 390, y, size: 9, font });
-        } else if (paymentMethod === 'helloasso') {
-          const datePaid = row.expectedDate
-            ? new Date(row.expectedDate + 'T12:00:00').toLocaleDateString('fr-FR')
-            : '—';
-          page.drawText(datePaid, { x: 310, y, size: 9, font });
-        } else {
-          if (row.cashReceiptRef) page.drawText(row.cashReceiptRef.slice(0, 18), { x: 310, y, size: 9, font });
+          return {
+            cells: [name, [row.draweeBank, row.draweeCity].filter(Boolean).join(' / '), row.chequeNumber ?? '', amount],
+            note: row.chequePayerName ? `Chèque au nom de ${row.chequePayerName}` : undefined,
+          };
         }
-
-        page.drawText(`${(row.amount / 100).toFixed(2)} €`, { x: 460, y, size: 10, font });
-
-        if (paymentMethod === 'cheque' && row.chequePayerName) {
-          page.drawText(`Chèque au nom de ${row.chequePayerName}`, { x: 50, y: y - 11, size: 8, font, color: rgb(0.5, 0.5, 0.5) });
-          y -= 28;
-        } else {
-          y -= 18;
+        if (paymentMethod === 'transfer') {
+          return {
+            cells: [
+              name,
+              row.transferRef ?? '',
+              row.transferDate ? new Date(row.transferDate + 'T12:00:00').toLocaleDateString('fr-FR') : '',
+              amount,
+            ],
+          };
         }
-      }
+        if (paymentMethod === 'helloasso') {
+          return {
+            cells: [name, row.expectedDate ? new Date(row.expectedDate + 'T12:00:00').toLocaleDateString('fr-FR') : '—', amount],
+          };
+        }
+        return { cells: [name, row.cashReceiptRef ?? '', amount] };
+      });
 
-      // Total
-      y -= 8;
-      page.drawLine({ start: { x: 50, y }, end: { x: 545, y }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
-      y -= 18;
       const countLabel = paymentMethod === 'cheque'
         ? `${selectedRows.length} chèque${selectedRows.length > 1 ? 's' : ''}`
         : `${selectedRows.length} règlement${selectedRows.length > 1 ? 's' : ''}`;
-      page.drawText(countLabel, { x: 50, y, size: 11, font: fontBold });
-      page.drawText(`Total : ${(totalCents / 100).toFixed(2)} €`, { x: 360, y, size: 11, font: fontBold });
+
+      const info: BordereauInfoLine[] = [
+        { text: 'Compte bénéficiaire', size: 9, bold: true, muted: true, gap: 14 },
+        { text: selectedBankAccount.holder, size: 11, bold: true, gap: 14 },
+        { text: `${selectedBankAccount.name} — ${selectedBankAccount.bank}`, gap: 14 },
+        { text: `N° compte : ${selectedBankAccount.accountNumber}`, gap: selectedBankAccount.label ? 12 : 20 },
+        ...(selectedBankAccount.label ? [{ text: selectedBankAccount.label, size: 9, muted: true, gap: 20 }] : []),
+        { text: `Date : ${dateFr}`, size: 11, right: depositLabel || undefined, gap: 25 },
+      ];
 
       setGenerateStep('Finalisation du PDF…');
-      const pdfBytes = await pdfDoc.save();
+      const pdfBytes = await buildBordereauPdf({
+        title: PDF_TITLE[paymentMethod],
+        info,
+        columns,
+        rows,
+        totals: { left: countLabel, right: `Total : ${(totalCents / 100).toFixed(2)} €` },
+      });
 
       const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
       const localUrl = URL.createObjectURL(blob);
