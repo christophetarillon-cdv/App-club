@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput, Image,
-  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Pressable, useWindowDimensions,
+  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Pressable, useWindowDimensions, Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
@@ -441,15 +441,20 @@ export default function ChatChannelScreen() {
         </Pressable>
       )}
 
-      {/* Image en plein écran */}
-      {activeImage && (
-        <Pressable style={styles.imageOverlay} onPress={() => setActiveImage(null)}>
-          <Image source={{ uri: activeImage }} style={{ width: winW, height: winH }} resizeMode="contain" />
+      {/* Image en plein écran — Modal natif : fenêtre séparée, indépendante du
+          KeyboardAvoidingView et de l'empilement (zIndex/elevation) d'Android */}
+      <Modal visible={!!activeImage} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setActiveImage(null)}>
+        <View style={styles.imageOverlay}>
+          <ActivityIndicator color="#fff" style={StyleSheet.absoluteFillObject} />
+          {activeImage ? (
+            <Image source={{ uri: activeImage }} style={{ width: winW, height: winH * 0.8 }} resizeMode="contain" />
+          ) : null}
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setActiveImage(null)} />
           <TouchableOpacity style={[styles.imageClose, { top: insets.top + 12 }]} onPress={() => setActiveImage(null)} hitSlop={10}>
             <Svg width={22} height={22} viewBox="0 0 24 24" fill="none"><Path d="M6 6l12 12M18 6L6 18" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" /></Svg>
           </TouchableOpacity>
-        </Pressable>
-      )}
+        </View>
+      </Modal>
 
       {/* Lecteur vidéo plein écran (même composant que la page Vidéos) */}
       {activeVideo?.mediaUrl && (
@@ -519,7 +524,7 @@ const styles = StyleSheet.create({
   readonly: { paddingTop: 12, paddingHorizontal: 16, backgroundColor: '#F1EFE8', alignItems: 'center' },
   readonlyText: { fontSize: 13, color: Colors.textSecondary },
 
-  imageOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', zIndex: 110, elevation: 110 },
+  imageOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
   imageClose: { position: 'absolute', right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
 
   sheetOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end', zIndex: 100 },
