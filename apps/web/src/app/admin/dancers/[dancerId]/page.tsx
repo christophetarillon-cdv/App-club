@@ -947,7 +947,7 @@ export default function DancerDetailPage() {
         } : null;
         setAccount(accountData);
 
-        const [membershipSnap, membershipByDancerSnap, groupSnap, seasonSnap, planSnap, allDancerSnap, regSnap, styleSnap, levelSnap, docsSnap] = await Promise.all([
+        const [membershipSnap, membershipByDancerSnap, groupSnap, seasonSnap, planSnap, allDancerSnap, regSnap, styleSnap, levelSnap, docsSnap, docsByDancerSnap] = await Promise.all([
           getDocs(query(collection(db, 'memberships'), where('userId', '==', dancerData.accountId))),
           // Un plan peut avoir été créé sous un autre compte payeur (ex: le danseur a été
           // rattaché à un autre compte depuis, ou un proche a payé pour lui) — sans cette
@@ -961,9 +961,27 @@ export default function DancerDetailPage() {
           getDocs(collection(db, 'danceStyles')),
           getDocs(collection(db, 'levels')),
           getDocs(query(collection(db, 'documents'), where('userId', '==', dancerData.accountId), orderBy('generatedAt', 'desc'))),
+          // Document généré sous un autre compte payeur (danseur rattaché
+          // ailleurs depuis, ou payé par un proche) : invisible par userId seul.
+          getDocs(query(collection(db, 'documents'), where('dancerId', '==', dancerId))),
         ]);
 
-        setDocuments(docsSnap.docs.map(d => ({ id: d.id, ...d.data() } as PersonalDocument)));
+        // Ne garder que les documents de CE danseur : la requête par compte
+        // ramène aussi ceux des autres danseurs du compte (ex : conjoint),
+        // qui apparaissaient à tort sur cette fiche.
+        const docById = new Map<string, PersonalDocument>();
+        [...docsSnap.docs, ...docsByDancerSnap.docs].forEach(d => {
+          const data = d.data();
+          const belongs = data.dancerId
+            ? data.dancerId === dancerId
+            : accountData?.dancerIds?.[0] === dancerId;
+          if (belongs) docById.set(d.id, { id: d.id, ...data } as PersonalDocument);
+        });
+        setDocuments(
+          [...docById.values()].sort(
+            (a: any, b: any) => (b.generatedAt?.seconds ?? 0) - (a.generatedAt?.seconds ?? 0),
+          ),
+        );
 
         const seasonLabelMap = new Map<string, string>();
         seasonSnap.docs.forEach(s => seasonLabelMap.set(s.id, s.data().label ?? s.id));

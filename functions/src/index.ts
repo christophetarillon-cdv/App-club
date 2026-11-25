@@ -3831,8 +3831,10 @@ async function syncOneDancerToGoogle(
     return;
   }
 
-  const accountSnap = await db.doc(`accounts/${dancer.accountId}`).get();
-  const account = accountSnap.data() ?? {};
+  // accountId est vide sur un danseur détaché de son compte : doc('accounts/')
+  // lève une erreur de chemin et faisait échouer toute la synchro du danseur.
+  const accountSnap = dancer.accountId ? await db.doc(`accounts/${dancer.accountId}`).get() : null;
+  const account = accountSnap?.data() ?? {};
 
   const globalGroupResourceName = await getOrCreateContactGroup(peopleClient, groupNameGlobal, groupCache);
 
