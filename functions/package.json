@@ -4,7 +4,7 @@
   "private": true,
   "main": "lib/index.js",
   "scripts": {
-    "build": "npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --external:firebase-admin --external:firebase-functions --external:nodemailer --external:fluent-ffmpeg --external:ffmpeg-static --external:pdf-lib --external:googleapis --external:expo-server-sdk --external:qrcode --outfile=lib/index.js",
+    "build": "npx esbuild src/index.ts --bundle --platform=node --target=node22 --format=cjs --external:firebase-admin --external:firebase-functions --external:nodemailer --external:fluent-ffmpeg --external:ffmpeg-static --external:pdf-lib --external:googleapis --external:expo-server-sdk --external:qrcode --outfile=lib/index.js",
     "type-check": "tsc --noEmit",
     "lint": "eslint src/"
   },
