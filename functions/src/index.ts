@@ -2360,7 +2360,12 @@ async function computeUnreadByAccount(
         .filter(m => m.sentMs > threshold && m.authorId !== d.id).length;
     });
 
-    count += privateMsgs.filter(m => m.fromDancerId === d.id && m.fromAdmin === true && !m.readByDancerAt).length;
+    // Réponses du club : pas pour un compte admin/bureau. L'app lui masque la
+    // conversation « Message à l'administration » (il ne peut donc jamais la
+    // marquer lue) : la compter figeait la pastille à 1 (cas du 26/11).
+    if (!staffSet.has(aid)) {
+      count += privateMsgs.filter(m => m.fromDancerId === d.id && m.fromAdmin === true && !m.readByDancerAt).length;
+    }
     result.set(aid, (result.get(aid) ?? 0) + count);
   });
 
