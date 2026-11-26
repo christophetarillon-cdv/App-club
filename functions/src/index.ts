@@ -2391,7 +2391,9 @@ async function badgeByTokenForAccounts(
 }
 
 export const getMyBadgeCount = onCall(
-  { region: 'europe-west3' },
+  // 256 MiB dépassés le 26/11 : appelée par chaque téléphone à chaque retour
+  // dans l'app, elle charge danseurs, messages et cotisations.
+  { region: 'europe-west3', memory: '512MiB' },
   async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
     const unread = await computeUnreadByAccount(getDb(), [request.auth.uid]);
@@ -2441,12 +2443,14 @@ async function sendPushToTokens(
       ...(badgeByToken?.has(to) ? { badge: badgeByToken.get(to) } : {}),
     }));
     const chunks = expoClient.chunkPushNotifications(messages);
+    const receiptIds: string[] = [];
     for (const chunk of chunks) {
       try {
         const tickets = await expoClient.sendPushNotificationsAsync(chunk);
         tickets.forEach((ticket, idx) => {
           if (ticket.status === 'ok') {
             successCount++;
+            receiptIds.push(ticket.id);
           } else {
             console.error(`sendPushToTokens Expo failed: ${ticket.message}`);
             if (ticket.details?.error === 'DeviceNotRegistered') {
@@ -2458,9 +2462,36 @@ async function sendPushToTokens(
         console.error('sendPushToTokens Expo chunk failed:', err);
       }
     }
+    await logExpoReceipts(receiptIds);
   }
 
   return { successCount, invalidTokens };
+}
+
+// Un ticket "ok" veut seulement dire qu'Expo a accepté la notification : le
+// refus éventuel d'Apple/Google (clé FCM, identifiants APNs…) n'apparaît que
+// dans l'accusé de réception, disponible quelques secondes plus tard. Sans ce
+// relevé, les envois Android ont échoué pendant des mois sans trace exploitable.
+async function logExpoReceipts(receiptIds: string[]): Promise<void> {
+  if (receiptIds.length === 0) return;
+  await new Promise(resolve => setTimeout(resolve, 5000));
+  let ok = 0;
+  const errors = new Map<string, number>();
+  for (const chunk of expoClient.chunkPushNotificationReceiptIds(receiptIds)) {
+    try {
+      const receipts = await expoClient.getPushNotificationReceiptsAsync(chunk);
+      for (const receipt of Object.values(receipts)) {
+        if (receipt.status === 'ok') { ok++; continue; }
+        const key = `${receipt.details?.error ?? 'unknown'}: ${receipt.message}`;
+        errors.set(key, (errors.get(key) ?? 0) + 1);
+      }
+    } catch (err) {
+      console.error('logExpoReceipts failed:', err);
+    }
+  }
+  const pending = receiptIds.length - ok - [...errors.values()].reduce((a, b) => a + b, 0);
+  console.log(`[expoReceipts] ok=${ok} errors=${receiptIds.length - ok - pending} pending=${pending}`);
+  errors.forEach((n, key) => console.error(`[expoReceipts] ${n} × ${key}`));
 }
 
 // ── sendNotification ──────────────────────────────────────────────────────────
