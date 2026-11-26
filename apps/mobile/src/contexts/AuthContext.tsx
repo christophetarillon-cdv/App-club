@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { httpsCallable } from 'firebase/functions';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { collection, onSnapshot, query, where, doc, onSnapshot as onDocSnapshot } from 'firebase/firestore';
@@ -93,10 +93,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const res = await httpsCallable<unknown, { count: number }>(functions, 'getMyBadgeCount')();
       const count = res.data?.count ?? 0;
-      await Notifications.setBadgeCountAsync(count);
-      // Plus rien à lire : on vide le tiroir, sinon le lanceur Android garde
-      // la pastille (elle y est calculée à partir des notifications affichées).
-      if (count === 0) await dismissAllPresented();
+      if (Platform.OS === 'android') {
+        // Samsung (et autres lanceurs) : un chiffre fixé par l'app (ancien
+        // compteur, via le broadcast BADGE_COUNT_UPDATE de ShortcutBadger)
+        // remplace le nombre de notifications et reste figé. Or
+        // setBadgeCountAsync(0) d'expo-notifications ne fait que vider le
+        // tiroir sans jamais l'effacer. -1 passe, lui, par ShortcutBadger et
+        // retire ce chiffre fixe : le lanceur revient au compte des
+        // notifications du tiroir (qu'on nettoie à la lecture).
+        await Notifications.setBadgeCountAsync(-1).catch(() => {});
+        if (count === 0) await dismissAllPresented();
+      } else {
+        await Notifications.setBadgeCountAsync(count);
+      }
     } catch (error) {
       console.error('[AuthContext] refreshBadge failed:', error);
     }
