@@ -10,6 +10,7 @@ import {
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { dismissPresentedWhere } from '@/lib/notificationTray';
 import { useDancer } from '@/contexts/DancerContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
@@ -121,7 +122,11 @@ export default function ChatChannelScreen() {
   useEffect(() => {
     if (!selectedDancer) return;
     updateDoc(doc(db, 'dancers', selectedDancer.id), { [`chatLastRead.${channelId}`]: Date.now() })
-      .then(() => refreshBadge?.())
+      .then(() => {
+        // Canal lu : ses notifications n'ont plus rien à faire dans le tiroir.
+        dismissPresentedWhere(d => d.type === 'chat' && d.channelId === channelId);
+        return refreshBadge?.();
+      })
       .catch(() => {});
   }, [channelId, selectedDancer?.id]);
 

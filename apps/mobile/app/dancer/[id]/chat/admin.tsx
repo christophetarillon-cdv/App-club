@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { dismissPresentedWhere } from '@/lib/notificationTray';
 import { useDancer } from '@/contexts/DancerContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
@@ -109,6 +110,15 @@ export default function AdminConversationScreen() {
     ).then(() => refreshBadge?.())
       .catch(error => console.error(`${field} update failed`, error));
   }, [messages, isAdminView]);
+
+  // Conversation ouverte : ses notifications quittent le tiroir (sinon le
+  // lanceur Android garde la pastille). dancerId des notifications = danseur
+  // propriétaire du fil (voir onPrivateMessageCreated).
+  useEffect(() => {
+    const threadDancerId = isAdminView ? targetDancerId : selectedDancer?.id;
+    if (!threadDancerId) return;
+    dismissPresentedWhere(d => d.type === 'private_message' && d.dancerId === threadDancerId);
+  }, [messages.length, isAdminView, targetDancerId, selectedDancer?.id]);
 
   const send = async () => {
     const value = textRef.current.trim();

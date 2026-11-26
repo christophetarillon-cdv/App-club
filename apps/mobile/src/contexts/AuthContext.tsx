@@ -6,6 +6,7 @@ import { collection, onSnapshot, query, where, doc, onSnapshot as onDocSnapshot 
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db, functions } from '@/lib/firebase';
+import { dismissAllPresented } from '@/lib/notificationTray';
 import { useBadgeCount } from '@/lib/useBadgeCount';
 import type { Account, Dancer } from '@cdv/types';
 
@@ -91,7 +92,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!auth.currentUser) return;
     try {
       const res = await httpsCallable<unknown, { count: number }>(functions, 'getMyBadgeCount')();
-      await Notifications.setBadgeCountAsync(res.data?.count ?? 0);
+      const count = res.data?.count ?? 0;
+      await Notifications.setBadgeCountAsync(count);
+      // Plus rien à lire : on vide le tiroir, sinon le lanceur Android garde
+      // la pastille (elle y est calculée à partir des notifications affichées).
+      if (count === 0) await dismissAllPresented();
     } catch (error) {
       console.error('[AuthContext] refreshBadge failed:', error);
     }
