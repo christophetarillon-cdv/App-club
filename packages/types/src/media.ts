@@ -27,4 +27,9 @@ export interface Media {
   isPublic: boolean;
   uploadedAt: FirestoreTimestamp;
   encodingStatus?: 'pending' | 'encoding' | 'done' | 'error' | null;
+  // Vignette JPEG (~30 Ko) générée côté serveur (generateVideoThumbnail).
+  // Les listes l'affichent au lieu de lire le fichier vidéo : sans elle,
+  // chaque ouverture de la page Vidéos téléchargeait toutes les vidéos.
+  thumbnailUrl?: string | null;
+  thumbnailStatus?: 'processing' | 'done' | 'error' | null;
 }

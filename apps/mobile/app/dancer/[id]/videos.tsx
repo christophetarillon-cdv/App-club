@@ -43,7 +43,7 @@ function VideoThumb({ video, color, seasonBadge, tag, onPress }: {
   return (
     <TouchableOpacity style={styles.thumbWrap} activeOpacity={0.85} onPress={onPress}>
       <View style={styles.thumb}>
-        <VideoThumbnail videoUrl={video.sourceUrl} fallbackColor={color} />
+        <VideoThumbnail thumbnailUrl={video.thumbnailUrl} fallbackColor={color} />
         <View style={styles.thumbScrim} />
         <View style={styles.seasonBadge}><Text style={styles.seasonBadgeText}>{seasonBadge}</Text></View>
         <View style={styles.playCircle}>

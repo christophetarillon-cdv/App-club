@@ -324,7 +324,7 @@ export default function ChatChannelScreen() {
             {m.mediaType === 'video' && m.mediaUrl && (
               <View>
                 <TouchableOpacity style={styles.videoThumb} activeOpacity={0.9} onPress={() => setActiveVideo(m)}>
-                  <VideoThumbnail videoUrl={m.mediaUrl} fallbackColor="#1A1A2E" />
+                  <VideoThumbnail videoUrl={m.mediaUrl} fallbackColor="#1A1A2E" generateFromVideo />
                   <View style={styles.playOverlay} pointerEvents="none">
                     <View style={styles.playCircle}><View style={styles.playTri} /></View>
                   </View>

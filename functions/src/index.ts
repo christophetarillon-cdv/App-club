@@ -1773,6 +1773,8 @@ export const deleteMedia = onCall(
         console.warn('[deleteMedia] fichier Storage déjà absent ou non supprimable:', storagePath);
       }
     }
+    await admin.storage().bucket().deleteFiles({ prefix: `media-thumbnails/${mediaId}_` })
+      .catch(err => console.warn('[deleteMedia] vignette non supprimée:', err));
     await mediaRef.delete();
     return { ok: true };
   },
@@ -2085,6 +2087,83 @@ export const encodeMedia = onDocumentCreated(
     } catch (err) {
       console.error('[encodeMedia] error:', err);
       await mediaRef.update({ encodingStatus: 'error' });
+    } finally {
+      if (fs.existsSync(tmpInput)) fs.unlinkSync(tmpInput);
+      if (fs.existsSync(tmpOutput)) fs.unlinkSync(tmpOutput);
+    }
+  },
+);
+
+// ── generateVideoThumbnail — vignette JPEG pour chaque vidéo de la médiathèque ──
+// Sans vignette enregistrée, l'app et le site lisaient le fichier vidéo
+// lui-même pour en extraire une image, à chaque ouverture de la page Vidéos :
+// c'était l'essentiel de la bande passante Storage facturée. La vignette est
+// générée une fois ici (trafic interne à Google, non facturé) et les listes
+// n'affichent plus que ce JPEG d'environ 30 Ko.
+//
+// Déclenché sur toute écriture (et non seulement la création) pour que le
+// rattrapage des vidéos existantes se fasse en posant simplement
+// `thumbnailStatus: null` sur le doc. La revendication en transaction évite
+// un double traitement quand encodeMedia met à jour le même doc entre-temps.
+export const generateVideoThumbnail = onDocumentWritten(
+  // concurrency 1 : la vidéo est téléchargée dans /tmp (en mémoire) ; plusieurs
+  // fichiers de 400 Mo traités en parallèle sur une instance la satureraient.
+  { document: 'media/{id}', region: 'europe-west3', memory: '2GiB', timeoutSeconds: 300, concurrency: 1 },
+  async (event) => {
+    const after = event.data?.after;
+    const data = after?.data();
+    if (!after || !data) return;
+    if (data.type !== 'video' || data.thumbnailUrl || data.thumbnailStatus) return;
+    if (!data.storagePath) return;
+
+    const db = getDb();
+    const claimed = await db.runTransaction(async tx => {
+      const snap = await tx.get(after.ref);
+      const d = snap.data();
+      if (!d || d.thumbnailUrl || d.thumbnailStatus) return false;
+      tx.update(after.ref, { thumbnailStatus: 'processing' });
+      return true;
+    });
+    if (!claimed) return;
+
+    const bucket = admin.storage().bucket();
+    const stamp = `${Date.now()}_${event.params.id}`;
+    const tmpInput = path.join(os.tmpdir(), `thumb_in_${stamp}`);
+    const tmpOutput = path.join(os.tmpdir(), `thumb_out_${stamp}.jpg`);
+
+    try {
+      await bucket.file(data.storagePath as string).download({ destination: tmpInput });
+      if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+
+      // Image à 1 s (vidéo très courte : repli sur la première image).
+      const extract = (seek: number) => new Promise<void>((resolve, reject) => {
+        ffmpeg(tmpInput)
+          .seekInput(seek)
+          .outputOptions(['-frames:v 1', '-vf scale=480:-2', '-q:v 5'])
+          .output(tmpOutput)
+          .on('end', () => resolve())
+          .on('error', (err: Error) => reject(err))
+          .run();
+      });
+      await extract(1);
+      if (!fs.existsSync(tmpOutput) || fs.statSync(tmpOutput).size === 0) await extract(0);
+
+      const token = crypto.randomUUID();
+      const dest = `media-thumbnails/${event.params.id}_${Date.now()}.jpg`;
+      await bucket.upload(tmpOutput, {
+        destination: dest,
+        metadata: {
+          contentType: 'image/jpeg',
+          cacheControl: 'public, max-age=31536000, immutable',
+          metadata: { firebaseStorageDownloadTokens: token },
+        },
+      });
+      const thumbnailUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(dest)}?alt=media&token=${token}`;
+      await after.ref.update({ thumbnailUrl, thumbnailStatus: 'done' });
+      console.log(`[generateVideoThumbnail] ${event.params.id} → ${dest} (${fs.statSync(tmpOutput).size} o)`);
+    } catch (err) {
+      console.error(`[generateVideoThumbnail] ${event.params.id} error:`, err);
+      await after.ref.update({ thumbnailStatus: 'error' });
     } finally {
       if (fs.existsSync(tmpInput)) fs.unlinkSync(tmpInput);
       if (fs.existsSync(tmpOutput)) fs.unlinkSync(tmpOutput);

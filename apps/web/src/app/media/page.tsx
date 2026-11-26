@@ -14,19 +14,13 @@ interface Course   { id: string; name: string; danceStyleId: string; levelId: st
 interface Level    { id: string; name: string; }
 interface Membership { seasonId: string; paymentPlanStatus: string; status: string; }
 
-function VideoThumbnail({ src, bg }: { src: string; bg: string }) {
-  const ref = useRef<HTMLVideoElement>(null);
+// Affiche la vignette JPEG générée côté serveur. Ne jamais charger la vidéo
+// pour une vignette : un <video preload="metadata"> par carte téléchargeait
+// une partie de chaque vidéo à chaque ouverture de la page.
+function VideoThumbnail({ src, bg }: { src?: string | null; bg: string }) {
   return (
     <div className="absolute inset-0" style={{ backgroundColor: bg }}>
-      <video
-        ref={ref}
-        src={src}
-        preload="metadata"
-        muted
-        playsInline
-        onLoadedMetadata={() => { if (ref.current) ref.current.currentTime = 0.1; }}
-        className="w-full h-full object-cover"
-      />
+      {src && <img src={src} alt="" loading="lazy" className="w-full h-full object-cover" />}
     </div>
   );
 }
@@ -218,7 +212,7 @@ export default function MediaPage() {
                   <div key={m.id} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
                     {/* Thumbnail vidéo */}
                     <div className="relative w-full aspect-video overflow-hidden">
-                      <VideoThumbnail src={m.sourceUrl} bg={bg} />
+                      <VideoThumbnail src={m.thumbnailUrl} bg={bg} />
                       <button
                         onClick={() => {
                           setExpanded(isOpen ? null : m.id);
@@ -255,7 +249,7 @@ export default function MediaPage() {
                           <audio controls src={m.sourceUrl} className="w-full"
                             ref={el => { if (el) mediaEls.current.set(m.id, el); else mediaEls.current.delete(m.id); }} />
                         ) : (
-                          <video controls src={m.sourceUrl} className="w-full rounded-xl" style={{ maxHeight: 220 }}
+                          <video controls preload="none" poster={m.thumbnailUrl ?? undefined} src={m.sourceUrl} className="w-full rounded-xl" style={{ maxHeight: 220 }}
                             ref={el => { if (el) mediaEls.current.set(m.id, el); else mediaEls.current.delete(m.id); }} />
                         )}
                         <div className="flex items-center gap-2">
