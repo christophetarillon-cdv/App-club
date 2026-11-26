@@ -2068,6 +2068,12 @@ export const encodeVideo = onDocumentWritten(
       await new Promise<void>((resolve, reject) => {
         ffmpeg(tmpInput)
           .outputOptions([
+            // Pistes explicites : les iPhone récents ajoutent une piste audio
+            // spatiale (codec APAC, non décodable par ffmpeg) marquée par
+            // défaut, à côté de la piste stéréo AAC. Sans -map, ffmpeg prend
+            // l'APAC et échoue ("Error opening output file"). On garde la
+            // 1re vidéo et la 1re piste audio (AAC), si elle existe.
+            '-map 0:v:0', '-map 0:a:0?',
             // Plus grand côté ramené à 1280 (720p), sans jamais agrandir.
             "-vf scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))'",
             '-vcodec libx264', '-crf 28', '-preset veryfast', '-pix_fmt yuv420p',
