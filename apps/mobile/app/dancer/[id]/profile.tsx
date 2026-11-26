@@ -13,6 +13,7 @@ import Svg, { Path, Circle, Rect, Line, Polyline } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@/constants/Colors';
 import BottomTabBar from '@/components/BottomTabBar';
+import { appVersionLabel } from '@/lib/useOtaAutoUpdate';
 
 interface MenuItem {
   permKey: string | null;
@@ -279,6 +280,8 @@ export default function ProfileScreen() {
               <Text style={styles.logoutText}>Se déconnecter</Text>
             </TouchableOpacity>
           )}
+
+          <Text style={styles.versionText}>{appVersionLabel()}</Text>
         </View>
       </ScrollView>
 
@@ -327,4 +330,5 @@ const styles = StyleSheet.create({
 
   logoutRow: { alignItems: 'center', paddingVertical: 18, marginTop: 4 },
   logoutText: { fontSize: 14, fontWeight: '500', color: '#EF4444' },
+  versionText: { fontSize: 12, color: '#9A9AA8', textAlign: 'center', paddingBottom: 8 },
 });

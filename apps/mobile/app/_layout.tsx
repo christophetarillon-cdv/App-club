@@ -15,6 +15,7 @@ import { Colors } from '@/constants/Colors';
 import { registerForPushNotificationsAsync } from '@/lib/pushNotifications';
 import { isProdEnvironment, firebaseConfig } from '@/lib/firebase';
 import { logEvent, trackedScreenFromPathname } from '@/lib/analytics';
+import { useOtaAutoUpdate } from '@/lib/useOtaAutoUpdate';
 
 // Repère visuel permanent tant qu'on n'est pas connecté aux vraies données
 // (clubvoiron-prod) — pour ne jamais confondre la version test et la vraie
@@ -158,6 +159,7 @@ function Gate() {
 }
 
 export default function RootLayout() {
+  useOtaAutoUpdate();
   return (
     <AuthProvider>
       <DancerProvider>
