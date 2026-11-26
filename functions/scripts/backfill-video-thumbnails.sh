@@ -1,6 +1,9 @@
 #!/bin/bash
-# Rattrapage des vignettes vidéo : pose thumbnailStatus=null sur chaque doc
-# media vidéo sans thumbnailUrl, ce qui redéclenche generateVideoThumbnail.
+# Rattrapage des vignettes vidéo : pose thumbnailStatus=null et un nouvel
+# horodatage thumbnailRequestedAt sur chaque doc media vidéo sans
+# thumbnailUrl, ce qui redéclenche generateVideoThumbnail. L'horodatage est
+# indispensable : une écriture qui ne change rien au doc (statut déjà null)
+# ne déclenche pas de trigger Firestore.
 # Usage : functions/scripts/backfill-video-thumbnails.sh clubvoiron-dev|clubvoiron-prod
 set -euo pipefail
 P=${1:?projet requis}
@@ -14,8 +17,9 @@ for d in json.load(sys.stdin).get("documents",[]):
   if f.get("type",{}).get("stringValue")=="video" and not f.get("thumbnailUrl",{}).get("stringValue"):
     print(d["name"])' \
  | while read -r name; do
-  curl -s -X PATCH "https://firestore.googleapis.com/v1/$name?updateMask.fieldPaths=thumbnailStatus" \
+  NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  curl -s -X PATCH "https://firestore.googleapis.com/v1/$name?updateMask.fieldPaths=thumbnailStatus&updateMask.fieldPaths=thumbnailRequestedAt" \
     -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
-    -d '{"fields":{"thumbnailStatus":{"nullValue":null}}}' >/dev/null && echo "relancé: ${name##*/}"
+    -d "{\"fields\":{\"thumbnailStatus\":{\"nullValue\":null},\"thumbnailRequestedAt\":{\"timestampValue\":\"$NOW\"}}}" >/dev/null && echo "relancé: ${name##*/}"
   sleep 2
 done
