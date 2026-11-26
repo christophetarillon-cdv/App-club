@@ -2281,9 +2281,128 @@ export const previewNotificationRecipients = onCall(
 // route chaque token vers le bon service.
 const expoClient = new Expo();
 
+// ── Pastille (badge) de l'icône de l'app ─────────────────────────────────────
+// Nombre de messages non lus par compte, pour la pastille rouge de l'icône.
+// Sur iOS, app fermée, seul le champ `badge` de la notification peut la
+// mettre à jour : le serveur doit donc calculer le nombre pour chaque
+// destinataire. L'app réutilise ce même calcul (getMyBadgeCount) pour que la
+// pastille ne dépende pas de deux règles différentes.
+//   - chat : messages des canaux accessibles et non coupés, postérieurs à
+//     chatLastRead (ou à la création de la fiche), hors messages du danseur ;
+//   - messages privés : réponses du club non lues (readByDancerAt) ;
+//   - compte admin/bureau : en plus, messages des danseurs non lus (readAt).
+async function computeUnreadByAccount(
+  db: admin.firestore.Firestore,
+  accountIds: string[],
+): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  const wanted = new Set(accountIds.filter(Boolean));
+  if (wanted.size === 0) return result;
+
+  const toMs = (v: any): number => (v?.toMillis ? v.toMillis() : typeof v === 'number' ? v : 0);
+
+  const [dancersSnap, channelsSnap, chatSnap, privateSnap, seasonsSnap, staffIds] = await Promise.all([
+    db.collection('dancers').get(),
+    db.collection('chatChannels').where('isActive', '==', true).get(),
+    db.collection('chatMessages').get(),
+    db.collection('privateMessages').get(),
+    db.collection('seasons').where('isActive', '==', true).get(),
+    getStaffAccountIds(db),
+  ]);
+
+  // Comptes ayant une cotisation de la saison en cours (même règle que
+  // l'écran Discussion de l'app : accès au chat lié au compte payeur).
+  const paidAccounts = new Set<string>();
+  const currentSeasonId = seasonsSnap.docs[0]?.id;
+  if (currentSeasonId) {
+    const msSnap = await db.collection('memberships').where('seasonId', '==', currentSeasonId).get();
+    msSnap.docs.forEach(d => {
+      const m = d.data();
+      if (m.paymentPlanStatus !== 'approved' && m.status !== 'active') return;
+      if (m.userId) paidAccounts.add(m.userId);
+      (m.visibleUserIds ?? []).forEach((u: string) => paidAccounts.add(u));
+    });
+  }
+
+  const chatByChannel = new Map<string, { authorId: string; sentMs: number }[]>();
+  chatSnap.docs.forEach(d => {
+    const m = d.data();
+    if (!chatByChannel.has(m.channelId)) chatByChannel.set(m.channelId, []);
+    chatByChannel.get(m.channelId)!.push({ authorId: m.authorId ?? '', sentMs: toMs(m.sentAt) });
+  });
+
+  const privateMsgs = privateSnap.docs.map(d => d.data());
+  const staffSet = new Set(staffIds);
+  const staffUnread = privateMsgs.filter(m => m.fromAdmin !== true && !m.readAt).length;
+
+  for (const aid of wanted) result.set(aid, staffSet.has(aid) ? staffUnread : 0);
+
+  dancersSnap.docs.forEach(d => {
+    const dancer = d.data();
+    const aid = dancer.accountId as string | undefined;
+    if (!aid || !wanted.has(aid) || dancer.isDeleted === true) return;
+
+    const roles: string[] = dancer.roles ?? [];
+    const seesAll = roles.includes('admin') || roles.includes('instructor');
+    const lastRead: Record<string, number> = dancer.chatLastRead ?? {};
+    const prefs: Record<string, boolean> = dancer.notificationPreferences ?? {};
+    // Plancher à 30 jours : un danseur qui n'a jamais ouvert le chat aurait
+    // sinon tout l'historique du canal en non-lus (jusqu'à 15 au 26/11).
+    const since = Math.max(toMs(dancer.createdAt), Date.now() - 30 * 24 * 3600 * 1000);
+    let count = 0;
+
+    channelsSnap.docs.forEach(ch => {
+      const c = ch.data();
+      if (!seesAll && (c.newMembersAccess === false || !paidAccounts.has(aid))) return;
+      if (prefs[`chat_${ch.id}`] === false) return;
+      const threshold = Math.max(lastRead[ch.id] ?? 0, since);
+      count += (chatByChannel.get(ch.id) ?? [])
+        .filter(m => m.sentMs > threshold && m.authorId !== d.id).length;
+    });
+
+    count += privateMsgs.filter(m => m.fromDancerId === d.id && m.fromAdmin === true && !m.readByDancerAt).length;
+    result.set(aid, (result.get(aid) ?? 0) + count);
+  });
+
+  return result;
+}
+
+// Badge par token, à partir des comptes qui portent ce token. Un même
+// téléphone peut porter plusieurs comptes (famille) : on garde le maximum.
+async function badgeByTokenForAccounts(
+  db: admin.firestore.Firestore,
+  accounts: { id: string; tokens: string[] }[],
+): Promise<Map<string, number>> {
+  const byToken = new Map<string, number>();
+  // La pastille est accessoire : un échec du calcul ne doit jamais empêcher
+  // la notification elle-même de partir.
+  let unread: Map<string, number>;
+  try {
+    unread = await computeUnreadByAccount(db, accounts.map(a => a.id));
+  } catch (err) {
+    console.error('badgeByTokenForAccounts failed:', err);
+    return byToken;
+  }
+  accounts.forEach(a => {
+    const n = unread.get(a.id) ?? 0;
+    a.tokens.forEach(t => byToken.set(t, Math.max(byToken.get(t) ?? 0, n)));
+  });
+  return byToken;
+}
+
+export const getMyBadgeCount = onCall(
+  { region: 'europe-west3' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const unread = await computeUnreadByAccount(getDb(), [request.auth.uid]);
+    return { count: unread.get(request.auth.uid) ?? 0 };
+  },
+);
+
 async function sendPushToTokens(
   tokens: string[],
   payload: { title: string; body: string; data: Record<string, string>; link?: string },
+  badgeByToken?: Map<string, number>,
 ): Promise<{ successCount: number; invalidTokens: string[] }> {
   // Un même appareil (token) peut être enregistré sur plusieurs comptes
   // (plusieurs danseurs d'une même famille connectés sur le même téléphone) :
@@ -2319,6 +2438,7 @@ async function sendPushToTokens(
   if (expoTokens.length > 0) {
     const messages = expoTokens.map(to => ({
       to, title: payload.title, body: payload.body, data: payload.data,
+      ...(badgeByToken?.has(to) ? { badge: badgeByToken.get(to) } : {}),
     }));
     const chunks = expoClient.chunkPushNotifications(messages);
     for (const chunk of chunks) {
@@ -2441,6 +2561,7 @@ export const onChatMessageCreated = onDocumentCreated(
     const accountsSnap = await db.collection('accounts').where('fcmTokens', '!=', []).get();
 
     const tokens: string[] = [];
+    const recipients: { id: string; tokens: string[] }[] = [];
     for (const accDoc of accountsSnap.docs) {
       const accData = accDoc.data();
       const fcmTokens: string[] = accData.fcmTokens ?? [];
@@ -2455,14 +2576,18 @@ export const onChatMessageCreated = onDocumentCreated(
         return prefs[`chat_${channelId}`] !== false;
       });
 
-      if (hasOptIn) tokens.push(...fcmTokens);
+      if (hasOptIn) {
+        tokens.push(...fcmTokens);
+        recipients.push({ id: accDoc.id, tokens: fcmTokens });
+      }
     }
 
     if (tokens.length === 0) return;
 
+    const badges = await badgeByTokenForAccounts(db, recipients);
     const { invalidTokens } = await sendPushToTokens(tokens, {
       title: authorName, body: text, data: { type: 'chat', channelId }, link: `/chat/${channelId}`,
-    });
+    }, badges);
     if (invalidTokens.length > 0) {
       const batch = db.batch();
       accountsSnap.docs.forEach(d => {
@@ -2488,19 +2613,27 @@ export const onPrivateMessageCreated = onDocumentCreated(
 
     let tokens: string[];
     let title: string;
+    let recipientSnaps: admin.firestore.DocumentSnapshot[];
     if (msg.fromAdmin === true) {
       // Reponse admin -> danseur : notifie uniquement le compte concerne.
       const accountSnap = await db.doc(`accounts/${msg.fromAccountId}`).get();
+      recipientSnaps = [accountSnap];
       tokens = Array.isArray(accountSnap.data()?.fcmTokens) ? accountSnap.data()!.fcmTokens as string[] : [];
       title = 'Réponse de l\'administration';
     } else {
       const staffAccountIds = await getStaffAccountIds(db);
       if (staffAccountIds.length === 0) return;
       const staffSnaps = await Promise.all(staffAccountIds.map(id => db.doc(`accounts/${id}`).get()));
+      recipientSnaps = staffSnaps;
       tokens = staffSnaps.flatMap(s => (Array.isArray(s.data()?.fcmTokens) ? s.data()!.fcmTokens as string[] : []));
       title = dancerName;
     }
     if (tokens.length === 0) return;
+
+    const badges = await badgeByTokenForAccounts(db, recipientSnaps.map(s => ({
+      id: s.id,
+      tokens: Array.isArray(s.data()?.fcmTokens) ? s.data()!.fcmTokens as string[] : [],
+    })));
 
     await sendPushToTokens(tokens, {
       title,
@@ -2511,7 +2644,7 @@ export const onPrivateMessageCreated = onDocumentCreated(
       // danseur" côté admin, ni de construire l'URL vers la bonne conversation.
       data: { type: 'private_message', accountId: msg.fromAccountId, dancerId: msg.fromDancerId ?? '', dancerName },
       link: '/admin/private-messages',
-    });
+    }, badges);
   },
 );
 

@@ -82,7 +82,7 @@ export default function ChatChannelScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
-  const { account, user, markMessagesAsRead } = useAuth();
+  const { account, user, markMessagesAsRead, refreshBadge } = useAuth();
   const { selectedDancer } = useDancer();
 
   const [channel, setChannel] = useState<ChatChannel | null>(null);
@@ -120,7 +120,9 @@ export default function ChatChannelScreen() {
   // Marquer lu
   useEffect(() => {
     if (!selectedDancer) return;
-    updateDoc(doc(db, 'dancers', selectedDancer.id), { [`chatLastRead.${channelId}`]: Date.now() }).catch(() => {});
+    updateDoc(doc(db, 'dancers', selectedDancer.id), { [`chatLastRead.${channelId}`]: Date.now() })
+      .then(() => refreshBadge?.())
+      .catch(() => {});
   }, [channelId, selectedDancer?.id]);
 
   // Plancher de date : début du bloc de saisons consécutives le plus récent de l'utilisateur.

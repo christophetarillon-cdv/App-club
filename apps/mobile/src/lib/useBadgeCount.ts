@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
-import * as Notifications from 'expo-notifications';
 import { db } from './firebase';
 
 const LAST_VISITED_KEY_PREFIX = 'badge_last_visited_';
@@ -50,13 +49,10 @@ export function useBadgeCount(dancerId?: string) {
     };
   }, [dancerId]);
 
-  // Update badge when either count changes
-  useEffect(() => {
-    const total = chatCount + announcementCount;
-    Notifications.setBadgeCountAsync(total).catch(e =>
-      console.error('[useBadgeCount] Badge error:', e)
-    );
-  }, [chatCount, announcementCount]);
+  // La pastille de l'icône n'est plus pilotée ici : elle vient du calcul
+  // serveur (getMyBadgeCount, voir AuthContext.refreshBadge), le même que
+  // celui envoyé dans les notifications. Ce hook ne sert plus qu'au compteur
+  // affiché dans la barre d'onglets.
 
   const unreadCount = chatCount + announcementCount;
 
@@ -67,7 +63,6 @@ export function useBadgeCount(dancerId?: string) {
       await AsyncStorage.setItem(storageKey, new Date().toISOString());
       setChatCount(0);
       setAnnouncementCount(0);
-      await Notifications.setBadgeCountAsync(0);
     } catch (error) {
       console.error('[useBadgeCount] Error marking as read:', error);
     }

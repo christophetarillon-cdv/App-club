@@ -1,9 +1,11 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { AppState } from 'react-native';
+import { httpsCallable } from 'firebase/functions';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { collection, onSnapshot, query, where, doc, onSnapshot as onDocSnapshot } from 'firebase/firestore';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, db } from '@/lib/firebase';
+import { auth, db, functions } from '@/lib/firebase';
 import { useBadgeCount } from '@/lib/useBadgeCount';
 import type { Account, Dancer } from '@cdv/types';
 
@@ -13,6 +15,7 @@ interface AuthContextType {
   dancers: Dancer[];
   loading: boolean;
   markMessagesAsRead?: (dancerId?: string) => Promise<void>;
+  refreshBadge?: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -81,20 +84,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Pastille de l'icône = nombre de non-lus calculé par le serveur (même
+  // règle que le champ `badge` des notifications). Avant, l'app la remettait
+  // simplement à 0, et rien ne l'alimentait quand l'app était fermée.
+  const refreshBadge = useCallback(async () => {
+    if (!auth.currentUser) return;
+    try {
+      const res = await httpsCallable<unknown, { count: number }>(functions, 'getMyBadgeCount')();
+      await Notifications.setBadgeCountAsync(res.data?.count ?? 0);
+    } catch (error) {
+      console.error('[AuthContext] refreshBadge failed:', error);
+    }
+  }, []);
+
+  // Au retour au premier plan : des messages ont pu être lus ailleurs (web,
+  // autre téléphone) ou arriver pendant que l'app était en arrière-plan.
+  useEffect(() => {
+    if (!user) return;
+    refreshBadge();
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') refreshBadge();
+    });
+    return () => sub.remove();
+  }, [user?.uid, refreshBadge]);
+
   const markMessagesAsRead = async (dancerId?: string) => {
     try {
       if (dancerId) {
         const storageKey = `badge_last_visited_${dancerId}`;
         await AsyncStorage.setItem(storageKey, new Date().toISOString());
-        await Notifications.setBadgeCountAsync(0);
       }
+      await refreshBadge();
     } catch (error) {
       console.error('[AuthContext] Error marking as read:', error);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, account, dancers, loading, markMessagesAsRead }}>
+    <AuthContext.Provider value={{ user, account, dancers, loading, markMessagesAsRead, refreshBadge }}>
       {children}
     </AuthContext.Provider>
   );

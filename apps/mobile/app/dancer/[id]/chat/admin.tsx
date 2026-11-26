@@ -39,7 +39,7 @@ export default function AdminConversationScreen() {
   const isAdminView = !!targetDancerId;
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, account } = useAuth();
+  const { user, account, refreshBadge } = useAuth();
   const { selectedDancer } = useDancer();
 
   const [messages, setMessages] = useState<PrivateMessage[]>([]);
@@ -106,7 +106,8 @@ export default function AdminConversationScreen() {
     // Le marquage "lu" est accessoire, son echec ne doit rien bloquer.
     Promise.all(
       unread.map(m => updateDoc(doc(db, 'privateMessages', m.id), { [field]: serverTimestamp() })),
-    ).catch(error => console.error(`${field} update failed`, error));
+    ).then(() => refreshBadge?.())
+      .catch(error => console.error(`${field} update failed`, error));
   }, [messages, isAdminView]);
 
   const send = async () => {
