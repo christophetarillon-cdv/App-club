@@ -2020,73 +2020,98 @@ export const getEnrolledDancerIds = onCall(
   },
 );
 
-// ── encodeMedia — compresse les vidéos déclenchée par création du doc Firestore
-export const encodeMedia = onDocumentCreated(
-  { document: 'media/{id}', region: 'europe-west3', memory: '4GiB', timeoutSeconds: 540, cpu: 2 },
+// ── encodeVideo — compresse les vidéos de la médiathèque ──────────────────────
+// Remplace encodeMedia (onDocumentCreated), qui échouait sur les vidéos
+// longues : plusieurs vidéos envoyées d'affilée étaient encodées en même temps
+// sur la même instance (2 CPU partagés → dépassement des 540 s), et les
+// fichiers temporaires nommés à la milliseconde entraient en collision
+// ("Error opening output file"). Les vidéos restaient alors brutes (jusqu'à
+// 400 Mo), retéléchargées en entier à chaque lecture.
+//
+// - concurrency 1 + 4 CPU : une vidéo à la fois, encodage rapide ;
+// - fichiers temporaires nommés par id d'événement (uniques) ;
+// - sortie 720p max (dans le sens de la vidéo, portrait ou paysage) ;
+// - onDocumentWritten + revendication en transaction : repasser
+//   `encodingStatus` à 'pending' relance l'encodage d'une vidéo échouée.
+export const encodeVideo = onDocumentWritten(
+  { document: 'media/{id}', region: 'europe-west3', memory: '4GiB', cpu: 4, timeoutSeconds: 540, concurrency: 1 },
   async (event) => {
-    const data = event.data?.data();
-    if (!data) return;
-    if (data.type !== 'video') { console.log('[encodeMedia] skip: not a video'); return; }
-    if (data.encodingStatus !== 'pending') { console.log('[encodeMedia] skip: status is', data.encodingStatus); return; }
+    const after = event.data?.after;
+    const data = after?.data();
+    if (!after || !data) return;
+    if (data.type !== 'video' || data.encodingStatus !== 'pending' || !data.storagePath) return;
+
+    const db = getDb();
+    const claimed = await db.runTransaction(async tx => {
+      const snap = await tx.get(after.ref);
+      if (snap.data()?.encodingStatus !== 'pending') return false;
+      tx.update(after.ref, { encodingStatus: 'encoding', encodingStartedAt: admin.firestore.FieldValue.serverTimestamp() });
+      return true;
+    });
+    if (!claimed) return;
 
     const filePath = data.storagePath as string;
-    console.log(`[encodeMedia] triggered for doc ${event.params.id} | path: ${filePath}`);
-
-    const mediaRef = event.data!.ref;
-    await mediaRef.update({ encodingStatus: 'encoding' });
-
+    console.log(`[encodeVideo] ${event.params.id} | ${filePath}`);
     const bucket = admin.storage().bucket();
-    const tmpInput = path.join(os.tmpdir(), `cdv_in_${Date.now()}`);
-    const tmpOutput = path.join(os.tmpdir(), `cdv_out_${Date.now()}.mp4`);
+    const stamp = `${event.id}`.replace(/[^a-zA-Z0-9_-]/g, '');
+    const tmpInput = path.join(os.tmpdir(), `enc_in_${stamp}`);
+    const tmpOutput = path.join(os.tmpdir(), `enc_out_${stamp}.mp4`);
+    const t0 = Date.now();
 
     try {
-      console.log('[encodeMedia] downloading...');
       await bucket.file(filePath).download({ destination: tmpInput });
-      console.log(`[encodeMedia] downloaded ${Math.round(fs.statSync(tmpInput).size / 1024 / 1024)}Mo`);
-
+      const inSize = fs.statSync(tmpInput).size;
+      console.log(`[encodeVideo] downloaded ${Math.round(inSize / 1e6)} Mo`);
       if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
 
+      let lastPct = -10;
       await new Promise<void>((resolve, reject) => {
         ffmpeg(tmpInput)
-          .outputOptions(['-vcodec libx264', '-crf 28', '-preset fast', '-acodec aac', '-b:a 128k', '-movflags +faststart'])
+          .outputOptions([
+            // Plus grand côté ramené à 1280 (720p), sans jamais agrandir.
+            "-vf scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))'",
+            '-vcodec libx264', '-crf 28', '-preset veryfast', '-pix_fmt yuv420p',
+            '-acodec aac', '-b:a 128k', '-movflags +faststart', '-threads 0',
+          ])
           .output(tmpOutput)
-          .on('progress', (p: any) => console.log(`[encodeMedia] ${Math.round(p.percent ?? 0)}%`))
-          .on('end', () => { console.log('[encodeMedia] ffmpeg done'); resolve(); })
-          .on('error', (err: Error) => { console.error('[encodeMedia] ffmpeg error:', err.message); reject(err); })
+          .on('progress', (p: any) => {
+            const pct = Math.round(p.percent ?? 0);
+            if (pct >= lastPct + 10) { lastPct = pct; console.log(`[encodeVideo] ${event.params.id} ${pct}%`); }
+          })
+          .on('end', () => resolve())
+          .on('error', (err: Error) => reject(err))
           .run();
       });
 
-      const stats = fs.statSync(tmpOutput);
-      console.log(`[encodeMedia] output: ${Math.round(stats.size / 1024 / 1024)}Mo`);
+      const outSize = fs.statSync(tmpOutput).size;
+      // Garde-fou : ne jamais remplacer l'original par un fichier plus lourd.
+      if (outSize >= inSize) {
+        console.log(`[encodeVideo] ${event.params.id} sortie plus lourde (${outSize} ≥ ${inSize}), original conservé`);
+        await after.ref.update({ encodingStatus: 'done' });
+        return;
+      }
 
       const newToken = crypto.randomUUID();
       await bucket.upload(tmpOutput, {
         destination: filePath,
         metadata: {
           contentType: 'video/mp4',
+          cacheControl: 'public, max-age=86400',
           metadata: { encoded: 'true', firebaseStorageDownloadTokens: newToken },
         },
       });
+      const newUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filePath)}?alt=media&token=${newToken}`;
 
-      const bucketName = bucket.name;
-      const newUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(filePath)}?alt=media&token=${newToken}`;
-
-      const duration = await new Promise<number | undefined>(resolve => {
-        ffmpeg.ffprobe(tmpOutput, (err: Error | null, d: any) => {
-          resolve(err ? undefined : Math.round(d?.format?.duration ?? 0) || undefined);
-        });
-      });
-
-      await mediaRef.update({
+      await after.ref.update({
         encodingStatus: 'done',
-        sizeBytes: stats.size,
+        sizeBytes: outSize,
         sourceUrl: newUrl,
-        ...(duration && { durationSeconds: duration }),
+        mimeType: 'video/mp4',
       });
-      console.log('[encodeMedia] done');
+      console.log(`[encodeVideo] ${event.params.id} done: ${Math.round(inSize / 1e6)} → ${Math.round(outSize / 1e6)} Mo en ${Math.round((Date.now() - t0) / 1000)} s`);
     } catch (err) {
-      console.error('[encodeMedia] error:', err);
-      await mediaRef.update({ encodingStatus: 'error' });
+      console.error(`[encodeVideo] ${event.params.id} error:`, err);
+      await after.ref.update({ encodingStatus: 'error' });
     } finally {
       if (fs.existsSync(tmpInput)) fs.unlinkSync(tmpInput);
       if (fs.existsSync(tmpOutput)) fs.unlinkSync(tmpOutput);
@@ -2104,7 +2129,7 @@ export const encodeMedia = onDocumentCreated(
 // Déclenché sur toute écriture (et non seulement la création) pour que le
 // rattrapage des vidéos existantes se fasse en posant simplement
 // `thumbnailStatus: null` sur le doc. La revendication en transaction évite
-// un double traitement quand encodeMedia met à jour le même doc entre-temps.
+// un double traitement quand encodeVideo met à jour le même doc entre-temps.
 export const generateVideoThumbnail = onDocumentWritten(
   // concurrency 1 : la vidéo est téléchargée dans /tmp (en mémoire) ; plusieurs
   // fichiers de 400 Mo traités en parallèle sur une instance la satureraient.
